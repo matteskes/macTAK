@@ -1,9 +1,3 @@
-# macTAK — TAK for macOS
-
-macTAK is building the **first macOS-native TAK client**: offline maps and team situational awareness on Apple silicon, powered by the open-source **takkernel** engine from ATAK-CIV. The program is evidence-driven — every estimate and design claim in this repo is pinned to measured facts about the upstream source — and gate-gated, with each gate ending in a demoable artifact.
-
-> **Status: development project, pre-release.** G0 (native engine build) closed 2026-11-02; G1 (headless engine + CoT round-trip) is in progress. No usable client exists yet — see [`docs/roadmap.md`](docs/roadmap.md) for the full plan.
-
 ## What is TAK?
 
 The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used across public safety and defense: offline maps, team tracking over the **Cursor-on-Target (CoT)** protocol, and interop with servers like **FreeTAKServer**. ATAK-CIV is the US Government's open-source Android client; WinTAK is its closed-source Windows sibling. There is no native macOS TAK client today — that is the gap macTAK fills.
@@ -46,4 +40,8 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE). macTAK inherits the GNU GPL v3 obligation from upstream `deptofdefense/AndroidTacticalAssaultKit-CIV`. This is an independent open-source project — not an official TAK product and not affiliated with the TAK program office.
+GPL-3.0 — see [LICENSE](LICENSE). macTAK inherits the GNU GPL v3 obligation from upstream `deptofdefense/AndroidTacticalAssaultKit-CIV`.
+
+This is an independent open-source project — not an official TAK product and not affiliated with the US Federal Government, the US Department of War, nor any other agent thereof.
+
+(c) 2026 macTAK contributors.
