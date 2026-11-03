@@ -17,6 +17,10 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+  # Manual escape hatch: the main ruleset requires this workflow's check names
+  # on every PR, but paths-ignore above skips docs-only PRs — dispatch it
+  # (gh workflow run CI --ref <branch>) to fill the required checks on those.
+  workflow_dispatch:
 
 permissions:
   contents: read
