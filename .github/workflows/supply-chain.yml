@@ -69,14 +69,22 @@ jobs:
           echo "Brewfile.lock.json is up to date"
 
       - name: OSV vulnerability scan
-        uses: google/osv-scanner-action/osv-scanner-action@0a65f82af05cd58cf587827b0bb0489548c18346 # v2.7.0
+        # google/osv-scanner-action is a Docker (container) action — Linux-only,
+        # unusable on this macos-26 runner ("Container action is only supported
+        # on Linux"). Run the official release binary instead, pinned to v2.7.0
+        # (the version the action's container image carried) and checksummed
+        # against upstream osv-scanner_SHA256SUMS.
+        env:
+          OSV_SCANNER_VERSION: 2.7.0
+          OSV_SCANNER_SHA256: d4926ef8da134332543be276dff157e4c170f99ad91fc48e89448a8816bdf70b
         continue-on-error: true
-        with:
-          scan-args: |-
-            --format=json
-            --output=osv-scan-results.json
-            -r
-            ./
+        run: |
+          set -euo pipefail
+          curl -sSfL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_darwin_arm64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | shasum -a 256 -c -
+          chmod +x osv-scanner
+          ./osv-scanner scan --format=json --output-file=osv-scan-results.json -r ./
 
       - name: Fail on vulnerabilities
         run: |
