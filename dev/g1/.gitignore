@@ -4,3 +4,7 @@ build/
 native-dist/
 build.log
 hs_err_pid*.log
+
+# atak-headless --layer: on-demand javac output + default feature store dir
+headless/build/
+atak-headless-layers/

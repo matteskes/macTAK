@@ -17,6 +17,8 @@ Gate-gated plan. Each gate has: **objective → exit criteria (demo artifact) �
 
 ## G1 — Headless engine + CoT round-trip (2–3 mo)
 
+> **Status: in progress.** M1 (2026-11-02): engine loads in-process from a Zulu 8 JVM via the JNI glue. M2 (2026-11-03): `dev/g1/headless/atak-headless --connect HOST:PORT` runs the commoncommo stack headless; CoT round-trip verified against FreeTAKServer and OpenTAKServer (two clients, marker + presence relayed both ways). M3 (2026-11-03): `atak-headless --layer FILE` opens GeoJSON/GPKG/KML/SHP through the native OGR provider into `PersistentDataSourceFeatureDataStore2` and reads them back via `FeatureDataStore2` — the offline-layer criterion, headless; four-format canary in CI. See `../dev/g1/NOTES.md`.
+
 **Objective:** JVM process on macOS: engine loads, offline map layer opens, CoT in/out via commoncommo.
 
 - Host = JVM (takkernel `java` target; `engine/src/jre` pattern). Comms via commoncommo JNI (or its ObjC bindings from Swift — decide here; JNI keeps one process, ObjC suits a split-process design later).
