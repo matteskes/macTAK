@@ -40,6 +40,23 @@ jobs:
       - name: Install Brewfile dependencies
         run: brew bundle install --file Brewfile
 
+      - name: Upgrade Brewfile packages to latest formula
+        run: |
+          # Runner images bake in some formulae (e.g. cmake) at a version frozen
+          # when the image was built, and their Homebrew formula data is frozen
+          # too (the image disables brew's auto-update), so `brew bundle
+          # install` installs the stale keg and even `brew upgrade` sees
+          # nothing newer. Refresh the formula data, then upgrade every
+          # Brewfile package to the current formula — the same versions a
+          # fresh local install resolves to — before regenerating the lock.
+          # (xargs splits the package list into separate brew arguments.)
+          brew update
+          grep -E '^brew ' Brewfile | sed -E 's/^brew[[:space:]]+"([^"]+)".*/\1/' | xargs brew upgrade
+          # The upgrade leaves the image's superseded keg in place, and the
+          # lock below would then record both versions (e.g. "4.4.4 4.4.5")
+          # where dev machines record one. Remove the old kegs right after.
+          grep -E '^brew ' Brewfile | sed -E 's/^brew[[:space:]]+"([^"]+)".*/\1/' | xargs brew cleanup
+
       - name: Assert Brewfile is satisfied
         run: brew bundle check --file Brewfile
 
