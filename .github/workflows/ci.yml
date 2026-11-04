@@ -76,7 +76,7 @@ jobs:
             dev/g1/native-dist/libtakengine.dylib
             dev/g1/native-dist/libGLESv2-stub.dylib
             dev/g1/native-dist/takengine-tests.xml
-          if-no-files-found: warn
+          if-no-files-found: error
 
   commo-stack:
     name: comms stack (macOS arm64)
@@ -121,7 +121,7 @@ jobs:
             dev/g1/native-dist/libcommoncommo.dylib
             dev/g1/native-dist/libcommoncommojni.dylib
             dev/g1/native-dist/jcommoncommo.jar
-          if-no-files-found: warn
+          if-no-files-found: error
 
   jvm-tests:
     name: JVM tests (Zulu 8, macOS arm64)

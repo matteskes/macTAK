@@ -12,6 +12,7 @@
 #
 # usage: run.sh [DURATION] [LAT] [LON]
 # env:   FTS_HOST (default 127.0.0.1), FTS_PORT (default 8087)
+# CI: also runs hermetically against dev/g1/headless/fake-cot-server.py (.github/workflows/cot-roundtrip.yml)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

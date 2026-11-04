@@ -34,7 +34,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   headless: marker-sent lat=<lat> lon=<lon>
  *   headless: summary received=N ifaceUpSeen=<b> presenceSent=N markerSent=N
  *
- * Exit codes: 0 completed the run, 2 usage, 3 stack/connect failure.
+ * Exit codes: 0 completed the run, 2 usage, 3 stack/connect failure,
+ * 4 dead run: no CoT received or interface never came up.
  */
 public final class HeadlessCLI {
 
@@ -235,7 +236,7 @@ public final class HeadlessCLI {
                     + " ifaceUpSeen=" + ifaceUpSeen.get()
                     + " presenceSent=" + presenceSent.get()
                     + " markerSent=" + markerSent.get());
-            System.exit(0);
+            System.exit(received.get() > 0 && ifaceUpSeen.get() ? 0 : 4);
         } catch (CommoException e) {
             System.err.println("commo[ERROR] stack failure: " + e);
             System.exit(3);

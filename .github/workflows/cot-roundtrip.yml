@@ -1,0 +1,68 @@
+# Hermetic CoT round-trip gate: builds the commoncommo stack and runs the
+# headless client against dev/g1/headless/fake-cot-server.py (no external
+# FreeTAKServer needed) — the PR tier for dev/g1/**.
+
+name: CoT round-trip
+
+on:
+  pull_request:
+    paths:
+      - 'dev/g1/**'
+  push:
+    branches: [main]
+    paths:
+      - 'dev/g1/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cot-roundtrip-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cot-roundtrip:
+    name: hermetic CoT round-trip (macOS arm64)
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out macTAK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out upstream ATAK CIV at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: deptofdefense/AndroidTacticalAssaultKit-CIV
+          ref: 889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc # keep in sync with local src/ (docs/ci-qa.md)
+          path: src
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install comms dependencies (Homebrew)
+        # build-commo.sh preflight list; protoc ships with protobuf
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: brew install openssl@3 libxml2 protobuf libmicrohttpd curl
+
+      - name: Set up Zulu 8 (arm64) — javah for the JNI glue + load canary
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: zulu
+          java-version: '8'
+          architecture: aarch64
+
+      - name: Build comms stack (dev/g1/build-commo.sh, verbatim)
+        run: bash dev/g1/build-commo.sh
+
+      - name: Start hermetic CoT server (fake-cot-server.py, port 8087)
+        run: |
+          nohup python3 dev/g1/headless/fake-cot-server.py 8087 > /tmp/cot-server.log 2>&1 < /dev/null &
+          disown
+          sleep 2
+
+      - name: Headless client round-trip vs hermetic server (run.sh 15)
+        env:
+          FTS_HOST: 127.0.0.1
+          FTS_PORT: '8087'
+        run: bash dev/g1/headless/run.sh 15

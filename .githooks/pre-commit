@@ -1,0 +1,83 @@
+#!/bin/bash
+# Pre-commit gate: lint staged shell/markdown/workflow files, verify jar checksums.
+set -euo pipefail
+
+HAVE_SHELLCHECK=0
+command -v shellcheck >/dev/null 2>&1 && HAVE_SHELLCHECK=1
+
+HAVE_MDLINT=0
+command -v markdownlint-cli2 >/dev/null 2>&1 && HAVE_MDLINT=1
+
+HAVE_ACTIONLINT=0
+command -v actionlint >/dev/null 2>&1 && HAVE_ACTIONLINT=1
+
+fail=0
+checked=0
+
+while IFS= read -r f; do
+    case "$f" in
+        *.sh)
+            if [ "$HAVE_SHELLCHECK" -eq 1 ]; then
+                if ! shellcheck "$f"; then
+                    echo "[pre-commit] shellcheck failed: $f"
+                    fail=1
+                fi
+            else
+                echo "[hook] skip: shellcheck not installed ($f)"
+            fi
+            if ! bash -n "$f"; then
+                echo "[pre-commit] bash -n failed: $f"
+                fail=1
+            fi
+            checked=$((checked + 1))
+            ;;
+        *.md)
+            if [ "$HAVE_MDLINT" -eq 1 ]; then
+                if ! markdownlint-cli2 "$f"; then
+                    echo "[pre-commit] markdownlint failed: $f"
+                    fail=1
+                fi
+            else
+                echo "[hook] skip: markdownlint-cli2 not installed ($f)"
+            fi
+            checked=$((checked + 1))
+            ;;
+        .github/workflows/*.yml|*.github/workflows/*.yaml)
+            if [ "$HAVE_ACTIONLINT" -eq 1 ]; then
+                if ! actionlint "$f"; then
+                    echo "[pre-commit] actionlint failed: $f"
+                    fail=1
+                fi
+            else
+                echo "[hook] skip: actionlint not installed ($f)"
+            fi
+            checked=$((checked + 1))
+            ;;
+        dev/g1/transplants/*.jar|dev/spike/g0/transplants/*.jar)
+            dir=$(dirname "$f")
+            sums="$dir/SHA256SUMS"
+            if [ ! -f "$sums" ]; then
+                echo "[pre-commit] missing SHA256SUMS for $f"
+                fail=1
+            elif (cd "$dir" && shasum -a 256 -c SHA256SUMS >/dev/null); then
+                echo "[pre-commit] jar checksum OK: $f"
+            else
+                echo "[pre-commit] jar checksum mismatch: $f"
+                fail=1
+            fi
+            checked=$((checked + 1))
+            ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ "$checked" -eq 0 ]; then
+    echo "[pre-commit] OK (nothing staged to check)"
+    exit 0
+fi
+
+if [ "$fail" -ne 0 ]; then
+    echo "[pre-commit] FAILED"
+    exit 1
+fi
+
+echo "[pre-commit] OK"

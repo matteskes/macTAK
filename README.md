@@ -38,6 +38,10 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 | [`docs/ci-qa.md`](docs/ci-qa.md) | CI/QA plan: inherited test corpus, CI tiers, golden fixtures, runner strategy |
 | [`docs/pathway-a.md`](docs/pathway-a.md) | WinTAK golden VM: build record, FreeTAKServer round-trip verification, gotchas |
 
+## Local gates
+
+Run `make hooks` once per clone to install the git hooks (`core.hooksPath .githooks`). The pre-commit hook then checks every staged file: `shellcheck` + `bash -n` on `*.sh`, `markdownlint-cli2` on `*.md`, `actionlint` on `.github/workflows/*.yml`, and SHA256 verification of jars under `dev/g1/transplants/` and `dev/spike/g0/transplants/` against their `SHA256SUMS` manifests. Optional tools that are not installed are skipped with a visible message. `make lint` runs the same checks across the whole `dev/` tree.
+
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE). macTAK inherits the GNU GPL v3 obligation from upstream `deptofdefense/AndroidTacticalAssaultKit-CIV`.

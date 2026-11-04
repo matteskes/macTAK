@@ -75,3 +75,7 @@ The dev Mac also hosts the CI jobs that licensing forces there. VMPal's CI model
 - **No Android emulator in hosted CI** initially — the flakiest thing in mobile CI; JVM-level parity tests first; revisit when the Android oracle suite is formalized (G3+).
 - **No TAK Server / device farm in hosted CI** — licensing (§3).
 - **No self-hosted runner gating PRs** — bounded blast radius when the dev Mac sleeps.
+
+## 9. Manual dispatch surface
+
+`ci.yml` supports `workflow_dispatch` so docs-only PRs can fill required checks. Dispatch runs are maintainer-initiated and not attacker-triggerable, but are unaudited by the paths-ignore rules — treat any dispatch run on an unreviewed ref as unverified.

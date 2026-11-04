@@ -1,0 +1,9 @@
+# Dependabot covers GitHub Actions refs only (this repo pins actions by SHA).
+# Homebrew dependencies are handled by .github/workflows/supply-chain.yml
+# (Brewfile.lock.json freshness gate + osv-scanner).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

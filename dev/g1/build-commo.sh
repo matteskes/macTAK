@@ -40,6 +40,17 @@ HB=/opt/homebrew
 log() { printf '\n[g1-commo] %s\n' "$*"; }
 die() { printf '\n[g1-commo] FATAL: %s\n' "$*" >&2; exit 1; }
 
+# Minimal EXIT trap: on failure, report context; always, kill any lingering
+# child process group and sweep the throwaway build tree if we created it.
+_rc=0
+trap '_rc=$?; if (( _rc != 0 )); then
+        printf "[g1-commo] build FAILED (exit %s) at line %s — inspect %s if present\n" "$_rc" "${LINENO:-?}" "$WORK" >&2
+      fi
+      { kill -- -$$ 2>/dev/null || true; }
+      if [[ -n "${WORK:-}" && -d "$WORK" && _rc -ne 0 ]]; then
+        rm -rf "$WORK"
+      fi' EXIT
+
 # --- preflight -----------------------------------------------------------
 [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] \
   || die "requires macOS arm64 (got $(uname -s) $(uname -m))"

@@ -1,0 +1,19 @@
+{
+  "entries": {
+    "cmake": "4.4.5",
+    "curl": "8.23.0",
+    "gdal": "3.13.3_5",
+    "geos": "3.15.0",
+    "googletest": "1.18.0",
+    "laszip": "3.5.0",
+    "libmicrohttpd": "1.0.10",
+    "libspatialite": "5.1.0_4",
+    "libxml2": "2.15.4",
+    "minizip": "1.3.2_1",
+    "nlohmann-json": "3.12.0",
+    "openssl@3": "3.5.9",
+    "proj": "9.9.0",
+    "protobuf": "36.2",
+    "rsync": "3.5.1"
+  }
+}
