@@ -15,6 +15,11 @@ on:
       - '**.md'
       - '.markdownlint-cli2.jsonc'
       - '.github/workflows/docs.yml'
+  # Manual escape hatch: the main ruleset requires the markdownlint check on
+  # every PR, but the paths filters above skip PRs with no docs changes —
+  # dispatch it (gh workflow run docs.yml --ref <branch>) to fill the
+  # required check on those.
+  workflow_dispatch:
 
 permissions:
   contents: read

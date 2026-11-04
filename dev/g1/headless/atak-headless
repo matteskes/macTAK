@@ -1,26 +1,88 @@
 #!/usr/bin/env bash
 #
-# atak-headless — run macTAK's comms stack headless (no ATAK UI) on macOS.
+# atak-headless — run macTAK headless (no ATAK UI) on macOS.
 #
-# Compiles dev/g1/headless/HeadlessCLI.java on the fly against the staged
-# jcommoncommo.jar and runs it on Zulu 8 with the staged dylibs (built by
-# dev/g1/build-commo.sh). The live CoT round-trip against FTS lives in
-# run.sh next to this script.
+# Two entry points, picked by the first flag:
+#
+#   --layer   (G1.3) engine stack: compiles dev/g1/headless/src/**.java against
+#             the takkernel jars and runs LayerCLI with libtakengine(jni)
+#             (built by dev/g1/build-native.sh). Canary: test/layer.sh.
+#   anything else (G1.2) comms stack: compiles HeadlessCLI.java against the
+#             staged jcommoncommo.jar and runs it with the commo dylibs (built
+#             by dev/g1/build-commo.sh). Live round-trip against FTS: run.sh.
+#
+# Both run on Zulu 8.
 #
 # usage: atak-headless --connect host:port [--uid UID] [--callsign CS]
 #                      [--duration SECONDS] [--send-marker LAT LON]
+#        atak-headless --layer FILE [--layer FILE ...] [--layer-db DIR]
+#                      [--expect-features N] [--quiet]
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 G1="$(cd "$HERE/.." && pwd)"
-DIST="$G1/native-dist"
+DIST="${MACTAK_NATIVE_DIST:-$G1/native-dist}"
 CLASSES="$G1/build-commo/headless-classes"
-
-[[ -f "$DIST/libcommoncommojni.dylib" && -f "$DIST/jcommoncommo.jar" ]] \
-  || { echo "atak-headless: comms stack not staged — run $G1/build-commo.sh" >&2; exit 1; }
 
 JDK="${JAVA_HOME:-$( /usr/libexec/java_home -v 1.8 2>/dev/null || true )}"
 [[ -n "$JDK" ]] || { echo "atak-headless: JDK 1.8 not found" >&2; exit 1; }
+
+# ---- engine entry point (--layer) -------------------------------------------
+if [[ "${1:-}" == "--layer" ]]; then
+  ROOT="$(cd "$G1/../.." && pwd)"
+  VER="${TAKKERNEL_VER:-0.59.1}"
+  M2="${HOME}/.m2/repository"
+  OUT="$HERE/build/classes"
+
+  [[ -f "$DIST/libtakengine.dylib" && -f "$DIST/libtakenginejni.dylib" ]] \
+    || { echo "atak-headless: engine not staged in $DIST — run $G1/build-native.sh" >&2; exit 1; }
+
+  # mavenLocal first, else the committed transplants — same contract as dev/g1/smoke/run.sh.
+  jar() { if [[ -f "$1" ]]; then echo "$1"; else echo "$2"; fi; }
+  KERNEL_M2="$M2/gov/tak/kernel"
+  TRANS="$G1/transplants"
+  CP="$(jar "$KERNEL_M2/takkernel-engine/$VER/takkernel-engine-$VER.jar" "$TRANS/takkernel-engine-$VER.jar")"
+  CP="$CP:$(jar "$KERNEL_M2/takkernel-port/$VER/takkernel-port-$VER.jar" "$TRANS/takkernel-port-$VER.jar")"
+  CP="$CP:$(jar "$KERNEL_M2/takkernel-annotation/$VER/takkernel-annotation-$VER.jar" "$TRANS/takkernel-annotation-$VER.jar")"
+  CP="$CP:$(jar "$M2/gov/tak/support/android-port/3.1.0/android-port-3.1.0.jar" \
+              "$ROOT/dev/spike/g0/transplants/android-port-3.1.0.jar")"
+  # com.atakmap.coremap.log.Log (java target) logs through slf4j; 1.7.30 is upstream's pin.
+  CP="$CP:$(jar "$M2/org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar" "$TRANS/slf4j-api-1.7.30.jar")"
+  CP="$CP:$(jar "$M2/org/slf4j/slf4j-simple/1.7.30/slf4j-simple-1.7.30.jar" "$TRANS/slf4j-simple-1.7.30.jar")"
+  for j in ${CP//:/ }; do
+    [[ -f "$j" ]] || { echo "atak-headless: missing jar: $j" >&2; exit 1; }
+  done
+
+  # GDAL_DATA for the engine's GdalLibrary::init (Homebrew gdal; override with GDAL_DATA).
+  GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/homebrew/opt/gdal/share/gdal)}"
+  [[ -d "$GDAL_DATA_DIR" ]] || { echo "atak-headless: GDAL data dir not found: $GDAL_DATA_DIR (brew install gdal)" >&2; exit 1; }
+
+  # Recompile when the class dir is missing or any source is newer than it. A
+  # failed compile removes the dir so the next run retries instead of running
+  # against a stale/partial class set.
+  if [[ ! -d "$OUT" ]] || [[ -n "$(find "$HERE/src" -name '*.java' -newer "$OUT" -print -quit)" ]]; then
+    rm -rf "$OUT"; mkdir -p "$OUT"
+    "$JDK/bin/javac" -source 8 -target 8 -Xlint:all -Werror -encoding UTF-8 \
+      -classpath "$CP" -d "$OUT" "$HERE"/src/mactak/headless/*.java \
+      || { rm -rf "$OUT"; exit 1; }
+    touch "$OUT"
+  fi
+
+  exec "$JDK/bin/java" \
+    -classpath "$CP:$OUT" \
+    -Djava.library.path="$DIST" \
+    -Dmactak.gdal.data="$GDAL_DATA_DIR" \
+    -Djava.awt.headless=true \
+    -Dorg.slf4j.simpleLogger.defaultLogLevel="${MACTAK_LOG_LEVEL:-warn}" \
+    mactak.headless.LayerCLI \
+    --lib "$DIST/libtakengine.dylib" \
+    --lib "$DIST/libtakenginejni.dylib" \
+    "$@"
+fi
+
+# ---- comms entry point (everything else) ------------------------------------
+[[ -f "$DIST/libcommoncommojni.dylib" && -f "$DIST/jcommoncommo.jar" ]] \
+  || { echo "atak-headless: comms stack not staged — run $G1/build-commo.sh" >&2; exit 1; }
 
 rm -rf "$CLASSES"
 mkdir -p "$CLASSES"

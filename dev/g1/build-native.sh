@@ -215,6 +215,9 @@ if(TARGET takengine)
             list(APPEND _jni_kept ${_s})
         endif()
     endforeach()
+    # macTAK shim: GDAL driver registration without the org.gdal SWIG
+    # bindings (Android's path) — exposes the engine's GdalLibrary::init.
+    list(APPEND _jni_kept ${SRC}/dev/g1/jni-extra/mactak_gdal.cpp)
 
     add_library(takenginejni SHARED ${_jni_kept})
     target_compile_definitions(takenginejni PRIVATE ${takenginejni_DEFS}
@@ -288,6 +291,8 @@ cp "$WORK/gles-stub/libGLESv2.dylib" "$OUT/libGLESv2-stub.dylib"
 log "canary 3/3: JVM in-process load (JNI glue)"
 nm -gU "$WORK/cmake/libtakenginejni.dylib" | grep 'Java_com_atakmap_database_impl_DatabaseImpl_openImpl' >/dev/null \
   || die "libtakenginejni.dylib is missing the DatabaseImpl JNI exports"
+nm -gU "$WORK/cmake/libtakenginejni.dylib" | grep 'Java_mactak_headless_NativeGdal_init' >/dev/null \
+  || die "libtakenginejni.dylib is missing the macTAK GDAL-init shim (dev/g1/jni-extra)"
 "$DEV/g1/smoke/run.sh" "$OUT"
 
 file "$OUT/libtakengine.dylib" "$OUT/libtakenginejni.dylib"

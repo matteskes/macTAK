@@ -78,4 +78,4 @@ The dev Mac also hosts the CI jobs that licensing forces there. VMPal's CI model
 
 ## 9. Manual dispatch surface
 
-`ci.yml` supports `workflow_dispatch` so docs-only PRs can fill required checks. Dispatch runs are maintainer-initiated and not attacker-triggerable, but are unaudited by the paths-ignore rules — treat any dispatch run on an unreviewed ref as unverified.
+`ci.yml` and `docs.yml` support `workflow_dispatch` so PRs whose paths filters skip a workflow (docs-only PRs skip CI; PRs with no docs changes skip Docs) can fill the required checks. Dispatch runs are maintainer-initiated and not attacker-triggerable, but are unaudited by the paths rules — treat any dispatch run on an unreviewed ref as unverified.
