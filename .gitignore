@@ -16,3 +16,6 @@
 
 # G1 probe/build logs (diagnostics, not evidence)
 /dev/g1/*.log
+
+# Cline agent rules (local working preferences for this checkout, never committed here)
+/.clinerules/
