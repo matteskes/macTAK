@@ -122,7 +122,8 @@ Build: `bash dev/g1/build-commo.sh` stages the comms stack into
 `patches/commo/*.patch` (-p1, relative to the copy root — keep separate
 from the -p3 engine patches). Runtime: `dev/g1/headless/atak-headless`
 (compiles HeadlessCLI.java on the fly, Zulu 8); live round-trip smoke:
-`dev/g1/headless/run.sh` (needs FreeTAKServer on 127.0.0.1:8087).
+`dev/g1/headless/run.sh` (two clients against any plaintext-CoT TAK
+server; `TAK_HOST`/`TAK_PORT`, default 127.0.0.1:8087).
 
 ### Diagnostics (patches/commo/0001-diag-socketRead-errno.patch)
 
@@ -134,7 +135,7 @@ core/impl + insert.py; patch must be a scoped `git diff -- core/impl`).
 
 ### Traps found on the way (do not rediscover these)
 
-Continuing G1.1's numbering (these are traps 8–11):
+Continuing G1.1's numbering (these are traps 8–12):
 
 1. **commo fires `interfaceUp` BEFORE the context enters its sendable
    `upContexts` list** (streamingsocketmanagement.cpp: fireInterfaceChange,
@@ -157,12 +158,115 @@ Continuing G1.1's numbering (these are traps 8–11):
 4. **install_name_tool invalidates the linker signature** — ad-hoc
    codesign after every install_name change (arm64 refuses unsigned
    dylibs).
+5. **A TAK server does not reflect a client's own events back to it.**
+   The original one-client `run.sh` passed only because FreeTAKServer
+   sends a welcome GeoChat (`b-t-f`) and echoes the sender's marker;
+   OpenTAKServer does neither (`received=0` → FAIL, while the bytes were
+   on the wire and visible to other clients). A round-trip proof needs a
+   second client: `run.sh` now runs A (listener) and B (presence +
+   marker) and asserts each saw the other.
 
 ### Round-trip contract (verified)
 
-`run.sh` passes when: iface-up seen, presence + marker tx'd
-(commo diag shows full-size `io-tx write w=N r=N`), and ≥1 CoT arrives
-back (FTS welcome chat `b-t-f` and/or our own marker `a-f-G-U-C`
-echoed by the server). Verified against FreeTAKServer (container, host
-network, tcp/8087): 12 s run → received=2, presenceSent=7, markerSent=1.
-Restart the FTS container between sessions for a clean contact list.
+`run.sh` passes when: both ifaces up, B's presence + marker tx'd (commo
+diag shows full-size `io-tx write w=N r=N`), A logged
+`contact-added <B>` and received B's marker (`uid="<B>-m1"`,
+`a-f-G-U-C`), B received A's presence (`t-x-a-t-a-k`). Verified against
+**OpenTAKServer** (`steintak`, tcp/8088, 2026-11-03): 12 s run → A
+`received=7` (6 presence + marker), B `received=7`, each side
+`contact-added` the other. Earlier one-client form verified against
+FreeTAKServer (container, host network, tcp/8087): received=2 (welcome
+chat + echoed marker). Restart the FTS container between sessions for a
+clean contact list; OTS needs no reset.
+
+## G1.3 — atak-headless --layer: offline vector layers (engine feature stack)
+
+`atak-headless --layer FILE` is the roadmap's "offline map layer opens"
+criterion, minus the GL: the engine's **native OGR feature provider**
+parses the file, the **native `PersistentDataSourceFeatureDataStore2`**
+persists it (feature-set databases under `--layer-db DIR`, exactly what
+ATAK's overlay manager does on Android), and `FeatureDataStore2` cursors
+read it back. Runs on the engine stack (`build-native.sh`), not the comms
+stack — the launcher picks the entry point from the first flag
+(`--layer` → `mactak.headless.LayerCLI`, else `HeadlessCLI`).
+
+```text
+dev/g1/headless/atak-headless --layer FILE [--layer FILE ...] [--layer-db DIR]
+                              [--expect-features N] [--quiet]
+```
+
+Canary (`dev/g1/headless/test/layer.sh`, a `native-engine` CI step after
+`build-native.sh`): the committed `test/fixtures/sf-landmarks.geojson`
+(3 points, 2 lines, 3 polygons) plus, when `ogr2ogr` is on PATH (it is —
+gdal is a build dep), the same features as **GPKG, KML and shapefile**.
+All four PASS:
+
+```text
+layer sf-landmarks.geojson             8 feature(s) in 41 ms
+set 1    OGR    GeoJSON      sf-landmarks.geojson             8 feature(s)  sf-landmarks.geojson
+1 feature set(s), 8 feature(s) in store
+  fid 4294967297   set 1   Ferry Building               Point              [37.79550 -122.39370 .. 37.79550 -122.39370]
+  fid 4294967300   set 1   Golden Gate Bridge           LineString         [37.80600 -122.47880 .. 37.83240 -122.47500]
+  fid 4294967302   set 1   Golden Gate Park             Polygon            [37.76400 -122.51070 .. 37.77420 -122.45310]
+…
+PASS: 8 feature(s) opened through FeatureDataStore2
+```
+
+### Design decisions
+
+- **GDAL driver registration is a macTAK JNI shim.** On Android the
+  engine's `GdalLibrary.init()` calls `gdal.AllRegister()` through the
+  org.gdal SWIG bindings; Homebrew GDAL ships no Java bindings.
+  `dev/g1/jni-extra/mactak_gdal.cpp` (compiled into
+  `libtakenginejni.dylib` by `build-native.sh`, export checked in its
+  canary gate) exposes the engine's own native
+  `GdalLibrary::init(gdalDataDir)` as `mactak.headless.NativeGdal.init`.
+  The launcher passes `-Dmactak.gdal.data=$(gdal-config --datadir)`
+  (override: `GDAL_DATA`).
+- **The provider set is the one ATAK registers**: `new
+  OgrFeatureDataSource()` (native `OGR_FeatureDataSource2` + KML/GPX/SHP
+  `OGRDriverDefinition2` SPIs); any other GDAL vector driver (GeoJSON,
+  GPKG, …) falls through to `DefaultDriverDefinition2`. Nothing is
+  registered by the C++ library itself — `FeatureDataSourceFactory` is
+  empty until Java registers providers.
+- **slf4j is on the engine-side classpath.** The `java`-target
+  `com.atakmap.coremap.log.Log` logs through slf4j; `slf4j-api` +
+  `slf4j-simple` 1.7.30 (upstream's pin, `gradle/versions.gradle`) are
+  committed transplants (Maven Central, SHA-1 verified on fetch); default
+  level `warn`, `MACTAK_LOG_LEVEL=debug` for engine chatter.
+- **Engine-side Java keeps the `mactak.headless` package** (under
+  `headless/src/`) because the JNI shim's symbol name is derived from it;
+  the comms-side `HeadlessCLI` stays flat in the default package as
+  G1.2 left it.
+
+### Traps found on the way (do not rediscover these)
+
+Continuing G1.2's numbering (these are traps 13–15):
+
+1. **No GDAL drivers unless something calls `GDALAllRegister`.** Symptom:
+   `ERROR 4: No driver registered` from OGR and
+   `PersistentDataSourceFeatureDataStore2.add()` returning `false` with no
+   exception. Nothing in `libtakengine` registers drivers on load; the
+   shim above must run before the first provider touches GDAL.
+2. **Never call `FeatureCursor.get()` / `Feature.getStyle()` on the JVM.**
+   Materialising a `Feature` parses its style, and
+   `FeatureStyleParser.<clinit>` builds an `android.util.LruCache` — a
+   `"Stub!"` in the android-port transplant (the predicted trap from the
+   G1.1 smoke contract, now met for real). Read through the cursor's
+   `FeatureDefinition` view instead: `getRawGeometry()` +
+   `getGeomCoding()` + `GeometryFactory.parseWkb/parseSpatiaLiteBlob`.
+3. **The first engine code path that logs needs slf4j on the classpath**
+   — `NativeFeatureDataStore2.finalize` threw
+   `NoClassDefFoundError: org/slf4j/LoggerFactory` after a run that had
+   otherwise succeeded. The G1.1 smoke never logged, so this stayed
+   hidden until M3.
+
+### Known-benign noise
+
+- `WARN … Native FeatureDataStore2 leaked` on close: upstream's
+  `PersistentDataSourceFeatureDataStore2.dispose()` destructs its own
+  pointer and then calls `impl.finalize()`, which only checks the base
+  view's (never-zeroed) pointer. Not a leak; the native object is gone.
+- `SQLITE [SQL logic error] no such column: definition_12_063` on GPKG:
+  GDAL 3.13 probes the optional WKT2 column of `gpkg_spatial_ref_sys`;
+  files written without it log once and open fine.

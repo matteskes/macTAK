@@ -67,6 +67,12 @@ jobs:
       - name: Build engine + canary (dev/g1/build-native.sh, verbatim)
         run: bash dev/g1/build-native.sh
 
+      - name: atak-headless offline layer open (GeoJSON/GPKG/KML/SHP via FeatureDataStore2)
+        # G1 "offline map layer opens": native OGR provider parses the
+        # fixture (+ ogr2ogr-derived GPKG/KML/SHP), the persistent feature
+        # data store holds it, FeatureDataStore2 cursors read it back.
+        run: bash dev/g1/headless/test/layer.sh
+
       - name: Upload engine artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -74,6 +80,7 @@ jobs:
           name: native-engine-macos-arm64
           path: |
             dev/g1/native-dist/libtakengine.dylib
+            dev/g1/native-dist/libtakenginejni.dylib
             dev/g1/native-dist/libGLESv2-stub.dylib
             dev/g1/native-dist/takengine-tests.xml
           if-no-files-found: error
@@ -194,7 +201,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s globstar nullglob
-          scripts=(dev/**/*.sh)
+          scripts=(dev/**/*.sh dev/g1/headless/atak-headless) # launcher has no .sh suffix
           if [ "${#scripts[@]}" -eq 0 ]; then
             echo "error: no scripts matched dev/**/*.sh" >&2
             exit 1

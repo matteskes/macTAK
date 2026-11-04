@@ -1,0 +1,30 @@
+{
+  "type": "FeatureCollection",
+  "name": "sf-landmarks",
+  "features": [
+    { "type": "Feature", "properties": { "name": "Ferry Building", "kind": "poi" },
+      "geometry": { "type": "Point", "coordinates": [ -122.3937, 37.7955 ] } },
+    { "type": "Feature", "properties": { "name": "Coit Tower", "kind": "poi" },
+      "geometry": { "type": "Point", "coordinates": [ -122.4058, 37.8024 ] } },
+    { "type": "Feature", "properties": { "name": "Alcatraz Island", "kind": "poi" },
+      "geometry": { "type": "Point", "coordinates": [ -122.4230, 37.8267 ] } },
+    { "type": "Feature", "properties": { "name": "Golden Gate Bridge", "kind": "route" },
+      "geometry": { "type": "LineString", "coordinates": [
+        [ -122.4750, 37.8060 ], [ -122.4780, 37.8199 ], [ -122.4788, 37.8324 ] ] } },
+    { "type": "Feature", "properties": { "name": "Embarcadero", "kind": "route" },
+      "geometry": { "type": "LineString", "coordinates": [
+        [ -122.3937, 37.7955 ], [ -122.3990, 37.7900 ], [ -122.3894, 37.7880 ] ] } },
+    { "type": "Feature", "properties": { "name": "Golden Gate Park", "kind": "area" },
+      "geometry": { "type": "Polygon", "coordinates": [ [
+        [ -122.5107, 37.7714 ], [ -122.4545, 37.7742 ], [ -122.4531, 37.7661 ],
+        [ -122.5100, 37.7640 ], [ -122.5107, 37.7714 ] ] ] } },
+    { "type": "Feature", "properties": { "name": "Presidio", "kind": "area" },
+      "geometry": { "type": "Polygon", "coordinates": [ [
+        [ -122.4860, 37.8070 ], [ -122.4470, 37.8050 ], [ -122.4460, 37.7880 ],
+        [ -122.4850, 37.7890 ], [ -122.4860, 37.8070 ] ] ] } },
+    { "type": "Feature", "properties": { "name": "Mission Dolores Park", "kind": "area" },
+      "geometry": { "type": "Polygon", "coordinates": [ [
+        [ -122.4283, 37.7616 ], [ -122.4257, 37.7616 ], [ -122.4257, 37.7580 ],
+        [ -122.4283, 37.7580 ], [ -122.4283, 37.7616 ] ] ] } }
+  ]
+}

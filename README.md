@@ -6,8 +6,8 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 
 | Capability | Status |
 |---|---|
-| Offline map layers via the takkernel engine (GeoPackage, shapefile, …) | 🔵 In progress — G1 runs the engine headless on macOS arm64 |
-| CoT in/out via commoncommo, interoperating with FreeTAKServer | 🔵 In progress — protocol-level round-trip already witnessed |
+| Offline map layers via the takkernel engine (GeoPackage, shapefile, …) | 🔵 In progress — G1 M3: `atak-headless --layer FILE` opens GeoJSON/GPKG/KML/SHP headless through the engine's native OGR provider and `FeatureDataStore2` |
+| CoT in/out via commoncommo, interoperating with FreeTAKServer | 🔵 In progress — G1 M2: `atak-headless --connect HOST:PORT` on the commoncommo JNI stack; two-client round-trip verified against FreeTAKServer and OpenTAKServer |
 | Track persistence via the engine's tracking database | 🔵 In progress — G1 |
 | Native macOS map rendering — ANGLE-on-Metal as the GLES provider | ⚪ Planned — G2 |
 | Core client subset and full ATAK-CIV parity | ⚪ Planned — G4–G6 |
