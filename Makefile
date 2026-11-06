@@ -1,4 +1,4 @@
-.PHONY: help hooks build build-angle angle gen-gles-shim check-gen-gles-shim test test-roundtrip test-render test-render-resize smoke-window lint clean
+.PHONY: help hooks build build-angle angle gen-gles-shim check-gen-gles-shim test test-roundtrip test-render test-render-resize build-window-host test-render-window smoke-window lint clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -21,6 +21,8 @@ help:
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-render    - G2 render smoke: engine GLGlobe into an EGL pbuffer on ANGLE, bare + GeoJSON layer + MBTiles basemap (dev/g2/render/run.sh)"
 	@echo "  test-render-resize - M3.1 dynamic-size exercise: --resize mid-run, bare + GeoJSON layer (OnSizeChangedListener must fire)"
+	@echo "  build-window-host - compile the M3.1 window-harness host dylib (WindowHost.m -> build/window-host.dylib)"
+	@echo "  test-render-window - M3.1 window-surface exercise: engine into a CAMetalLayer window surface, --resize via the host's drawableSize (off-screen; CI runs it too)"
 	@echo "  smoke-window   - G2 M3.0 manual gate: NSWindow -> CAMetalLayer -> eglCreateWindowSurface on ANGLE; opens a window ~3 s, writes dev/g2/build/window-smoke.ppm (needs a GUI session)"
 	@echo "  lint           - shellcheck + bash -n over dev/**/*.sh; markdownlint/actionlint if installed"
 	@echo "  clean          - remove build outputs"
@@ -71,6 +73,22 @@ test-render-resize:
 	bash dev/g2/render/run.sh --resize 384x256 --out dev/g2/build/render-resize.png
 	bash dev/g2/render/run.sh --layer dev/g1/headless/test/fixtures/sf-landmarks.geojson \
 		--resize 384x256 --out dev/g2/build/render-resize-layer.png
+
+build-window-host:
+	bash dev/g2/render/build-window-host.sh
+
+# M3.1 window-surface exercise: the engine renders into a CAMetalLayer
+# window surface (a bare layer host — see WindowHost.m for why there is no
+# NSWindow); the mid-run resize goes through the host's drawableSize first
+# (the host's truth), then ctx.resize() proves EGL tracks it. Off-screen,
+# so it needs no GUI session and CI runs it too. The readback PNGs are the
+# artifacts.
+test-render-window: build-window-host
+	bash dev/g2/render/run.sh --window 640x480 --resize 384x256 --frames 6 \
+		--out dev/g2/build/render-window.png
+	bash dev/g2/render/run.sh --window 640x480 --resize 384x256 \
+		--layer dev/g1/headless/test/fixtures/sf-landmarks.geojson \
+		--out dev/g2/build/render-window-layer.png
 
 # M3.0 manual gate (dev Mac, GUI session): `angle` stages the ANGLE pair and
 # runs the headless pbuffer canary first, then the window opens for ~3 s and

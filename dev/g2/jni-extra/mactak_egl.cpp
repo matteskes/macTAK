@@ -213,12 +213,13 @@ namespace {
         return true;
     }
 
-    // M3.1: adopt width/height for the current surface after the host changed
-    // the backing size. Window surfaces: ANGLE's Metal backend tracks the
-    // layer's drawableSize, so eglQuerySurface should already report the new
-    // size; if it still reports the old one, rebuild the window surface on
-    // the same layer, config and context. Pbuffers: rebuildPbuffer. Returns
-    // false with lastError set.
+    // M3.1: adopt width/height for the current surface after the host
+    // changed the backing size. Pbuffers: rebuildPbuffer. Window surfaces:
+    // ANGLE's Metal backend sizes a window surface at creation and does not
+    // track the layer's drawableSize afterwards (the fast-path query below
+    // stays for backends that do), so a window resize is destroy + recreate
+    // on the same layer, config and context. Returns false with lastError
+    // set.
     bool adoptSurfaceSize(int width, int height) {
         EGLint qw = 0, qh = 0;
         if (g.QuerySurface(g.dpy, g.surf, EGL_WIDTH, &qw)
@@ -232,14 +233,21 @@ namespace {
             setError("resize: eglMakeCurrent(release)");
             return false;
         }
+        // Destroy before create: ANGLE's Metal backend sizes a window
+        // surface once, at creation, and refuses a second surface on a live
+        // CAMetalLayer with EGL_BAD_ALLOC — the old one cannot linger
+        // (observed 2026-11-06 in the window-harness exercise). Until the
+        // recreate lands the context has no surface; if it fails there is
+        // no window-surface fallback (same refusal), so say so loudly and
+        // let the caller's exit gates report it.
+        g.DestroySurface(g.dpy, g.surf);
+        g.surf = EGL_NO_SURFACE;
         const EGLSurface rebuilt = g.CreateWindowSurface(g.dpy, g.cfg, (EGLNativeWindowType)g.nativeWindow, nullptr);
         if (rebuilt == EGL_NO_SURFACE) {
             setError("resize: eglCreateWindowSurface");
-            if (!g.MakeCurrent(g.dpy, g.surf, g.surf, g.ctx))
-                std::fprintf(stderr, "mactak_egl: resize fallback left no current surface\n");
+            std::fprintf(stderr, "mactak_egl: resize left the context without a surface\n");
             return false;
         }
-        g.DestroySurface(g.dpy, g.surf);
         g.surf = rebuilt;
         if (!g.MakeCurrent(g.dpy, g.surf, g.surf, g.ctx)) { setError("resize: eglMakeCurrent"); return false; }
         qw = 0; qh = 0;

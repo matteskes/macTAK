@@ -253,6 +253,24 @@ jobs:
           bash dev/g2/render/run.sh --layer dev/g1/headless/test/fixtures/sf-landmarks.geojson \
             --resize 384x256 --out dev/g2/build/render-resize-layer.png
 
+      - name: Window-surface render exercise (--window, M3.1)
+        # First real caller of the window-surface path: the engine renders
+        # into a CAMetalLayer and --resize goes through the host's
+        # drawableSize before ctx.resize() proves EGL tracks it (see
+        # WindowHost.m for why there is no NSWindow here: AppKit needs the
+        # main thread, the java launcher's main is a spawned pthread, and
+        # EGL only takes the layer — so the exercise is off-screen and
+        # headless-safe, and CI gates it like the pbuffer smokes).
+        if: needs.changes.outputs.changed == 'true'
+        env:
+          MACTAK_GL_DEBUG: '1'
+        run: |
+          bash dev/g2/render/run.sh --window 640x480 --resize 384x256 --frames 6 \
+            --out dev/g2/build/render-window.png
+          bash dev/g2/render/run.sh --window 640x480 --resize 384x256 \
+            --layer dev/g1/headless/test/fixtures/sf-landmarks.geojson \
+            --out dev/g2/build/render-window-layer.png
+
       - name: Offline layer canary on the ANGLE-linked engine
         # both canaries report every run; only a failed build skips this one
         if: ${{ !cancelled() && steps.build-commo.outcome == 'success' }}
@@ -270,6 +288,8 @@ jobs:
             dev/g2/build/render-basemap.png
             dev/g2/build/render-resize.png
             dev/g2/build/render-resize-layer.png
+            dev/g2/build/render-window.png
+            dev/g2/build/render-window-layer.png
             hs_err_pid*.log
           if-no-files-found: error
 

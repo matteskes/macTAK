@@ -28,6 +28,18 @@ otool -L "$DIST/libtakengine.dylib" | grep -q '@rpath/libGLESv2.dylib' \
 JDK="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8 2>/dev/null || true)}"
 [[ -n "$JDK" ]] || { echo "render/run.sh: JDK 1.8 not found" >&2; exit 2; }
 
+# --window: build the M3.1 window-harness host dylib (WindowHost.m) and hand
+# its path to the smoke. The harness layer is off-screen, so this needs no
+# GUI session — CI runs the same exercise on a runner.
+WIN_HOST_ARGS=()
+for a in "$@"; do
+  if [[ "$a" == "--window" ]]; then
+    WIN_HOST="$(bash "$HERE/build-window-host.sh")"
+    WIN_HOST_ARGS=(--window-host "$WIN_HOST")
+    break
+  fi
+done
+
 # mavenLocal first, else the committed transplants — same contract as dev/g1.
 jar() { if [[ -f "$1" ]]; then echo "$1"; else echo "$2"; fi; }
 KERNEL_M2="$M2/gov/tak/kernel"
@@ -90,4 +102,5 @@ fi
   --lib "$DIST/libtakengine.dylib" \
   --lib "$DIST/libtakenginejni.dylib" \
   --egl "$DIST/libEGL.dylib" --gles "$DIST/libGLESv2.dylib" \
-  "$@"
+  "$@" \
+  ${WIN_HOST_ARGS[@]+"${WIN_HOST_ARGS[@]}"}
