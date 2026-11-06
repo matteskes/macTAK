@@ -594,3 +594,84 @@ CI compiles the window TU (`--compile-only`, in the render job); the
 live gate stays manual on the dev Mac — CI has no GUI session — with
 the PPM as its artifact. Next: M3.1, window natives + dynamic-size
 `EglRenderContext` (the pbuffer canary stays green throughout).
+
+## M3.1 — window natives + dynamic-size context (2026-11-06, #49)
+
+`RenderSmoke --window W×H` swaps the init pbuffer for a **window
+surface**: a host dylib (`render/WindowHost.m`) owns a bare off-screen
+`CAMetalLayer`, `render/WindowHost.java` drives it over JNI, and
+`--resize` changes the layer's `drawableSize` mid-run the way a real
+host does on a window resize — before `ctx.resize()` adopts it. PASS
+requires a window surface on the layer, the mid-run resize gone through
+the host (`eglQuerySurface` truth at the new size), the
+`OnSizeChangedListener` fired, every `swap()` a successful present
+(counted; zero failures allowed), sentinel fully replaced and content
+pixels at the new size, and the readback PNG at 384×256. Two runs gate
+(`make test-render-window`): bare, and the M2 GeoJSON + M2.3 basemap
+stack (116 presents on this box). This upgrades the plan above ("the
+window gate is manual on the dev Mac"): the harness needs no GUI
+session, so **CI runs the exercise itself**.
+
+### The ANGLE-Metal window-surface sizing contract
+
+The gate exists because of these (dated comments in `mactak_egl.cpp`):
+
+- **A window surface's size is taken once at creation.** After the host
+  resizes the layer (`drawableSize` 640×480 → 384×256),
+  `eglQuerySurface` keeps reporting 640×480 — unlike pbuffers, where
+  the resize fast-path's query stays truthful. `adoptSurfaceSize`
+  treats window surfaces as fixed-size: **destroy, then create** on the
+  same layer, config and context.
+- **The ordering is load-bearing:** a second `eglCreateWindowSurface`
+  on a layer that still holds a live surface is refused with
+  `EGL_BAD_ALLOC` — the first cut created-then-destroyed and hit
+  exactly that. Destroy-then-create is mandatory, and if the recreate
+  fails there is no window-surface fallback; the caller's exit gates
+  report it.
+- **No `dpi` parameter**, though the natives plan above said
+  `createWindowSurface(layer, w, h, dpi)`: the harness pins
+  `contentsScale = 1`, so point size = pixel size = `drawableSize` and
+  the engine's size story is unchanged. Backing-scale calibration
+  (labels at Retina density, per the calibration note above) belongs to
+  M3.3's Retina step — one visual check there, not guesswork.
+
+### The harness has no NSWindow — launcher-thread evidence for the shell model
+
+The first cut hosted a real `NSWindow` and AppKit aborted it:
+`NSWindow should only be instantiated on the main thread!`. Under the
+plain `java` launcher, `JavaMain` runs on a **spawned pthread**, not
+the process main thread — which also corrects F2's assumption above
+("NSApp runs on the process main thread (which is Java's main)"): it
+isn't, so option B would have needed a main-thread dispatch dance of
+its own. EGL needs only the layer, so the harness hosts a bare
+`CAMetalLayer` — bounds pinned equal to `drawableSize`, `contentsScale`
+1 — with no AppKit at all, headless-safe, and direct evidence for A:
+the Swift shell owns the real main thread from the first line, exactly
+where AppKit wants it.
+
+### Gates and provenance
+
+`javac -Xlint:all -Werror`; `test-render-window` 2/2 (bare + GeoJSON);
+`test-render-resize` 2/2 and `test-render` 3/3 — the pbuffer canaries
+are untouched by the `adoptSurfaceSize` change; `make lint`; the dylib
+build CI uses (`build-window-host.sh`). Until a stacked PR is
+retargeted to `main`, it sits checkless by design — pull_request runs
+are `branches: [main]`-only (the required-checks setup's design, per
+ci.yml's header) — so its content is validated meanwhile by
+`workflow_dispatch` runs on the branch tip, which run the ref's own
+ci.yml with all gates forced on; the retarget still happens, but only
+when the PR is about to merge.
+
+**Local incident, for the next rebuild (2026-11-06).** After
+`make build-angle` re-staged the dylibs, every process that dlopen'ed
+them died with SIGKILL (exit 137): the JVM canary, and `python3`
+`ctypes` on the *engine* dylib too — while `codesign -v --strict`
+passed on both (linker-signed adhoc) and memory was 92% free. A copy
+to /tmp, without the `com.apple.provenance` xattr, gave a clean dlopen
+error instead of the kill — the tell. Fresh `codesign -f -s -` over
+the staged pair fixed it at once; rebuilds since are stable. Suspected:
+macOS 27.2 provenance enforcement against re-staged linker-signed
+output. Candidate follow-up: a one-line re-sign in `build-native.sh`'s
+staging step (deliberately left out of #49). Diagnosis shortcut: a
+Killed: 9 with a passing `codesign -v` means re-sign the staged pair
+before re-bisecting anything.
