@@ -1,6 +1,6 @@
 --- a/tmp/takeng-src/cpp/renderer/GLMegaTexture.cpp
 +++ b/tmp/takeng-src/cpp/renderer/GLMegaTexture.cpp
-@@ -173,7 +173,9 @@
+@@ -173,6 +173,8 @@
          sharedTiles.reset(new std::map<GLuint, std::size_t>());
      // establish relationship if necessary
      if (!other.shareWith) {
@@ -10,4 +10,3 @@
 +        other.shareWith = this;
          other.sharedTiles = sharedTiles;
      }
- 
