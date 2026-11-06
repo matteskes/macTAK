@@ -1,0 +1,13 @@
+--- a/tmp/takeng-src/cpp/renderer/GLMegaTexture.cpp
++++ b/tmp/takeng-src/cpp/renderer/GLMegaTexture.cpp
+@@ -173,7 +173,9 @@
+         sharedTiles.reset(new std::map<GLuint, std::size_t>());
+     // establish relationship if necessary
+     if (!other.shareWith) {
+-        other,shareWith = this;
++        // upstream: `other,shareWith = this;` -- the comma operator set
++        // this->shareWith = this, so every later share returned TE_IllegalState
++        other.shareWith = this;
+         other.sharedTiles = sharedTiles;
+     }
+ 

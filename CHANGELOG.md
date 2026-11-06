@@ -44,6 +44,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `$TMPDIR` (#27); the selftest cleans its `dpselftest-*` dirs too (#30).
 - The canary's openssl recipe runs on bare macOS LibreSSL
   (`/usr/bin/openssl`), so the fixture builds without Homebrew OpenSSL (#28).
+- Engine patch `megatexture-sharetile-comma-operator.patch`:
+  `GLMegaTexture::shareTile` wrote `other,shareWith = this;` — the comma
+  operator set `this->shareWith = this`, so every share after the first
+  returned `TE_IllegalState`. `shareTile` has no callers at the pin
+  (front/back swaps use `transferTile`), so G2.4 was never gated on it.
 
 ## [0.3.0] - 2026-11-05 — G2: map renders (ANGLE on Metal)
 

@@ -73,6 +73,7 @@ bash dev/g2/render/run.sh --basemap FILE.mbtiles --layer FILE.geojson --out /tmp
 | `../g1/patches/glsl-es-version-on-angle.patch` | Engine emitted desktop `#version 330` on `__APPLE_OSX__`; ANGLE is real ES → `#version 300 es` (trap 2). |
 | `../g1/patches/terraintile-guard-missing-attribs.patch` | `GLTerrainTile` enabled attrib `-1` for shader variants without normals/nodata/ecef → `GL_INVALID_VALUE` every frame (trap 3). |
 | `../g1/patches/megatexture-release-erase-while-iterating.patch` | `GLMegaTexture::release()/clear()` erased map nodes through the iterator they were walking → SIGSEGV on `GLMapView.release()` (trap 10). |
+| `../g1/patches/megatexture-sharetile-comma-operator.patch` | `GLMegaTexture::shareTile` wrote `other,shareWith = this;` (comma operator → `this->shareWith = this`) → every later share returned `TE_IllegalState`. `shareTile` has no callers at the pin; fixed so a future caller gets working sharing. |
 
 `dev/g1/build-native.sh` grew `MACTAK_GLES=stub|angle` (default `stub`; CI
 has no ANGLE). In `angle` mode the engine links `angle-dist/libGLESv2.dylib`
@@ -198,22 +199,23 @@ is ordered roughly by when it bites.
   conditions are in "M3 design — window surface and host model (decided
   2026-11-05)" below. The EGL/GL stack above the surface does not change
   (see "Pbuffer first, window second" above).
-- **Real imagery (G2.4) pulls three engine patches** — latent upstream
-  bugs documented but not yet exercised by the synthetic fixture, plus the
-  native line renderer's integer attributes:
-  - `GLMegaTexture::shareTile` has `other,shareWith = this;` (comma
-    operator: sets `this->shareWith = this`, never `other.shareWith`), so
-    after the first share every call from that megatexture returns
-    `TE_IllegalState`. Still open after G2.3 — the synthetic graticule
-    fixture never shares front/back tiles, and megatexture sharing is the
-    first thing large raster sets hit. Fix in the megatexture patch once
-    front/back tile sharing runs with real content (unchanged condition;
-    keep it visible).
+- **Real imagery (G2.4) pulls two engine patches** — a latent upstream
+  bug not yet exercised by the synthetic fixture, plus the native line
+  renderer's integer attributes (a third, `shareTile`, is done — below):
+  - ~~`GLMegaTexture::shareTile` comma operator~~ — **fixed 2026-11-06**
+    (`../g1/patches/megatexture-sharetile-comma-operator.patch`):
+    `other,shareWith = this;` set `this->shareWith = this`, never
+    `other.shareWith`, so every share after the first returned
+    `TE_IllegalState`. Correction to the earlier note here: `shareTile`
+    has **no callers** at the pin (engine C++, JNI glue, ATAK Java) —
+    `GLGlobeSurfaceRenderer`'s front/back swap uses `transferTile`, so
+    real imagery never reaches it and G2.4 is not gated on it. Clang
+    `-Wcomma` flags the pristine TU and is clean after the patch; the
+    stub-GLES canary cannot exercise it (`bindTile` needs a complete FBO).
   - `GLQuadTileNode4.resolveTexture` composites child textures with
     `uColor` set on whatever program happens to be current (G2.3
     known-benign noise) — bind `core.shader.handle` before compositing.
-    Same patch window; Android drivers hide both today, ANGLE surfaces
-    both.
+    Android drivers hide it today; ANGLE surfaces it.
   - `GLBatchGeometryRenderer3/4` feed `in int` attributes through
     `glVertexAttribPointer` (trap 12's pattern, already redirected in the
     shim) — patch when the native line renderer is on the path.
@@ -541,7 +543,7 @@ first pixels and nothing else.
 ### Out of scope (unchanged)
 
 AWT stays out (`java.awt.headless=true` remains); the split-process design
-stays shelved unless F1 *and* F2 both go red; G2.4 (real imagery, three
+stays shelved unless F1 *and* F2 both go red; G2.4 (real imagery, two
 engine patches) is the next milestone after M3 and separate.
 
 ## M3.0 — the window-surface smoke (2026-11-06, #36)
