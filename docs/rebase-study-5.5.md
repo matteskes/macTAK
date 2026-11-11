@@ -135,3 +135,66 @@ never emits it. TAK servers accept CoT without it today; adding
 
 No time estimate yet: the first spike is the natural point to make one,
 as G0 was for 4.6.
+
+## Spike 1 harness plan
+
+Recorded 2026-11-11, before the spike started, so it can resume from here.
+Nothing below exists in the repo yet.
+
+**Where it lives.** A new `dev/spike/g55/`, separate from `dev/g1`, so the
+working 4.6 build and its CI gates stay untouched until the re-pin (step
+4). Its `NOTES.md` follows house style: State first, traps with guards,
+real log lines.
+
+**Upstream source.** A sparse, shallow clone of
+`TAK-Product-Center/atak-civ` pinned at `9f6893d`, limited to `takkernel`
+and `khronos`. 5.5 carries the Khronos headers in-tree and no longer uses
+`stl-soft`, so neither submodule is needed.
+
+**Patch refresh, `refresh-patches.py`.** A tool, not a hand edit, so the
+refresh can be rerun. It applies the 4.6 series to a copy of the 5.5
+engine **stacked, in build order** (`dev/spike/g0/patches/gdal-drift-*`,
+then `dev/g1/patches/*`), because several patches touch the same files.
+For each patch, in this order:
+
+1. Applies at `--fuzz=0`: copied unchanged.
+2. Applies in reverse: already upstream, dropped. This check must come
+   before the fuzzy one: `glbatchshaders-dead-store` also applies forward
+   with fuzz, which would wrongly apply it twice.
+3. Applies at `--fuzz=3`: regenerated from the before and after files, so
+   the copy applies at `--fuzz=0` as `build-native.sh` requires. The
+   regenerated diff keeps the `a/tmp/takeng-src/...` prefix, so the
+   `patch -p3` line is unchanged.
+4. Otherwise: failed, listed for hand porting.
+
+Output: `dev/spike/g55/patches/` plus a printed summary by status.
+
+**Build, `build-engine.sh`.** Modeled on the core-engine half of
+`dev/g1/build-native.sh`; the JNI glue and the canaries wait for a second
+iteration:
+
+- Copy `takkernel/engine/src/main`, apply the refreshed series.
+- Wrapper CMake with the same Homebrew substitutions as today: include and
+  link paths, `SQLITE_HAS_CODEC` removed, the minizip renames, LAS sources
+  excluded, the brew `sqlite3` and `libxml2` pinned by full path, the GLES
+  stub in the `GLESv2` slot.
+- Leave 3D Tiles out: drop `formats/c3dt/` sources, including the
+  `CesiumNative.cpp` and `CesiumUtility.cpp` that `CommonSources.cmake`
+  adds on every platform, and the draco include path.
+- Build with Ninja and `-k 0`, so one run compiles every source and
+  collects every failure rather than stopping at the first.
+- Write a summary: the failing sources and the first error of each. That
+  list is the spike's answer and the basis for its time estimate.
+
+**CI, `spike-55.yml`.** Triggered by hand (`workflow_dispatch`) only, and
+not a required check, so it never blocks a PR. One `macos-26` job: the
+same `brew install` line as the `native-engine` job, macTAK and the
+pinned 5.5 sparse checkout (`persist-credentials: false`), actions pinned
+by commit, then `build-engine.sh`, with the build log and summary uploaded
+as an artifact.
+
+**Exit of spike 1.** The failure list, triaged into: fixed by the
+remaining hand-ported patches, new GDAL 3 drift, toolchain drift, and
+genuinely new work. Then a time estimate for the engine half of the
+rebase, and the decision whether to continue with the JNI glue (second
+iteration) or stop.

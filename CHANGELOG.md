@@ -24,6 +24,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   applies and is still needed. Recommends rebasing in stages before G3.
   The roadmap (G3, G6, risk R8), the pathway-c risk register (R7) and the
   CONTRIBUTING reading order point to both docs.
+- `docs/rebase-study-5.5.md` §Spike 1 harness plan: how spike 1 is to be
+  built before any of it exists — a separate `dev/spike/g55/`, a stacked
+  patch-refresh tool (`refresh-patches.py`), a keep-going engine build
+  without 3D Tiles (`build-engine.sh`), and a hand-triggered macOS
+  workflow (`spike-55.yml`).
 
 - Clean Code skills for contributors and agents (`.claude/skills/clean-code*`):
   an entry-point skill that sets scope (code macTAK owns; never `src/` or
