@@ -1,0 +1,126 @@
+--- a/tmp/takeng-src/java/com/atakmap/map/layer/raster/gdal/GdalTileReader.java
++++ b/tmp/takeng-src/java/com/atakmap/map/layer/raster/gdal/GdalTileReader.java
+@@ -111,6 +111,72 @@
+     };
+ 
+     private final static int MAX_UNCACHED_READ_LEVEL = 2;
++
++    // macTAK (G2.4 b.1): three org.gdal APIs here exist only in TAK's GDAL
++    // fork, not in the stock GDAL Java bindings (Homebrew GDAL, `make
++    // gdal-java`): Dataset.Interrupt()/ClearInterrupt(), the
++    // gdalconst.CE_Interrupted error class, and ColorTable.GetColorEntry
++    // returning a packed int (stock returns java.awt.Color). The kernel jar
++    // compiles against the fork's classes in the android-port substitute;
++    // at run time the first tile read died with NoSuchMethodError on the GL
++    // worker, unlogged, and no GDAL imagery ever drew (G2 trap #69). Use the
++    // fork's API when the bindings have it: on stock GDAL a cancelled read
++    // runs to completion, and no read is ever reported as interrupted.
++    private final static java.lang.reflect.Method DATASET_INTERRUPT = datasetMethod("Interrupt");
++    private final static java.lang.reflect.Method DATASET_CLEAR_INTERRUPT = datasetMethod("ClearInterrupt");
++    private final static int CE_INTERRUPTED = gdalconstValue("CE_Interrupted", Integer.MIN_VALUE);
++
++    private static int gdalconstValue(String name, int absent)
++    {
++        try
++        {
++            return gdalconst.class.getField(name).getInt(null);
++        } catch (ReflectiveOperationException e)
++        {
++            return absent;
++        }
++    }
++
++    /** A colour table entry as packed ARGB, from either binding's return type. */
++    private static int colorEntryARGB(ColorTable colorTable, int i)
++    {
++        try
++        {
++            final Object entry = ColorTable.class.getMethod("GetColorEntry", int.class).invoke(colorTable, i);
++            if (entry instanceof Integer)
++                return (Integer) entry;
++            if (entry instanceof java.awt.Color)   // a value class: no AWT toolkit is started
++                return ((java.awt.Color) entry).getRGB();
++        } catch (ReflectiveOperationException e)
++        {
++            Log.w(TAG, "GDAL GetColorEntry failed", e);
++        }
++        return 0;
++    }
++
++    private static java.lang.reflect.Method datasetMethod(String name)
++    {
++        try
++        {
++            return Dataset.class.getMethod(name);
++        } catch (NoSuchMethodException e)
++        {
++            return null;
++        }
++    }
++
++    private static void callIfPresent(java.lang.reflect.Method m, Dataset ds)
++    {
++        if (m == null)
++            return;
++        try
++        {
++            m.invoke(ds);
++        } catch (ReflectiveOperationException e)
++        {
++            Log.w(TAG, "GDAL " + m.getName() + " failed", e);
++        }
++    }
+ 
+     private static Format paletteRgbaFormat = Format.ARGB;
+ 
+@@ -461,7 +527,7 @@
+         }
+ 
+         return (success == gdalconst.CE_None) ? ReadResult.SUCCESS :
+-                (success == gdalconst.CE_Interrupted) ?
++                (success == CE_INTERRUPTED) ?
+                         ReadResult.CANCELED : ReadResult.ERROR;
+     }
+ 
+@@ -483,7 +549,7 @@
+                     {
+                         if (readers[i] != null)
+                         {
+-                            readers[i].Interrupt();
++                            callIfPresent(DATASET_INTERRUPT, readers[i]);
+                             synchronized (readers[i])
+                             {
+                                 readers[i].delete();
+@@ -506,12 +572,12 @@
+                 Log.w(TAG, "Attempting to cancel on a disposed dataset, " + uri);
+                 return;
+             }
+-            this.dataset.Interrupt();
++            callIfPresent(DATASET_INTERRUPT, this.dataset);
+             synchronized (readers)
+             {
+                 for (int i = 0; i < readers.length; i++)
+                     if (readers[i] != null)
+-                        readers[i].Interrupt();
++                        callIfPresent(DATASET_INTERRUPT, readers[i]);
+             }
+         }
+     }
+@@ -549,7 +615,7 @@
+     {
+         int[] retval = new int[colorTable.GetCount()];
+         for (int i = 0; i < retval.length; i++)
+-            retval[i] = colorTable.GetColorEntry(i);
++            retval[i] = colorEntryARGB(colorTable, i);
+         return retval;
+     }
+ 
+@@ -633,7 +699,7 @@
+             final int success;
+             synchronized (ds)
+             {
+-                ds.ClearInterrupt();
++                callIfPresent(DATASET_CLEAR_INTERRUPT, ds);
+                 success = readRaster(ds, arr, srcX, srcY, srcW, srcH,
+                         dstW, dstH,
+                         nPixelSpace, nLineSpace, nBandSpace);

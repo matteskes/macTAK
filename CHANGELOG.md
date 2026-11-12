@@ -9,6 +9,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G2.4 b.1, GeoTIFF imagery (`dev/g2/NOTES.md` §G2.4 b.1): GeoTIFFs (and
+  other GDAL rasters) render through the engine's GDAL path in the render
+  smoke and the live window. The render path draws GDAL datasets with
+  `DatasetRasterLayer2` beside the tileset layer (`BasemapLayers`), and
+  registers a reader that turns their `file://` URIs into the paths
+  `GdalTileReader` takes (`GdalImagery`). New engine patch
+  `gdaltilereader-stock-gdal-bindings.patch` (41 in the series):
+  `GdalTileReader` called TAK-GDAL-fork-only APIs the stock bindings lack.
+  New fixture `fixtures/make-imagery.sh` (synthetic, UTM 10N, tiled, with
+  overviews), `RenderSmoke --expect LAT,LON,RRGGBB`, and gate
+  `render/test/geotiff.sh` (make test-render, CI): the right colour over
+  known ground points; off-frame and misregistered imagery fail.
 - G2 M3.4, gestures (`dev/g2/NOTES.md` §M3.4): the map takes Apple
   Maps–style input. The shell's AppKit handlers send each event across JNI
   (`WindowApp.input`) to the new `InputBridge`, which applies it on the
@@ -322,6 +334,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `dev/g2/render/env.sh` rebuilt the render classes only when an input was
+  newer than them, so deleting a patch left its patched class in place; it
+  now also rebuilds when the set of sources and patches changes (G2 trap
+  #70).
 - The Swift shell's PNG artifacts never decoded since M3.2: the AWT-free
   writer left the zlib stream unframed (no `IDAT` chunk). Fixed, and the
   live leg now decodes its PNGs (`dev/g2/NOTES.md` trap #59).

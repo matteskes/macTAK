@@ -333,6 +333,13 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/basemap-gate.sh
 
+      - name: GeoTIFF imagery through GDAL, georeferenced (G2.4 b.1)
+        # the synthetic UTM 10N GeoTIFF draws through GdalLayerInfo ->
+        # GdalTileReader with the right colours over known ground points;
+        # off-frame and misregistered imagery must fail (render/test/geotiff.sh)
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/geotiff.sh
+
       - name: Dynamic-size render smoke (--resize mid-run, M3.1)
         # pbuffer rebuild via NativeEgl.resize; PASS requires the surface's
         # OnSizeChangedListeners to fire and content pixels at the new size
@@ -379,6 +386,7 @@ jobs:
             dev/g2/build/render-smoke.png
             dev/g2/build/render-layer.png
             dev/g2/build/render-basemap.png
+            dev/g2/build/render-geotiff.png
             dev/g2/build/render-resize.png
             dev/g2/build/render-resize-layer.png
             dev/g2/build/render-window.png

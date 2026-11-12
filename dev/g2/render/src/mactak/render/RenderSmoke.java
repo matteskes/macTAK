@@ -8,7 +8,6 @@ import com.atakmap.map.layer.feature.geometry.Envelope;
 import com.atakmap.map.layer.raster.DatasetDescriptor;
 import com.atakmap.map.layer.raster.DatasetDescriptorFactory2;
 import com.atakmap.map.layer.raster.PersistentRasterDataStore;
-import com.atakmap.map.layer.raster.mobileimagery.MobileImageryRasterLayer2;
 import com.atakmap.map.opengl.GLMapView;
 
 import mactak.headless.LayerStore;
@@ -72,6 +71,8 @@ public final class RenderSmoke {
       + "  --layer-db    feature store dir (default: temp)\n"
       + "  --res M       camera resolution, metres/pixel (default: fit layer bounds)\n"
       + "  --at LAT,LON  camera centre (default: layer bounds centre)\n"
+      + "  --expect LAT,LON,RRGGBB  the final frame's pixel over that ground point must be\n"
+      + "                that colour (per channel +/-" + PixelExpectation.TOLERANCE + "; repeatable): georeferencing, G2.4 b.1\n"
       + "  --settle MS   min wall time to keep rendering while layers load (default 3000);\n"
       + "                with content attached, rendering continues (up to 5x that, min 15 s)\n"
       + "                until content pixels have appeared, so a slow runner can't race it\n";
@@ -93,6 +94,7 @@ public final class RenderSmoke {
         long settleMs = 3000;
         double res = Double.NaN;
         double atLat = Double.NaN, atLon = Double.NaN;
+        final java.util.List<PixelExpectation> expectations = new java.util.ArrayList<>();
         // opt and its index outlive the loop so the catch can tell a missing
         // value (nothing follows the option) from a malformed one.
         int argIndex = 0;
@@ -117,6 +119,7 @@ public final class RenderSmoke {
                         break;
                     }
                     case "--settle": settleMs = Long.parseLong(args[++i]); break;
+                    case "--expect": expectations.add(PixelExpectation.parse(args[++i])); break;
                     case "--size": {
                         String[] wh = args[++i].split("x");
                         w = Integer.parseInt(wh[0]); h = Integer.parseInt(wh[1]);
@@ -139,7 +142,7 @@ public final class RenderSmoke {
                     default: System.err.print(USAGE); System.exit(2);
                 }
             }
-        } catch (ArrayIndexOutOfBoundsException | NumberFormatException e) {
+        } catch (ArrayIndexOutOfBoundsException | IllegalArgumentException e) {   // NumberFormatException included
             // Nothing after the option: it had no value. Otherwise the value
             // did not parse ("--frames many", "--size 512", "--at 37.8").
             final boolean missing = argIndex + 1 >= args.length;
@@ -210,10 +213,8 @@ public final class RenderSmoke {
         com.atakmap.map.EngineLibrary.initialize();
         // the host registers the SDK's GLLayer/GLStyle SPIs (ATAK's MapView does this)
         Layers.registerAll();
-        // GdalTileReader is the org.gdal SWIG path (no bindings on macOS); it probes
-        // every tile URI first and throws UnsatisfiedLinkError on the GL worker.
-        com.atakmap.map.layer.raster.tilereader.TileReaderFactory.unregisterSpi(
-                com.atakmap.map.layer.raster.gdal.GdalTileReader.SPI);
+        // G2.4 b.1: GDAL imagery through GdalLayerInfo -> GdalTileReader (GdalImagery)
+        GdalImagery.enable("render-smoke");
         Globe globe = new Globe();
         GLMapView view = new GLMapView(ctx, globe, 0, 0, w, h);
         ctx.setGLMapView(view);
@@ -245,7 +246,7 @@ public final class RenderSmoke {
             } finally {
                 c.close();
             }
-            globe.addLayer(new MobileImageryRasterLayer2("mactak-basemap", rasterStore, null));
+            BasemapLayers.addTo(globe, rasterStore);
         }
 
         // --layer: G1.3 feature stack -> FeatureLayer -> globe; frame the camera on it.
@@ -360,6 +361,10 @@ public final class RenderSmoke {
         System.out.printf("render-smoke: sentinel pixels left=%d/%d content pixels=%d centre=(%d,%d,%d,%d)%n",
                 sentinel, (long) w * h, content, px.get(cx) & 0xff, px.get(cx + 1) & 0xff, px.get(cx + 2) & 0xff, px.get(cx + 3) & 0xff);
 
+        boolean expectationsHold = true;
+        for (PixelExpectation e : expectations)
+            expectationsHold &= e.check(view, px, w, h);
+
         if (out != null) {
             try {
                 if (out.toLowerCase().endsWith(".png")) writePng(out, px, w, h); else writePpm(out, px, w, h);
@@ -387,9 +392,11 @@ public final class RenderSmoke {
             System.err.println("render-smoke: FAIL: " + swapFails + " of " + (presented + swapFails) + " presents failed");
         final long required = ContentGate.requiredPixels(w, h, !layers.isEmpty(), !basemaps.isEmpty());
         boolean pass = readOk && glErrors == 0 && sentinel == 0 && resizeSeen
-                && content >= required && windowOk;
+                && content >= required && windowOk && expectationsHold;
         if (content < required)
             System.err.println("render-smoke: FAIL: " + ContentGate.failure(content, required, w, h, !basemaps.isEmpty()));
+        if (!expectationsHold)
+            System.err.println("render-smoke: FAIL: a pixel over a known ground point has the wrong colour (--expect)");
         System.out.println(pass ? "render-smoke: PASS" : "render-smoke: FAIL");
         System.exit(pass ? 0 : 1);
     }

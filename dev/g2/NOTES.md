@@ -1,5 +1,19 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (G2.4 b.1 — 2026-11-12): GeoTIFF imagery draws through GDAL, georeferenced
+
+A GeoTIFF now renders through the engine's GDAL path (`GdalLayerInfo` →
+`GdalTileReader` → `DatasetRasterLayer2`), in the render smoke and in the
+live window (60.4 fps, 0 dropped frames, render CPU p95 2.7 ms with the
+landmarks on top). Four silent breaks stood between "GDAL works" (b.0–b.1a)
+and pixels; each is fixed and proven necessary by taking it out (G2
+traps #67–#70). New gate `render/test/geotiff.sh` (`make test-render`, CI): a
+synthetic UTM 10N GeoTIFF must draw with the right colour over three known
+ground points (`RenderSmoke --expect`), and off-frame and misregistered
+imagery must fail. Section "G2.4 b.1" at the end. G2 now owes G2.6
+(elevation) and the exit run; the exit run's real-data clip is still to be
+chosen.
+
 ## State (M3.4 — 2026-11-12): gestures drive the map; R4 verdict: the in-process host holds
 
 The map takes Apple Maps–style input: drag and trackpad scroll pan, wheel,
@@ -50,7 +64,7 @@ georeferenced images to the addressable `[0, w-1]` pixels:
 `GdalProjectionSmoke` accepts exactly 4.6's and 5.5's conventions
 (`(63,63)`/`(31.5,31.5)` now), and the basemap frame covers 262 036 px
 where 4.6 covered 262 144. Details: `dev/spike/g55/NOTES.md`. New G2
-traps continue this file's numbering (#57 next; #62 since M3.3; #67 since M3.4).
+traps continue this file's numbering (#57 next; #62 since M3.3; #67 since M3.4; #71 since G2.4 b.1).
 
 ## State (M3.2 — 2026-11-07): the Swift/AppKit shell boots the JVM in-process and hosts the window; `make test-shell` is green
 
@@ -1437,7 +1451,7 @@ starts. The M3 architecture above ("M3 design") is unchanged.
 |---|---|---|
 | M3.3 (**done**) | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7); the shell's JVM runs generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) from here on | resize during a pan without glitches; frame times logged; `make test-shell` green |
 | M3.4 (**done**) | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
-| G2.4 b.1 | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
+| G2.4 b.1 (**done 2026-11-12**) | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
 | G2.6 | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
 | Exit | the full stack (imagery + vector + elevation) under the scripted gesture run | the 60 fps gate below; G2 closes |
 
@@ -1708,3 +1722,93 @@ back only if a later feature needs AppKit to wait on the engine.
   engine's thread; it did not recur in the next two runs. Most likely Metal
   compiling the pipeline the first tilted view needs, which macOS then
   caches on disk (not proven). The exit run should start warm.
+
+## G2.4 b.1 — GeoTIFF imagery through GDAL (2026-11-12, branch `g2/geotiff-imagery`)
+
+### What it took
+
+b.0–b.1a left GDAL working (bindings, axis order, `/vsitakio/`), but no
+GeoTIFF had ever been drawn. Getting pixels meant four fixes, each a
+silent break: no error was logged for any of them.
+
+| # | Break | Fix |
+|---|---|---|
+| 1 | The basemap layer was always `MobileImageryRasterLayer2`, which filters its store to the tileset types: the GeoTIFF was accepted (`provider=gdal`, `type=native`) and never drawn | `render/src/mactak/render/BasemapLayers.java`: tilesets stay on `MobileImageryRasterLayer2`; GDAL datasets get a `DatasetRasterLayer2` filtered to provider `gdal` |
+| 2 | `GLTiledMapLayer2` asks `TileReaderFactory` for a reader with the dataset's `file://` URI and `preferredSpi = "native"`; `GdalTileReader` takes only a plain path, and the factory treats the preferred SPI as a strategy name, so no reader qualified. On Android, ATAK's app-layer `GLGdalMapLayer2` (not in takkernel) handles native datasets before this path | `GdalImagery.java`: a tile-reader SPI registered under each GDAL dataset type the store holds; it turns the `file:` URI into the path and hands over to `GdalTileReader` |
+| 3 | `GdalTileReader` calls `Dataset.ClearInterrupt()`, which exists only in TAK's GDAL fork: the first tile read threw `NoSuchMethodError` on the GL worker, unlogged. The kernel jar compiles because the android-port substitute carries the fork's `org.gdal` classes; at run time the stock `gdal.jar` wins | `../g1/patches/gdaltilereader-stock-gdal-bindings.patch` (41 in the series): the fork's `Interrupt`/`ClearInterrupt` and `CE_Interrupted` through reflection (absent on stock GDAL: a cancelled read runs to completion), and `ColorTable.GetColorEntry`'s value as ARGB whether the binding returns an `int` (fork) or a `java.awt.Color` (stock). Compiling all 26 engine classes that use `org.gdal` against the stock bindings showed `GdalTileReader` is the only one affected |
+| 4 | `GdalImagery.enable()` also does what the harnesses did inline: `GdalLibrary.init()`, register `GdalLayerInfo`, and keep the old guard (unregister `GdalTileReader`) when GDAL is not there | (same file; both harnesses call it) |
+
+A/B, each fix taken out alone (positive render, one `--expect` point):
+
+| Without | Result |
+|---|---|
+| the bindings patch | content 0, `NoSuchMethodError` |
+| the per-type reader adapter | content 0 |
+| the `DatasetRasterLayer2` | content 0 |
+| (all in) | content 262,144 px; the point's colour matches |
+
+### The fixture and the gate
+
+`fixtures/make-imagery.sh` (`MakeImagery.java`) paints synthetic "aerial"
+imagery (green and blue 0.005-degree fields chosen by a fixed rule, a white
+road grid, "GeoTIFF" labels) over the landmarks area and ships it as real
+imagery ships: reprojected to UTM zone 10N on NAD83 (EPSG:26910, NAIP's
+projection), 256×256 tiles, DEFLATE, four overview levels (3.0 MB). A sixth
+argument moves only the georeference, for the misregistration canary.
+
+`RenderSmoke --expect LAT,LON,RRGGBB` (`PixelExpectation.java`) checks the
+final frame's pixel over a ground point, projected through the camera's
+scene model, ±12 per channel. `render/test/geotiff.sh` runs three legs:
+
+```text
+draws + placed: expect (37.77250, -122.47750) -> pixel (15, 422) = #316d73, want #2f6e73: ok   (x3, PASS)
+off-frame:      FAIL: basemap attached but content covers 0 of 262144 px (0%)
+shifted:        expect (37.77250, -122.47750) -> pixel (15, 422) = #4a8a6b, want #2f6e73: FAIL (x3)
+```
+
+In the live window (GeoTIFF + landmarks, `--live 4000`): 243 frames,
+60.4 fps, 0 dropped, render CPU p95 2.7 ms, `glErrors=0`.
+
+### Traps found on the way (#67–#70)
+
+- **#67 — a raster layer that filters by type drops other types
+  silently.** `MobileImageryRasterLayer2` keeps only its default dataset
+  types; a GeoTIFF in the same store logged its descriptor and then
+  nothing. Native imagery needs its own layer.
+- **#68 — the engine alone cannot read the URIs it writes for GDAL
+  datasets.** `GdalLayerInfo` writes `file://` URIs; `GdalTileReader`
+  accepts only a path; and `TileReaderFactory` reads `preferredSpi` (the
+  dataset type) as a strategy name, so a reader must be registered under
+  the type. ATAK's app layer covers this with `GLGdalMapLayer2`; our host
+  covers it with `GdalImagery`.
+- **#69 — TAK's GDAL fork is not stock GDAL.** Fork-only APIs compile
+  against the android-port substitute and fail at run time against the
+  stock bindings, here on a background worker where nothing logs an
+  `Error`. A probe that read one tile directly found it in seconds after
+  hours of layer-level guessing: test the bottom of a chain first.
+- **#70 — "newer than" misses a deleted input.** `render/env.sh` rebuilt
+  the classes only when a source, patch or jar was newer than them, so
+  removing a patch left its patched shadow class in place and an A/B of
+  that patch tested nothing. It now also rebuilds when the set of sources
+  and patches changes (`.input-set`); the patch A/B then fails as it
+  should.
+
+A test-design note: `MakeImagery` chooses each field's colour from its
+absolute ground position, so building the fixture over shifted bounds moves
+its extent, not its registration. The misregistration canary moves only the
+world file.
+
+### Open items
+
+- **5.5's `NativeImageryRasterLayer2`** (a mosaic over the datasets, the
+  non-deprecated path) drew nothing for the same GeoTIFF; not chased.
+  `DatasetRasterLayer2` is marked deprecated for removal at 5.5 but is
+  present at the pin and draws.
+- **The exit run's real-data clip** (public-domain USGS imagery, fetched
+  with a pinned hash) is still to be chosen.
+- **G2.5 #7's rest** (`BitmapRegionDecoder`'s stream, `Canvas` clip, GLES
+  shim bounds) is not on the GDAL path (it reads through GDAL, not
+  `BitmapRegionDecoder`/`Canvas`), so b.1 did not reach it; still open.
+- **Hand checks (M3.4):** on 2026-11-12 the owner checked, on real hardware
+  with a mouse, drag, wheel (direction fine), ⌥-drag and double-click: all
+  as expected. Pinch, rotate and two-finger scroll wait for a trackpad.
