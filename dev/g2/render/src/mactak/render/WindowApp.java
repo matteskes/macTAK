@@ -616,9 +616,12 @@ public final class WindowApp {
      * viewer sees; the display paces it) and the render thread's CPU time in
      * {@code view.render()} plus the GL error drain (what the engine costs on
      * the CPU; GPU time and the wait for a drawable are not in it).
-     * {@link #report} prints mean/p50/p95/max and, given a path, writes CSV.
+     * {@link #report} prints mean/p50/p95/max and the dropped frames
+     * (intervals past {@link #DROPPED_NS}) and, given a path, writes CSV.
      */
     private static final class FrameTimes {
+        /** A dropped frame at 60 Hz: an interval past 1.5 refreshes (G2's exit gate, NOTES §M3.3). */
+        static final long DROPPED_NS = 25_000_000L;
         private long[] interval = new long[1024];
         private long[] work = new long[1024];
         private int n;
@@ -641,10 +644,11 @@ public final class WindowApp {
             if (iv.length == 0) {
                 System.out.println(tag + ": no frame intervals recorded");
             } else {
+                final long dropped = java.util.Arrays.stream(iv).filter(v -> v > DROPPED_NS).count();
                 System.out.printf("%s: %d frames; interval ms mean %.2f p50 %.2f p95 %.2f max %.2f (%.1f fps); "
-                        + "render CPU ms p50 %.2f p95 %.2f max %.2f%n",
+                        + "dropped (>%.0f ms) %d; render CPU ms p50 %.2f p95 %.2f max %.2f%n",
                         tag, n, mean(iv) / 1e6, pct(iv, 50) / 1e6, pct(iv, 95) / 1e6, iv[iv.length - 1] / 1e6,
-                        1e9 / mean(iv), pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
+                        1e9 / mean(iv), DROPPED_NS / 1e6, dropped, pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
             }
             if (csvPath != null) {
                 try (java.io.PrintWriter out = new java.io.PrintWriter(new FileOutputStream(csvPath))) {

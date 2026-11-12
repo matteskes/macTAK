@@ -10,7 +10,7 @@ occluded, and logs frame times. `make test-shell` gains a third leg,
 `shell/test/live.sh`: a 6 s scripted pan with a resize halfway, gated on
 every present, no GL error, the resize reaching the surface, the content
 gate at the new size and both PNGs decoding. On the dev Mac (M5 Max):
-**60.2 fps, interval p95 17.6 ms, render CPU p50 1.8 ms / p95 2.5 ms**.
+**60.2 fps, 0 dropped frames, render CPU p50 1.8 ms / p95 2.5 ms**.
 The shell's JVM runs generational ZGC. Section "M3.3" at the end, with
 traps #57–#61. M3.4 (gestures, the R4 verdict) is next.
 
@@ -1389,8 +1389,12 @@ proves a GeoTIFF DEM and DTED; the other formats are G4 import parity.
 
 Dev Mac, manual, like `make test-shell`: a scripted 10 s pan, zoom and
 rotate (the injected events below) on a Retina window at the shell's
-default size, full stack. **Pass: p95 frame time ≤ 16.7 ms and no
-dropped presents.** The shell writes the per-frame log as the artifact.
+default size, full stack. **Pass: zero dropped frames** (a present
+interval over 25 ms, 1.5 × the 60 Hz refresh) **and no failed presents.**
+p95 and the other interval figures are reported, not gated: presents are
+quantized to the display, so a perfect 60 Hz run reads p95 ≈ 17–17.8 ms
+(trap #61; restated 2026-11-12 from "p95 ≤ 16.7 ms", which such a run
+would fail). The shell writes the per-frame log as the artifact.
 The same run also records, as numbers to report and not yet pass/fail
 thresholds, the longest garbage-collection pause, peak resident memory
 and cold-start time (shell launch to first presented frame); they are
@@ -1472,7 +1476,7 @@ GC pauses, memory and cold start.
 | first frame | 640×480 pt → 1280×960 px surface, dpi 144; 5 frames, `glErrors=0`, PASS; then live: 60.4 fps, interval p95 16.9 ms |
 | exit-code canary | a failed render still exits 2 |
 | live (`shell/test/live.sh`) | 363 frames presented, 0 failed, `glErrors=0`; window resized to 800×560 pt and the surface followed to 1600×1120 px; content 1,791,866 px (need 896,000); both PNGs decode; **live: PASS** |
-| frame times (live leg) | 60.2 fps; interval p50 16.6 ms, p95 17.6 ms, max 21 ms; render CPU p50 1.8 ms, p95 2.5 ms, max 6.4 ms |
+| frame times (live leg) | 60.2 fps; interval p50 16.6 ms, p95 17.6 ms, max 21 ms; **0 dropped (> 25 ms)**; render CPU p50 1.8 ms, p95 2.5 ms, max 6.4 ms |
 | occlusion (one-off probe) | minimized mid-run: the shell reports `occluded`, the loop pauses, a restart marker in the frame log on `visible` |
 | repeat | the scripted resize, 6 runs in a row: 6 PASS (before the fix for trap #58: 1 of 5) |
 
@@ -1512,9 +1516,11 @@ lint` and the shell's args canary stay green.
 - **#61 — present intervals are quantized to the display.** At a steady
   60 Hz with no dropped frame, the interval p95 reads 16.9–17.8 ms: the
   refresh is 16.67 ms and ordinary jitter puts the 95th percentile just
-  above it. The G2 exit gate as decided ("p95 frame time ≤ 16.7 ms") would
-  fail a perfect run. **Open for the owner:** count dropped frames
-  (intervals over 1.5 × the refresh) instead, or allow a tolerance.
+  above it. The G2 exit gate as first decided ("p95 frame time ≤ 16.7 ms")
+  would fail a perfect run. **Resolved 2026-11-12 (owner):** the gate is
+  zero dropped frames, a present interval over 25 ms (1.5 × the refresh);
+  p95 is reported, not gated ("The 60 fps gate"). The live loop counts
+  them: the scripted pan and resize, 0 dropped.
 
 ### Found, not fixed here
 
