@@ -108,11 +108,12 @@ jobs:
             exit 1
           fi
 
-      - name: Stage ANGLE (pinned Electron release) + EGL/ES3 triangle smoke
+      - name: Stage ANGLE (pinned Electron release)
+        # fetch only: dev/g2/smoke/run.sh's triangle needs the 4.6 tree's
+        # khronos headers, and render.sh below covers ANGLE in full
         env:
           MACTAK_ANGLE_SOURCE: release
-          JAVA_HOME: ${{ steps.jdk8.outputs.path }}
-        run: bash dev/g2/fetch-angle.sh && bash dev/g2/smoke/run.sh
+        run: bash dev/g2/fetch-angle.sh
 
       - name: GDAL Java bindings (org.gdal against Homebrew libgdal)
         env:
