@@ -125,7 +125,7 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 | `ci.yml` | push / pull_request on `main` | the gate ladder above — native engine, ANGLE render + drift gates, shell compile, comms stack, JVM tests, lint |
 | `cot-roundtrip.yml` | PRs / pushes touching `dev/g1/**` | hermetic CoT round-trip gate |
 | `docs.yml` | **every PR targeting `main`** (unconditionally, so the required check always reports) | markdownlint + lychee link check on changed `*.md` |
-| `supply-chain.yml` | Brewfile changes | `brew bundle check` against the committed `Brewfile.lock.json` |
+| `supply-chain.yml` | Brewfile or any workflow changes | the Brewfile equals every workflow's brew installs; `brew bundle check` against the committed `Brewfile.lock.json`; osv-scanner |
 | `ots-profile-drift.yml` | nightly; PRs touching the checker or its fixture | the pinned OpenTAKServer cert profiles still match upstream (not a PR gate) |
 | `spike-55.yml` | pushes to `spike/g55-*` touching `dev/spike/g55/`; dispatch | the 5.5 rebase's build and gates on `macos-26` — evidence, not a required check |
 

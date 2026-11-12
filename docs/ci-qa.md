@@ -61,7 +61,8 @@ How the plan above actually materialized once G1 closed:
   FreeTAKServer needed. Golden CoT fixtures (§7 phasing) remain future work.
 - **`supply-chain.yml`** (not in the plan above) pins CI's Homebrew set:
   regenerated `Brewfile.lock.json` diff + `brew bundle check` + osv-scanner,
-  on `Brewfile`-touching PRs.
+  on PRs touching the `Brewfile` pair or any workflow (widened 2026-11-11,
+  #104: a new workflow's brew installs had escaped it, g55 trap 4).
 - **Tier 2 nightly** (live-FTS `engine-integration`, render goldens, perf
   budgets, pathway-a baseline) has not landed — it belongs to G2.
 - **Capacity:** hosted macOS arm64 runners can queue-starve a PR burst. On
