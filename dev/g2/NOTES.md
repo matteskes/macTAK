@@ -1403,7 +1403,9 @@ forwards events ("Architecture (committed)").
   during the 60 fps run. In-process posting needs no Accessibility
   permission.
 
-### Not decided here
+### The G3 question
 
-Whether ATAK's app code is reused on the JVM or rewritten in Swift is a
-G3 question (`docs/roadmap.md` "Open before G3").
+Whether ATAK's app code is reused on the JVM or rewritten in Swift was a
+G3 question; the owner decided it the same day: rewritten in Swift
+(`docs/atak-feature-coverage.md` §The app-layer decision). It changes
+nothing in G2: the Android stand-ins stay scoped to the render path.

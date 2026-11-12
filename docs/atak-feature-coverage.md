@@ -70,7 +70,7 @@ Largest app packages at the pin, by lines: `maps` 42K, `routes` 23K,
 `missionpackage` 21K, `image` 19K, `user` 16K, `layers` 14K, `track` 13K,
 `drawing` 12K, `importfiles` 12K, `video` 11K.
 
-## The open decision: reuse or rewrite the app layer
+## The app-layer decision: rewrite in Swift (decided 2026-11-12)
 
 The roadmap's G3 does not yet say whether ATAK's app code is reused or
 rewritten, and that choice sets the cost of everything after G2.
@@ -93,14 +93,27 @@ Two options:
 - **B — rewrite in Swift.** Port behaviour package by package, using the
   Java as a specification.
 
-Leaning A for the model and CoT layers, because it reuses tested code. The
-decision belongs before G3; a short spike that runs one app package (`cot`
-or `bloodhound`) on stand-ins would settle it.
+This note leaned A for the model and CoT layers, because it reuses tested
+code, and proposed a spike to settle it.
+
+**Decided 2026-11-12 by the owner: B.** ATAK's app code is rewritten in
+Swift, package by package, with the Java as the specification. The spike
+above is not needed. What follows from it:
+
+- The Android stand-ins stay scoped to the engine's render path
+  (`dev/g2/render/src/android`); they do not grow to host app code.
+- The engine and commo stay as ported (`takkernel` on the in-process JVM,
+  `commoncommo`); the Swift app layer reaches them across the shell's
+  boundary. How each is reached (the existing JNI boundary, or commo's
+  C++ API from Swift directly) is the first G3 design question.
+- Porting cost is paid per package, so G3's feature list
+  ([roadmap.md](roadmap.md) G3) is also its porting order.
 
 ## Recommendations
 
 1. Settle the upstream baseline first: [rebase-study-5.5.md](rebase-study-5.5.md).
    Any app-layer port should target the version macTAK will ship.
-2. Record the reuse-or-rewrite decision, after the spike above.
+2. ~~Record the reuse-or-rewrite decision, after the spike above.~~ Done
+   2026-11-12: rewrite in Swift (above).
 3. Finish M3.3–M3.4 (pan, zoom, gestures): no app-layer tool is usable on a
    static map, whichever option wins.

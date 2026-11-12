@@ -48,7 +48,7 @@ Gate-gated plan. Each gate has: **objective → exit criteria (demo artifact) �
 
 Tracks/contacts list, map overlays (CoT markers, routes), chat (GeoChat), layer manager, coordinate tools; certificate/trust store UI (port `AtakCertificateDatabase` concept to Keychain). **Exit:** two Mac clients on one FTS server see each other's markers and chat live.
 
-**Open before G3 (2026-11-11):** ~~which upstream version the app layer targets~~ settled: 5.5.1.10, the baseline since the re-pin below ([rebase-study-5.5.md](rebase-study-5.5.md)); and whether ATAK's app code is reused on the JVM behind more Android stand-ins or rewritten in Swift ([atak-feature-coverage.md](atak-feature-coverage.md) §The open decision).
+**Open before G3 (2026-11-11):** ~~which upstream version the app layer targets~~ settled: 5.5.1.10, the baseline since the re-pin below ([rebase-study-5.5.md](rebase-study-5.5.md)); ~~and whether ATAK's app code is reused on the JVM behind more Android stand-ins or rewritten in Swift~~ **decided 2026-11-12: rewritten in Swift**, package by package with the Java as the specification; the engine and commo stay as ported, and how the Swift layer reaches them is G3's first design question ([atak-feature-coverage.md](atak-feature-coverage.md) §The app-layer decision).
 
 **2026-11-11 (#98): spike 1 of the rebase — the 5.5 engine builds.**
 takkernel 8.30.5 with macTAK's patch series ported to 5.5 (34 patches at
