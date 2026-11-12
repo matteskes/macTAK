@@ -306,6 +306,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   JNI guard patches: 4 guards-mode tests on a Java-backed definition, and
   a new noslf4j leg (the kernel jars without `slf4j-api`) for
   `common-managedlogger-guards`. Each pin fails with its patch taken out.
+- Point icons draw on the map (`dev/g2/NOTES.md` §Asset icons). The render
+  path's Android context now serves `asset:` URIs from the classpath,
+  where takkernel's desktop jar packages them (`ClasspathAssets`); before,
+  every icon load failed and the engine retried on a new thread each
+  frame. With icons loading, the point renderer's desktop-GL state raised
+  `GL_INVALID_ENUM` on ANGLE every frame: new engine patch
+  `points-es-state-desktop-only.patch` (40 in the series). New canary
+  `render/test/asset-icons.sh` (make test-render, CI) fails on any
+  unresolved `asset:` URI.
 - commo names a failed QUIC handshake's cause in its log, e.g. `quic IO
   error during handshake: recvfrom failed: Connection refused (errno 61)`
   instead of the bare first half (`dev/g1/NOTES.md` G1.16; closes

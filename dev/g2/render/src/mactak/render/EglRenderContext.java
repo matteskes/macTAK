@@ -90,7 +90,8 @@ final class EglRenderContext extends GLMapSurface {
     // ---- GLMapSurface -------------------------------------------------------
     @Override public com.atakmap.map.MapRenderer getGLMapView() { return glMapView; }
     @Override public AtakMapView getMapView() { return null; }
-    @Override public Context getContext() { return new Context(); }
+    /** Serves {@code asset:} URIs from the classpath (see {@link ClasspathAssets}). */
+    @Override public Context getContext() { return ClasspathAssets.CONTEXT; }
 
     // ---- RenderContext ------------------------------------------------------
     @Override public boolean isRenderThread() { return Thread.currentThread() == renderThread; }
