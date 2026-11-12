@@ -111,6 +111,7 @@ test-render:
 	bash dev/g2/fixtures/make-basemap.sh
 	bash dev/g2/render/run.sh --basemap dev/g2/build/fixtures/sf-graticule.mbtiles --layer dev/g1/headless/test/fixtures/sf-landmarks.geojson --out dev/g2/build/render-basemap.png
 	bash dev/g2/render/test/basemap-gate.sh
+	bash dev/g2/render/test/geotiff.sh
 
 test-render-resize:
 	# M3.1: first real caller of NativeEgl.resize — pbuffer rebuild mid-run,

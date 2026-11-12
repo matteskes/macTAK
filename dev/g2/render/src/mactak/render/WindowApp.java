@@ -8,7 +8,6 @@ import com.atakmap.map.layer.feature.geometry.Envelope;
 import com.atakmap.map.layer.raster.DatasetDescriptor;
 import com.atakmap.map.layer.raster.DatasetDescriptorFactory2;
 import com.atakmap.map.layer.raster.PersistentRasterDataStore;
-import com.atakmap.map.layer.raster.mobileimagery.MobileImageryRasterLayer2;
 import com.atakmap.map.opengl.GLMapView;
 
 import mactak.headless.LayerStore;
@@ -275,10 +274,8 @@ public final class WindowApp {
             com.atakmap.map.EngineLibrary.initialize();
             // the host registers the SDK's GLLayer/GLStyle SPIs (ATAK's MapView does this)
             Layers.registerAll();
-            // GdalTileReader is the org.gdal SWIG path (no bindings on macOS); it probes
-            // every tile URI first and throws UnsatisfiedLinkError on the GL worker.
-            com.atakmap.map.layer.raster.tilereader.TileReaderFactory.unregisterSpi(
-                    com.atakmap.map.layer.raster.gdal.GdalTileReader.SPI);
+            // G2.4 b.1: GDAL imagery through GdalLayerInfo -> GdalTileReader (GdalImagery)
+            GdalImagery.enable(TAG);
             globe = new Globe();
             view = new GLMapView(ctx, globe, 0, 0, w, h);
             ctx.setGLMapView(view);
@@ -322,7 +319,7 @@ public final class WindowApp {
                 } finally {
                     c.close();
                 }
-                globe.addLayer(new MobileImageryRasterLayer2("mactak-basemap", rasterStore, null));
+                BasemapLayers.addTo(globe, rasterStore);
             }
 
             // --layer: G1.3 feature stack -> FeatureLayer -> globe; frame the camera on it.

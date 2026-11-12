@@ -35,6 +35,9 @@ expect_usage '--at needs a value'     --at
 expect_usage 'bad --frames'           --frames many
 expect_usage 'bad --size'             --size 512
 expect_usage 'bad --at'               --at 37.8
+expect_usage '--expect needs a value' --expect
+expect_usage 'bad --expect'           --expect 37.8,-122.4
+expect_usage 'bad --expect'           --expect 37.8,-122.4,green
 
 if [[ "$rc_all" -eq 0 ]]; then
   echo "[render-args] PASS: bad arguments end in usage, exit 2"
