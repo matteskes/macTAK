@@ -13,6 +13,16 @@ top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
 
+## State (JNI glue — 2026-11-11): the 5.5 glue loads in a JVM and passes G1's jni-tests
+
+`libtakenginejni` builds beside the 5.5 engine; the G1 load canary
+returns `42` through Java → glue → C++ → sqlite on JDK 21, and
+`dev/g1/jni-tests` pass in both modes (7 guards, 6 kernel). In CI on
+`macos-26`, jar build and header-drift check included: run 43041239149
+(#99). The series is 37 patches (three new; traps 5–7). The 5.5 jars are
+Java 11 bytecode, so the move to JDK 21 is a step of its own before the
+re-pin. Next: the render gates on 5.5. Details in §JNI glue below.
+
 ## State (spike 1 — 2026-11-11): the 5.5 engine builds on macOS arm64 without 3D Tiles
 
 takkernel 8.30.5 with macTAK's 34-patch 5.5 series compiles and links on
@@ -291,10 +301,11 @@ step 4), in order, with estimates made from this spike's pace:
 
 1. ~~**JNI glue on 5.5**~~ **Done** (§JNI glue). Carried forward: the
    `ManagedFeatureDefinition` consumer guards and guards-mode pins for
-   the two new patches; whether the 5.5 jars are committed as
-   transplants (with `SHA256SUMS`, per CONTRIBUTING) or built in CI as
-   here; and **moving off Java 8**, since the 5.5 jars are Java 11
-   bytecode: CI's Zulu 8 jobs, the launcher and the headless app.
+   the two new patches. Decided on #99's review: the 5.5 jars stay built
+   in CI as here (CONTRIBUTING allows it), and **moving off Java 8**
+   (the 5.5 jars are Java 11 bytecode: CI's Zulu 8 jobs, the launcher
+   and the headless app) is its own PR on JDK 21, after this stack and
+   before the re-pin.
 2. **The render gates on 5.5** (2–4 days). `make test-render` against
    ANGLE: the engine shadows (`GLQuadTileNode4` and the rest) regenerate
    from the 5.5 patches, and `KHR_debug` decides whether

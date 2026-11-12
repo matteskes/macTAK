@@ -25,9 +25,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `jni-class-inits-new-in-55`: guards for the `HeightmapStrategy`,
     `HeightmapParams` and `FeatureDefinition` lookups.
 
-  `spike-55.yml` now runs the jar build, the canary and the tests. The
-  step found that the 5.5 desktop jars are Java 11 bytecode, so the
-  re-pin also moves macTAK off Java 8.
+  `spike-55.yml` now runs the jar build, the canary and the tests. Traps
+  in `dev/spike/g55/NOTES.md`: 5 (`java_home -v N` falls back to the
+  default JDK), 6 (the android-port substitute shadows kernel classes)
+  and 7 (a missing slf4j crashed `JNI_OnLoad`, guarded by
+  `common-managedlogger-guards.patch`). The 5.5 desktop jars are Java 11
+  bytecode, so macTAK moves to JDK 21 in its own PR before the re-pin.
 
 - Spike 1 of the 5.5 rebase (`dev/spike/g55/`, record in its `NOTES.md`):
   the 5.5 engine (takkernel 8.30.5) compiles and links on macOS arm64
