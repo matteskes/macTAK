@@ -9,6 +9,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The rest of G2 is planned (`dev/g2/NOTES.md` "The rest of G2 — decided
+  2026-11-12", roadmap G2): M3.3 → M3.4 (the R4 verdict) → G2.4 b.1
+  imagery → G2.6 elevation (kept in G2) → the exit run; synthetic
+  fixtures in CI plus a public-domain real-data clip for the exit run; the
+  60 fps exit as p95 frame time ≤ 16.7 ms on the dev Mac; Apple Maps–style
+  gestures, tested in CI and on the dev Mac; G2.5 #7's teardown fix folds
+  into M3.3.
+- ATAK's app layer will be rewritten in Swift, package by package with the
+  Java as the specification (`docs/atak-feature-coverage.md` §The
+  app-layer decision; roadmap "Open before G3"). The engine and commo stay
+  as ported; the Android stand-ins stay scoped to the render path. Swift
+  calls commo's C++ API directly, falling back to the existing JNI
+  boundary if that proves challenging. Swift reaches the engine through a
+  narrow JVM facade, with direct C++ calls only where C++ owns the data;
+  Swift map items become engine features. G2's exit run also reports GC
+  pauses, peak memory and cold start, and M3.3 runs generational ZGC.
+- The roadmap's G6 parity ladder gains rung 8, a native engine with no
+  Java: the JVM leaves the shipped app after the application stands up
+  (G3–G5), as the engine's Java renderers and layer code move to C++ one
+  at a time in the order measurements point to.
 - `make test-quic` gains a `peer` leg (`QuicPeerTest`): two commo
   instances with no server; B finds A from A's SA multicast on `lo0` and
   delivers a marker to A's QUIC inbound (`dev/g1/NOTES.md` G1.18). The
