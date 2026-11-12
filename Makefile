@@ -112,7 +112,7 @@ test:
 # the staged dylibs. Boots the desktop JVM twice — guards mode (empty
 # classpath: class-init failures must bail neutrally, JNI_OnLoad must fail
 # cleanly) and kernel mode (takkernel jars: the Java-backed IOProviderFactory
-# proxy on real files). Skips when no JDK 8 is present.
+# proxy on real files). Skips when no JDK 21 is present.
 test-jni:
 	bash dev/g1/jni-tests/run.sh
 

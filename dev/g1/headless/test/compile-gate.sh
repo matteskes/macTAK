@@ -3,7 +3,7 @@
 # Compile-only gate for the headless launcher src (#29). atak-headless
 # javacs dev/g1/headless/src at launch, so nothing in CI ever type-checked
 # HeadlessCLI.java; this compiles the launcher's exact file set with its
-# exact contract (-source/-target 8, -Xlint:all -Werror, same classpath:
+# exact contract (--release 21, -Xlint:all -Werror, same classpath:
 # mavenLocal first, committed transplants as fallback) into a throwaway
 # dir. The commo API classes come in as $1 — a jar or a classes dir:
 # native-dist/jcommoncommo.jar locally, a plain javac over the checkout's
@@ -41,8 +41,10 @@ for j in ${CP//:/ }; do
   [[ -e "$j" ]] || { echo "compile-gate: missing classpath entry: $j" >&2; exit 1; }
 done
 
-JDK="${JAVA_HOME:-$( /usr/libexec/java_home -v 1.8 2>/dev/null || true )}"
-[[ -n "$JDK" ]] || { echo "compile-gate: JDK 1.8 not found" >&2; exit 1; }
+# shellcheck source=SCRIPTDIR/../../../jdk.sh
+source "$ROOT/dev/jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" ]] || { echo "compile-gate: JDK 21 not found (dev/jdk.sh)" >&2; exit 1; }
 
 OUT="$(mktemp -d /tmp/mactak-compile-gate.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
@@ -50,7 +52,7 @@ mkdir -p "$OUT/classes"    # javac -d does not create it
 
 # The launcher's compile line (atak-headless), verbatim flags and file set —
 # the dylibs it also checks for are a launch concern, not a compile one.
-"$JDK/bin/javac" -source 8 -target 8 -Xlint:all -Werror -encoding UTF-8 \
+"$JDK/bin/javac" --release 21 -Xlint:all -Werror -encoding UTF-8 \
   -classpath "$CP" -d "$OUT/classes" "$HERE"/../src/mactak/headless/*.java
 
 echo "compile-gate: OK ($(cd "$OUT/classes" && find . -name '*.class' | wc -l | tr -d ' ') classes)"

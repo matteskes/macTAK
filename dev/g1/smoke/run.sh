@@ -4,7 +4,7 @@
 # a JNI round-trip (Java -> libtakenginejni -> libtakengine -> sqlite -> Java).
 #
 # Usage: smoke/run.sh [native-dist-dir]
-# Requires: JDK 8 (zulu-8). takkernel jars resolve from mavenLocal first,
+# Requires: JDK 21 (dev/jdk.sh finds it). takkernel jars resolve from mavenLocal first,
 # else the committed transplants (dev/g1/transplants — the CI native job's
 # path; it has no mavenLocal).
 set -euo pipefail
@@ -20,8 +20,10 @@ M2="${HOME}/.m2/repository"
 [[ -f "$DIST/libtakengine.dylib" && -f "$DIST/libtakenginejni.dylib" ]] \
   || { echo "FATAL: dylibs missing in $DIST — run dev/g1/build-native.sh first" >&2; exit 1; }
 
-JDK="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8 2>/dev/null || true)}"
-[[ -n "$JDK" ]] || { echo "FATAL: no JDK 8 found" >&2; exit 1; }
+# shellcheck source=SCRIPTDIR/../../jdk.sh
+source "$ROOT/dev/jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" ]] || { echo "FATAL: no JDK 21 found (dev/jdk.sh)" >&2; exit 1; }
 
 # Classpath: mavenLocal jars when present (local gradle builds), else the
 # committed transplants (dev/g1/transplants — what CI's native job uses; it

@@ -112,14 +112,18 @@ jobs:
           brew install cmake rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
           openssl@3 libxml2 protobuf libmicrohttpd curl
 
-      - name: Set up Zulu 8 (arm64) for the JNI smoke canary
+      - name: Set up Zulu 21 + Zulu 8 (arm64)
         # build-native.sh itself needs no JDK (jni.h is pinned at
-        # dev/g1/jdk-include) but its final canary loads the engine in a
-        # JVM (dev/g1/smoke/run.sh).
+        # dev/g1/jdk-include) but its final canaries load the engine in a
+        # JDK 21 JVM (dev/g1/smoke/run.sh, jni-tests). JDK 8 only builds
+        # 4.6 commo (its JNI Makefile calls javah) until the 5.5 re-pin;
+        # 21 is listed last, so JAVA_HOME and PATH are JDK 21 (dev/jdk.sh).
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: '8'
+          java-version: |
+            8
+            21
           architecture: aarch64
 
       - name: Build engine + canary (dev/g1/build-native.sh, verbatim)
@@ -189,11 +193,15 @@ jobs:
           brew install cmake rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2
           openssl@3 protobuf libmicrohttpd curl swig
 
-      - name: Set up Zulu 8 (arm64)
+      - name: Set up Zulu 21 + Zulu 8 (arm64)
+        # JDK 21 runs the render harness; JDK 8 only builds 4.6 commo
+        # (javah) until the 5.5 re-pin. 21 is last: JAVA_HOME (dev/jdk.sh).
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: '8'
+          java-version: |
+            8
+            21
           architecture: aarch64
 
       - name: GLES shim drift gate (regenerate from transplant jar x gl3.h, diff against committed)
@@ -361,11 +369,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Zulu 8 (arm64)
+      - name: Set up Zulu 21 (arm64)
+        # the shell boots JDK 21 in-process; build-shell.sh takes its jni.h
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: '8'
+          java-version: '21'
           architecture: aarch64
 
       - name: Compile the shell (build-shell.sh, no run)
@@ -407,11 +416,15 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: brew install openssl@3 libxml2 protobuf libmicrohttpd curl
 
-      - name: Set up Zulu 8 (arm64) — javah for the JNI glue + load canary
+      - name: Set up Zulu 21 + Zulu 8 (arm64) — javah builds the JNI glue, 21 runs the canary
+        # JDK 8 for 4.6 commo's javah until the 5.5 re-pin; 21 is last, so
+        # JAVA_HOME and PATH are JDK 21 (dev/jdk.sh)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: '8'
+          java-version: |
+            8
+            21
           architecture: aarch64
 
       - name: Build comms stack + canaries (dev/g1/build-commo.sh, verbatim)
@@ -431,6 +444,9 @@ jobs:
           if-no-files-found: error
 
   jvm-tests:
+    # The name is a required check in main's ruleset: renaming it strands
+    # the check at "Expected". It still runs Zulu 8 (4.6's Gradle) beside
+    # JDK 21 (the canaries and the compile gate).
     name: JVM tests (Zulu 8, macOS arm64)
     needs: changes
     runs-on: macos-26 # matches the locally verified macOS/Zulu 8 arm64 environment
@@ -451,11 +467,16 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Zulu 8 (arm64)
+      - name: Set up Zulu 21 + Zulu 8 (arm64)
+        # 4.6's Gradle 6.9.1 runs on JDK <= 16, so the kernel step below
+        # pins JAVA_HOME to JDK 8 until the 5.5 re-pin; everything else runs
+        # on JDK 21 (listed last: JAVA_HOME and PATH, dev/jdk.sh)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: '8'
+          java-version: |
+            8
+            21
           architecture: aarch64
           cache: gradle
 
@@ -479,6 +500,8 @@ jobs:
       - name: Kernel tests + publishToMavenLocal
         if: needs.changes.outputs.changed == 'true'
         working-directory: src/takkernel
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_8_AARCH64 }}  # Gradle 6.9.1: JDK <= 16
         run: ./gradlew --no-daemon :shared:test :port:test publishToMavenLocal
 
       - name: Upload test reports
@@ -521,7 +544,7 @@ jobs:
         # alone. Same contract, still no natives: the commo API classes are
         # javac'd from this checkout (exactly the sources build-commo.sh
         # seeds jcommoncommo.jar with), then test/compile-gate.sh runs the
-        # launcher's own compile line (Zulu 8, -Xlint:all -Werror, the same
+        # launcher's own compile line (JDK 21, -Xlint:all -Werror, the same
         # mavenLocal-first/transplants-fallback classpath).
         if: needs.changes.outputs.changed == 'true'
         run: |

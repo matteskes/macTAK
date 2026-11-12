@@ -8,18 +8,25 @@ public class Matrix {
 
     final float[] m = new float[9];
 
-    public Matrix() { reset(); }
+    // The constructors use the private helpers, not reset()/set(): Android's
+    // Matrix is subclassable, and an override called from a constructor runs
+    // before the subclass is initialized (javac 21's this-escape lint).
+    public Matrix() { identity(m); }
 
-    public Matrix(Matrix src) { set(src); }
+    public Matrix(Matrix src) { copy(src, m); }
 
-    public void reset() {
+    public void reset() { identity(m); }
+
+    public void set(Matrix src) { copy(src, m); }
+
+    private static void identity(float[] m) {
         m[0] = 1; m[1] = 0; m[2] = 0;
         m[3] = 0; m[4] = 1; m[5] = 0;
         m[6] = 0; m[7] = 0; m[8] = 1;
     }
 
-    public void set(Matrix src) {
-        if (src == null) reset(); else System.arraycopy(src.m, 0, m, 0, 9);
+    private static void copy(Matrix src, float[] dst) {
+        if (src == null) identity(dst); else System.arraycopy(src.m, 0, dst, 0, 9);
     }
 
     public boolean isIdentity() {

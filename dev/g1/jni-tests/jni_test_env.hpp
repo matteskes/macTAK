@@ -47,7 +47,7 @@ namespace jnitest
         if(!home || !*home)
             return false;
         static const char *rel[] = {
-            "jre/lib/jli/libjli.dylib",               /* JDK 8 (Zulu 8) */
+            "jre/lib/jli/libjli.dylib",               /* JDK 8 layout */
             "Contents/Home/jre/lib/jli/libjli.dylib", /* a bundle root */
             "Contents/MacOS/libjli.dylib",            /* JDK 8 bundle copy */
             "lib/libjli.dylib",                       /* JDK 9+ */
@@ -159,7 +159,7 @@ namespace jnitest
 
 /* Fixture bases. The wrong-mode / no-JVM cases SKIP, never FAIL: the
  * native build itself needs no JDK (run.sh is the interface; CI's native
- * job installs Zulu 8 before build-native.sh). */
+ * job installs JDK 21 before build-native.sh). */
 class JniGuardsTest : public ::testing::Test
 {
 protected:

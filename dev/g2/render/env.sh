@@ -2,7 +2,7 @@
 #
 # Sourced by dev/g2/render/run.sh (RenderSmoke, G2.1) and dev/g2/shell/run.sh
 # (the M3.2 Swift shell, WindowApp): the one build environment for the render
-# side — native dist + ANGLE linkage checks, JDK 8, the classpath
+# side — native dist + ANGLE linkage checks, JDK 21, the classpath
 # (mavenLocal-or-transplant jars, sha256-pinned bcprov), and the
 # compile-if-stale javac pass over dev/g2/render/src (RenderSmoke, WindowApp,
 # the GLES shim), dev/g2/render/engine-shadows and dev/g1/headless/src
@@ -42,8 +42,10 @@ linkage="$(otool -L "$DIST/libtakengine.dylib")"
 grep -q '@rpath/libGLESv2.dylib' <<<"$linkage" \
   || { echo "render/env.sh: libtakengine is linked against the GLES stub, not ANGLE — rebuild with MACTAK_GLES=angle" >&2; exit 2; }
 
-JDK="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8 2>/dev/null || true)}"
-[[ -n "$JDK" ]] || { echo "render/env.sh: JDK 1.8 not found" >&2; exit 2; }
+# shellcheck source=SCRIPTDIR/../../jdk.sh
+source "$ROOT/dev/jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" ]] || { echo "render/env.sh: JDK 21 not found (dev/jdk.sh)" >&2; exit 2; }
 
 # mavenLocal first, else the committed transplants — same contract as dev/g1.
 jar() { if [[ -f "$1" ]]; then echo "$1"; else echo "$2"; fi; }
@@ -105,11 +107,11 @@ if [[ ! -d "$OUT" ]] || [[ -n "$(find "$ENV_SH_DIR/src" "$SHADOWS" "$G1/headless
   if [[ ! -d "$ROOT/src/takkernel/engine/src/main/java" ]]; then
     echo "render/env.sh: engine-shadows/ NOT drift-checked (no upstream src/ checkout) — if you edited dev/g1/patches, regenerate the shadow; 'make check-engine-shadows' verifies where src/ exists" >&2
   fi
-  find "$SHADOWS" -name '*.java' -print0 | xargs -0 "$JDK/bin/javac" -source 8 -target 8 -nowarn -encoding UTF-8 \
+  find "$SHADOWS" -name '*.java' -print0 | xargs -0 "$JDK/bin/javac" --release 21 -nowarn -encoding UTF-8 \
     -classpath "$CP" -d "$OUT" \
     || { rm -rf "$OUT"; exit 1; }
   # + dev/g1/headless/src: LayerStore/NativeGdal (G1.3) back the --layer option
-  find "$ENV_SH_DIR/src" "$G1/headless/src" -name '*.java' -print0 | xargs -0 "$JDK/bin/javac" -source 8 -target 8 -Xlint:all -Werror -encoding UTF-8 \
+  find "$ENV_SH_DIR/src" "$G1/headless/src" -name '*.java' -print0 | xargs -0 "$JDK/bin/javac" --release 21 -Xlint:all -Werror -encoding UTF-8 \
     -classpath "$OUT:$CP" -d "$OUT" \
     || { rm -rf "$OUT"; exit 1; }
   touch "$OUT"

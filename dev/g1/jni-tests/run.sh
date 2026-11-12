@@ -16,8 +16,8 @@
 #                  getFileCount isDirectory fix) and bail TE_Err with a
 #                  clean JNIEnv on real Java failures.
 #
-# Skips (exit 0) when no JDK 8 is present — the native build itself needs
-# none; CI's native job installs Zulu 8 before build-native.sh.
+# Skips (exit 0) when no JDK 21 is present — the native build itself needs
+# none; CI's native job installs JDK 21 before build-native.sh.
 #
 # Usage: jni-tests/run.sh [staged-dir]   (default: dev/g1/native-dist)
 set -euo pipefail
@@ -33,9 +33,11 @@ M2="${HOME}/.m2/repository"
 BIN="$DIST/takengine-jni-tests"
 [[ -x "$BIN" ]] || { echo "FATAL: $BIN missing — run dev/g1/build-native.sh first" >&2; exit 1; }
 
-JDK="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8 2>/dev/null || true)}"
+# shellcheck source=SCRIPTDIR/../../jdk.sh
+source "$ROOT/dev/jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
 if [[ -z "$JDK" ]]; then
-  echo "[g1] jni-tests SKIP: no JDK 8 found (the native build needs none; install zulu-8 to run)"
+  echo "[g1] jni-tests SKIP: no JDK 21 found (the native build needs none; install zulu@21 to run)"
   exit 0
 fi
 export JAVA_HOME="$JDK"

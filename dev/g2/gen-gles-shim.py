@@ -27,8 +27,8 @@ import sys
 from pathlib import Path
 
 JAR, GL3_H, JAVA_OUT, C_OUT, STUB_OUT = sys.argv[1:6]
-# JAVA_HOME (CI: setup-java) else the local Zulu 8; any JDK's javap reads these class files.
-JAVA_HOME = os.environ.get("JAVA_HOME") or subprocess.run(["/usr/libexec/java_home", "-v", "1.8"], capture_output=True, text=True).stdout.strip()
+# JAVA_HOME (CI: setup-java's JDK 21) else the local JDK 21; any JDK's javap reads these class files.
+JAVA_HOME = os.environ.get("JAVA_HOME") or subprocess.run(["/usr/libexec/java_home", "-v", "21"], capture_output=True, text=True).stdout.strip()
 JAVAP = JAVA_HOME + "/bin/javap"
 
 # ---------------------------------------------------------------- gl3.h ----

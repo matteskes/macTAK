@@ -192,6 +192,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- macTAK runs on JDK 21 (`dev/spike/g55/NOTES.md` §State, JDK 21; the
+  #99 review's decision). Every JVM macTAK starts, and the `javac` for
+  its own Java (`--release 21`), use JDK 21: the canaries,
+  `atak-headless` and its tests, `jni-tests`, the render harness, the
+  GDAL bindings and the Swift shell. JDK 8 stays a 4.6 build tool until
+  the 5.5 re-pin, for upstream's Gradle 6.9.1 and `javah`. New
+  `dev/jdk.sh` finds both by version (`MACTAK_JDK21_HOME`,
+  `MACTAK_JDK8_HOME`); CI installs both where 4.6 tools run. javac 21's
+  `this-escape` lint fixed in the `Matrix`, `Paint` and `Canvas`
+  stand-ins. g55 trap 9: the shell booted an inherited JDK 8
+  `JAVA_HOME`, now guarded in `shell/run.sh`.
 - `CONTRIBUTING.md`'s rebase section allows a 5.5 run to reuse a G1/G2
   gate through an opt-in `MACTAK_*` override in the 4.6 script (unset, no
   change; documented in the script's header), rather than a copy under

@@ -25,8 +25,12 @@ for j in $(echo "$CP" | tr ':' '\n'); do
     echo "       run: ./gradlew publishToMavenLocal (engine, port, annotation)" >&2; exit 1; }
 done
 
-JAVAH="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8)}/bin/javah"
-command -v "$JAVAH" >/dev/null 2>&1 || { echo "FATAL: javah not found (need JDK 8)" >&2; exit 1; }
+# javah is a 4.6 build tool: JDK 8 only (gone since JDK 10); the 5.5
+# re-pin replaces it with javac -h (dev/jdk.sh)
+# shellcheck source=SCRIPTDIR/../jdk.sh
+source "$ROOT/dev/jdk.sh"
+JAVAH="$(mactak_jdk_home 8 || true)/bin/javah"
+[[ -x "$JAVAH" ]] || { echo "FATAL: javah not found (need JDK 8: MACTAK_JDK8_HOME or java_home -v 1.8)" >&2; exit 1; }
 
 CLASSES_OK=0
 while IFS= read -r line; do

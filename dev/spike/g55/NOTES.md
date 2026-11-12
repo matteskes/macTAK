@@ -13,6 +13,38 @@ top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
 
+## State (JDK 21 — 2026-11-11): every JVM macTAK starts runs on JDK 21; JDK 8 stays a 4.6 build tool
+
+The 4.6 build moves its runtime to JDK 21 ahead of the re-pin, so a
+JVM-version break shows on the known-good 4.6 build rather than among
+5.5's changes. `dev/jdk.sh` finds both JDKs by their `release` file
+(trap 5's guard, shared now). On JDK 21: the canaries, `atak-headless`
+and its tests, `jni-tests`, the render harness, the GDAL bindings and the
+Swift shell's in-process JVM; macTAK's Java compiles with `--release 21`.
+JDK 8 stays only where 4.6 needs it until the re-pin: upstream's Gradle
+6.9.1 (JDK 16 at most) and `javah` (gone since JDK 10), which 4.6
+commo's JNI Makefile and `gen-jni-headers.sh` call. Every G1/G2 gate is
+green on this Mac, `make test-shell` included:
+
+```text
+[smoke] java 21.0.13.0.3 (OpenJDK 64-Bit Server VM)
+[smoke] SELECT 41+1 through the JNI stack = 42
+[g1] jni-tests OK — guards + kernel pins green
+[g1-roundtrip] PASS — both ifaces up, B's presence+marker relayed to A, A's presence relayed to B, both persisted in the tracks DBs
+[tls-test] PASS: server certs accepted, client-only impostors refused (OpenTAKServer profiles included)
+[check-gen-gles-shim] OK: committed shim matches the generator
+render-smoke: sentinel pixels left=0/262144 content pixels=262144 centre=(255,117,0,255)
+mactak-shell: libjli /Library/Java/JavaVirtualMachines/zulu-21.jdk/Contents/Home/lib/libjli.dylib
+window-app: 5 frames, 11.3 ms/frame (incl. glFinish), glErrors=0
+[shell-exit] PASS: a failed render exits 2
+```
+
+Render content pixels match the pre-move run (vector layer 23 890,
+basemap 262 144). javac 21's `this-escape` lint found three
+constructors calling overridable methods, in the `Matrix`, `Paint` and
+`Canvas` stand-ins; each now shares a private helper with the public
+method. Trap 9 below. Next: the re-pin.
+
 ## State (commo — 2026-11-11): 5.5 commo and its QUIC pass the G1 comms gates
 
 5.5's commoncommo builds through `dev/g1/build-commo.sh` (opt-in
@@ -452,6 +484,20 @@ patches brings the series to 37.
    text into the QUIC failure's error message, pinned by a
    `QuicStreamingTest` leg that forces a socket error and expects the
    cause in the output.
+9. **The Swift shell boots whatever JDK `JAVA_HOME` names.**
+   `jni_boot.c` loads `$JAVA_HOME`'s `libjli` and `shell/run.sh` never
+   set it, so an inherited JDK 8 booted under classes `env.sh` had
+   compiled for 21. A/B, `JAVA_HOME` pointing at Zulu 8, without the
+   guard:
+
+   ```text
+   mactak-shell: libjli …/zulu-8.jdk/Contents/Home/jre/lib/jli/libjli.dylib
+   java.lang.UnsupportedClassVersionError: mactak/render/WindowApp has been compiled by a more recent version of the Java Runtime (class file version 65.0), this version of the Java Runtime only recognizes class file versions up to 52.0
+   ```
+
+   **Guard:** `shell/run.sh` exports `JAVA_HOME` as the JDK that
+   compiled the classes; with it, the same run boots
+   `zulu-21.jdk/…/lib/libjli.dylib` and passes.
 
 ## Exit
 
@@ -479,10 +525,10 @@ passes the G1 comms gates. What remains before the re-pin (study step
    `StreamingTransport` overload; peer-to-peer QUIC, after the
    pre-existing interface-scanner bug; and whether ngtcp2 is built in CI
    as here or committed.
-4. **The Java 8 → 21 move** (2–3 days; decided on #99's review: JDK 21,
-   its own PR after this stack): CI's Zulu 8 jobs, the headless
-   launcher (then `layer.sh` and the full 5.5 headless run), the render
-   harness, and JDK 21's `this-escape` lint.
+4. ~~**The Java 8 → 21 move**~~ **Done** (§State, JDK 21): every JVM
+   on JDK 21. Carried forward to the re-pin: JDK 8 itself, kept for
+   4.6's Gradle 6.9.1 and `javah`; the re-pin's 5.5 Gradle 8.13 and
+   `javac -h` remove it.
 5. **The re-pin** (1–2 days): fold `build-engine.sh`'s wrapper changes into
    `build-native.sh`, move `dev/spike/g55/patches` to `dev/g1/patches`,
    `jni-include/` to `dev/g1/jni-include` (replacing `gen-jni-headers.sh`,

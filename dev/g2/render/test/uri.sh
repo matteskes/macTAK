@@ -2,7 +2,7 @@
 # android.net.Uri stand-in canary: fromFile round trips for paths holding
 # URI syntax (# ? % + space, non-ASCII), Android's encode/decode rules, and
 # the parse behaviour the engine already relied on. Pure Java (the class is
-# JDK-only), so this needs no natives. Runs on Zulu 8 (CI) and any JDK >= 8.
+# JDK-only), so this needs no natives. Runs on JDK 21 (CI) and any JDK >= 8.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g2/render/test

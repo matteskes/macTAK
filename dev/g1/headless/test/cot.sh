@@ -3,7 +3,7 @@
 # --send-marker coordinate checks, direct-child <point>/<contact> lookup,
 # XXE refusal, and presence/marker events parsed back. Pure Java (both
 # classes are JDK-only), so this needs no natives and no server. Runs on
-# Zulu 8 (CI) and any JDK >= 8.
+# JDK 21 (CI) and any JDK >= 8.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

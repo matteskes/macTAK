@@ -20,7 +20,7 @@ static char g_javaHome[PATH_MAX];
 
 typedef jint (*CreateJavaVM_t)(JavaVM **, void **, void *);
 
-/* $JAVA_HOME, else `/usr/libexec/java_home -v 1.8`. Returns g_javaHome, or
+/* $JAVA_HOME (run.sh sets JDK 21), else `/usr/libexec/java_home -v 21`. Returns g_javaHome, or
  * NULL with err filled. */
 static const char *resolve_java_home(char *err, size_t errLen) {
     const char *home = getenv("JAVA_HOME");
@@ -28,13 +28,13 @@ static const char *resolve_java_home(char *err, size_t errLen) {
         snprintf(g_javaHome, sizeof g_javaHome, "%s", home);
         return g_javaHome;
     }
-    FILE *p = popen("/usr/libexec/java_home -v 1.8 2>/dev/null", "r");
+    FILE *p = popen("/usr/libexec/java_home -v 21 2>/dev/null", "r");
     if (!p) { snprintf(err, errLen, "could not run /usr/libexec/java_home"); return NULL; }
     char line[PATH_MAX] = {0};
     const char *got = fgets(line, sizeof line, p);
     const int rc = pclose(p);
     if (!got || rc != 0) {
-        snprintf(err, errLen, "no JAVA_HOME and /usr/libexec/java_home -v 1.8 found nothing");
+        snprintf(err, errLen, "no JAVA_HOME and /usr/libexec/java_home -v 21 found nothing");
         return NULL;
     }
     line[strcspn(line, "\n")] = '\0';
@@ -46,10 +46,10 @@ const char *mactak_find_libjli(char *err, size_t errLen) {
     const char *home = resolve_java_home(err, errLen);
     if (!home) return NULL;
 
-    /* Probe order: JDK 8 layout first (this project pins Zulu 8), then the
-     * bundle copy, then the 9+ layout. First path that dlopens wins. */
+    /* Probe order: the JDK 8 layout, the bundle copy, then the 9+ layout
+     * that JDK 21 uses. First path that dlopens wins. */
     const char *rel[] = {
-        "jre/lib/jli/libjli.dylib",      /* JDK 8 (Zulu 8 on this box) */
+        "jre/lib/jli/libjli.dylib",      /* JDK 8 layout */
         "Contents/Home/jre/lib/jli/libjli.dylib",  /* a bundle root handed directly */
         "Contents/MacOS/libjli.dylib",   /* JDK 8 bundle copy */
         "lib/libjli.dylib",              /* JDK 9+ */
@@ -79,7 +79,7 @@ int mactak_create_jvm(char **options, int nOptions, char *err, size_t errLen) {
 
     JavaVMInitArgs args;
     memset(&args, 0, sizeof args);
-    args.version = JNI_VERSION_1_8;   /* this project pins JDK 8 */
+    args.version = JNI_VERSION_1_8;   /* JDK 21 accepts it */
     args.nOptions = nOptions;
     args.options = malloc((size_t)(nOptions > 0 ? nOptions : 1) * sizeof(JavaVMOption));
     if (!args.options) { snprintf(err, errLen, "out of memory"); return -1; }

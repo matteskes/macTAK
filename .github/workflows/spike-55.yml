@@ -203,12 +203,21 @@ jobs:
           brew install cmake rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
           openssl@3 libxml2 protobuf libmicrohttpd curl
 
-      - name: Set up Zulu 8 (arm64) — javah, the launcher and the QUIC canary
+      - name: Set up Zulu 8 (arm64) — javah and the QUIC canary
         id: jdk8
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
           java-version: '8'
+          architecture: aarch64
+
+      - name: Set up Zulu 21 (arm64) — the 4.6 canaries, build-commo.sh's canary and atak-headless
+        # dev/jdk.sh: every JVM the shared 4.6 scripts start is JDK 21 now;
+        # commo.sh keeps JDK 8 (G55_JDK8_HOME) for javah and its QUIC test
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: zulu
+          java-version: '21'
           architecture: aarch64
 
       - name: Build the 4.6 engine (dev/g1/build-native.sh, verbatim)
