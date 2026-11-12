@@ -1,12 +1,13 @@
 # Tier 1 per docs/ci-qa.md: native-engine PR gate, comms-stack gate, JVM
 # kernel tests, shell/workflow lint.
 #
-# `src/` is local-only (gitignored): CI materializes the upstream ATAK CIV tree at
-# the same pinned commit the local build uses. dev/g1/build-native.sh runs
-# verbatim — one canonical build path, no CI-specific forks.
+# `src/` is local-only (gitignored): CI materializes the upstream tree
+# (TAK-Product-Center/atak-civ 5.5.1.10) at the same pinned commit the local
+# build uses, sparse, each job only what it builds. The dev/g1 and dev/g2
+# scripts run verbatim — one canonical build path, no CI-specific forks.
 
 # Runs on every pull_request (no paths filter) so the main ruleset's required
-# CI checks — "native engine (macOS arm64)", "JVM tests (Zulu 8, macOS arm64)",
+# CI checks — "native engine (macOS arm64)", "JVM tests (macOS arm64)",
 # "lint (shell + workflows)" — always report. With paths-ignore, docs-only PRs
 # never trigger this workflow and those required checks are stuck at
 # "Expected" forever — the same gap the docs workflow closed in PR #12
@@ -91,15 +92,26 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out upstream ATAK CIV at the pinned commit
+      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 at the pinned commit (sparse)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: deptofdefense/AndroidTacticalAssaultKit-CIV
-          ref: 889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc # keep in sync with local src/ (docs/ci-qa.md)
+          repository: TAK-Product-Center/atak-civ
+          ref: 9f6893dd657feacc35ec5de03dad721c2e44170e # keep in sync with local src/ (CONTRIBUTING.md, Setup)
           path: src
-          submodules: recursive
           fetch-depth: 1
+          sparse-checkout: |
+            takkernel
+            commoncommo
+            takcot
+            takproto
+            khronos
+            takengine/thirdparty/tinygltfloader
+            depends
           persist-credentials: false
+
+      - name: Pull the tinygltf tarball from Git LFS (depends/ holds LFS pointers)
+        if: needs.changes.outputs.changed == 'true'
+        run: git -C src lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
 
       - name: Install engine dependencies (Homebrew)
         if: needs.changes.outputs.changed == 'true'
@@ -109,22 +121,26 @@ jobs:
         # + the build-commo.sh preflight list: the layer canary below runs
         # atak-headless, which is one JVM with both stacks since G1.4.
         run: >
-          brew install cmake rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
-          openssl@3 libxml2 protobuf libmicrohttpd curl
+          brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
+          openssl@3 libxml2 protobuf libmicrohttpd curl mdbtools glib assimp
 
-      - name: Set up Zulu 21 + Zulu 8 (arm64)
+      - name: Set up Zulu 21 (arm64)
         # build-native.sh itself needs no JDK (jni.h is pinned at
         # dev/g1/jdk-include) but its final canaries load the engine in a
-        # JDK 21 JVM (dev/g1/smoke/run.sh, jni-tests). JDK 8 only builds
-        # 4.6 commo (its JNI Makefile calls javah) until the 5.5 re-pin;
-        # 21 is listed last, so JAVA_HOME and PATH are JDK 21 (dev/jdk.sh).
+        # JDK 21 JVM (dev/g1/smoke/run.sh, jni-tests), and Gradle 8.13
+        # builds the kernel jars on it
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: |
-            8
-            21
+          java-version: '21'
           architecture: aarch64
+          cache: gradle
+
+      - name: Kernel jars (dev/g1/kernel/build-kernel-jars.sh, verbatim)
+        # takkernel 8.30.5 from src/ (public artifacts only); the canaries
+        # below load them
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g1/kernel/build-kernel-jars.sh
 
       - name: Build engine + canary (dev/g1/build-native.sh, verbatim)
         if: needs.changes.outputs.changed == 'true'
@@ -174,15 +190,26 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out upstream ATAK CIV at the pinned commit
+      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 at the pinned commit (sparse)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: deptofdefense/AndroidTacticalAssaultKit-CIV
-          ref: 889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc # keep in sync with local src/ (docs/ci-qa.md)
+          repository: TAK-Product-Center/atak-civ
+          ref: 9f6893dd657feacc35ec5de03dad721c2e44170e # keep in sync with local src/ (CONTRIBUTING.md, Setup)
           path: src
-          submodules: recursive
           fetch-depth: 1
+          sparse-checkout: |
+            takkernel
+            commoncommo
+            takcot
+            takproto
+            khronos
+            takengine/thirdparty/tinygltfloader
+            depends
           persist-credentials: false
+
+      - name: Pull the tinygltf tarball from Git LFS (depends/ holds LFS pointers)
+        if: needs.changes.outputs.changed == 'true'
+        run: git -C src lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
 
       - name: Install engine dependencies (Homebrew)
         if: needs.changes.outputs.changed == 'true'
@@ -190,27 +217,24 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: >
-          brew install cmake rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2
-          openssl@3 protobuf libmicrohttpd curl swig
+          brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2
+          openssl@3 protobuf libmicrohttpd curl swig mdbtools glib assimp
 
-      - name: Set up Zulu 21 + Zulu 8 (arm64)
-        # JDK 21 runs the render harness; JDK 8 only builds 4.6 commo
-        # (javah) until the 5.5 re-pin. 21 is last: JAVA_HOME (dev/jdk.sh).
+      - name: Set up Zulu 21 (arm64)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: |
-            8
-            21
+          java-version: '21'
           architecture: aarch64
+          cache: gradle
+
+      - name: Kernel jars (dev/g1/kernel/build-kernel-jars.sh, verbatim)
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g1/kernel/build-kernel-jars.sh
 
       - name: GLES shim drift gate (regenerate from transplant jar x gl3.h, diff against committed)
         if: needs.changes.outputs.changed == 'true'
         run: make check-gen-gles-shim
-
-      - name: Engine shadow drift gate (shadowed engine Java == upstream src/ + dev/g1/patches hunk)
-        if: needs.changes.outputs.changed == 'true'
-        run: make check-engine-shadows
 
       - name: Stage ANGLE (pinned Electron release) + EGL/ES3 triangle smoke
         if: needs.changes.outputs.changed == 'true'
@@ -398,14 +422,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out upstream ATAK CIV at the pinned commit
+      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 at the pinned commit (sparse)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: deptofdefense/AndroidTacticalAssaultKit-CIV
-          ref: 889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc # keep in sync with local src/ (docs/ci-qa.md)
+          repository: TAK-Product-Center/atak-civ
+          ref: 9f6893dd657feacc35ec5de03dad721c2e44170e # keep in sync with local src/ (CONTRIBUTING.md, Setup)
           path: src
-          submodules: recursive
           fetch-depth: 1
+          sparse-checkout: |
+            commoncommo
           persist-credentials: false
 
       - name: Install comms dependencies (Homebrew)
@@ -416,20 +441,24 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: brew install openssl@3 libxml2 protobuf libmicrohttpd curl
 
-      - name: Set up Zulu 21 + Zulu 8 (arm64) — javah builds the JNI glue, 21 runs the canary
-        # JDK 8 for 4.6 commo's javah until the 5.5 re-pin; 21 is last, so
-        # JAVA_HOME and PATH are JDK 21 (dev/jdk.sh)
+      - name: Set up Zulu 21 (arm64) — javac -h writes the JNI headers, 21 runs the canaries
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: |
-            8
-            21
+          java-version: '21'
           architecture: aarch64
 
-      - name: Build comms stack + canaries (dev/g1/build-commo.sh, verbatim)
+      - name: Build comms stack + canaries (dev/g1/build-commo.sh, verbatim; ngtcp2 for QUIC)
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g1/build-commo.sh
+
+      - name: QUIC canary (make test-quic)
+        # commo's streaming QUIC client on ngtcp2's ossl backend against an
+        # aioquic stand-in (hash-pinned venv): a takstream handshake that
+        # delivers a marker, and a clientAuth-only impostor refused
+        # (security #1 on the QUIC path)
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-quic
 
       - name: Upload comms artifacts
         # Guarded: if-no-files-found is error, which would fail a no-op run.
@@ -444,12 +473,11 @@ jobs:
           if-no-files-found: error
 
   jvm-tests:
-    # The name is a required check in main's ruleset: renaming it strands
-    # the check at "Expected". It still runs Zulu 8 (4.6's Gradle) beside
-    # JDK 21 (the canaries and the compile gate).
-    name: JVM tests (Zulu 8, macOS arm64)
+    # A required check in main's ruleset under this name (renamed from
+    # "JVM tests (Zulu 8, macOS arm64)" at the 5.5 re-pin, with the ruleset).
+    name: JVM tests (macOS arm64)
     needs: changes
-    runs-on: macos-26 # matches the locally verified macOS/Zulu 8 arm64 environment
+    runs-on: macos-26 # matches the locally verified macOS/JDK 21 arm64 environment
     timeout-minutes: 40
     steps:
       - name: Check out macTAK
@@ -457,64 +485,58 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out upstream ATAK CIV at the pinned commit
+      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 at the pinned commit (sparse)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: deptofdefense/AndroidTacticalAssaultKit-CIV
-          ref: 889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc
+          repository: TAK-Product-Center/atak-civ
+          ref: 9f6893dd657feacc35ec5de03dad721c2e44170e # keep in sync with local src/ (CONTRIBUTING.md, Setup)
           path: src
-          submodules: recursive
           fetch-depth: 1
+          sparse-checkout: |
+            takkernel
+            commoncommo
           persist-credentials: false
 
-      - name: Set up Zulu 21 + Zulu 8 (arm64)
-        # 4.6's Gradle 6.9.1 runs on JDK <= 16, so the kernel step below
-        # pins JAVA_HOME to JDK 8 until the 5.5 re-pin; everything else runs
-        # on JDK 21 (listed last: JAVA_HOME and PATH, dev/jdk.sh)
+      - name: Set up Zulu 21 (arm64)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: |
-            8
-            21
+          java-version: '21'
           architecture: aarch64
           cache: gradle
 
-      - name: Install android-port transplant to mavenLocal
-        # gov.tak.support:android-port is TAK-artifactory-only; G0 built a
-        # compile-only transplant (see dev/spike/g0/NOTES.md §3). CI installs
-        # the committed jar so the G0 patch's mavenLocal repo resolves it.
+      - name: Kernel jars + JNI headers (dev/g1/kernel/build-kernel-jars.sh, verbatim)
         if: needs.changes.outputs.changed == 'true'
-        run: mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.2:install-file
-          -Dfile=dev/spike/g0/transplants/android-port-3.1.0.jar
-          -DpomFile=dev/spike/g0/transplants/android-port-3.1.0.pom
+        run: bash dev/g1/kernel/build-kernel-jars.sh
 
-      - name: Apply G0 public-source build patch
+      - name: JNI headers match the committed dev/g1/jni-include
+        # build-native.sh compiles the glue against the committed headers
+        # (no JDK needed there); a kernel change that alters a native
+        # signature must land with its regenerated headers
         if: needs.changes.outputs.changed == 'true'
-        run: patch -d src -p1 --forward < dev/spike/g0/patches/gradle-public-source-build.patch
+        run: |
+          if ! git diff --quiet -- dev/g1/jni-include || [ -n "$(git ls-files --others --exclude-standard dev/g1/jni-include)" ]; then
+            git status --short -- dev/g1/jni-include
+            echo "::error::dev/g1/jni-include drifted from the kernel build — commit build-kernel-jars.sh's headers"
+            exit 1
+          fi
 
-      - name: Apply G0 shared-test patch (commons-math3 + runtime-stub test exclusion)
+      - name: Kernel unit tests (make test-kernel)
+        # takkernel's :port tests on Gradle 8.13, minus the classes that need
+        # Android's runtime (dev/g1/kernel/port-tests.gradle). :shared does
+        # not compile from public sources at 5.5 (dev/spike/g55/NOTES.md
+        # trap 11).
         if: needs.changes.outputs.changed == 'true'
-        run: patch -d src -p1 --forward < dev/spike/g0/patches/gradle-shared-test-deps.patch
-
-      - name: Kernel tests + publishToMavenLocal
-        if: needs.changes.outputs.changed == 'true'
-        working-directory: src/takkernel
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_8_AARCH64 }}  # Gradle 6.9.1: JDK <= 16
-        run: ./gradlew --no-daemon :shared:test :port:test publishToMavenLocal
+        run: make test-kernel
 
       - name: Upload test reports
         if: always() && needs.changes.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jvm-test-reports
-          # G0 patch relocates Gradle build dirs under build/java/
           path: |
-            src/takkernel/shared/build/java/reports/tests/
-            src/takkernel/port/build/java/reports/tests/
-            src/takkernel/shared/build/java/test-results/test/
-            src/takkernel/port/build/java/test-results/test/
+            dev/g1/kernel/build/takkernel/port/build/java/reports/tests/
+            dev/g1/kernel/build/takkernel/port/build/java/test-results/test/
           if-no-files-found: warn
 
       - name: Data-package importer canary
@@ -545,7 +567,7 @@ jobs:
         # javac'd from this checkout (exactly the sources build-commo.sh
         # seeds jcommoncommo.jar with), then test/compile-gate.sh runs the
         # launcher's own compile line (JDK 21, -Xlint:all -Werror, the same
-        # mavenLocal-first/transplants-fallback classpath).
+        # kernel-jar classpath).
         if: needs.changes.outputs.changed == 'true'
         run: |
           set -euo pipefail

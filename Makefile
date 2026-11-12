@@ -1,4 +1,4 @@
-.PHONY: help hooks build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window lint clean
+.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window lint clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -12,9 +12,10 @@ GLES_SHIM_OUT   := dev/g2/render/src/android/opengl/GLES20.java dev/g2/render/sr
 help:
 	@echo "Targets:"
 	@echo "  hooks          - install git hooks (git config core.hooksPath .githooks)"
-	@echo "  build          - build native + commo (dev/g1/build-native.sh, dev/g1/build-commo.sh)"
+	@echo "  kernel-jars    - build the takkernel jars + JNI headers from src/ (dev/g1/kernel/build-kernel-jars.sh → dev/g1/kernel-dist)"
+	@echo "  build          - kernel jars + native + commo (build-kernel-jars.sh, build-native.sh, build-commo.sh)"
 	@echo "  angle          - stage ANGLE (EGL/GLES on Metal) into dev/g2/angle-dist (dev/g2/fetch-angle.sh)"
-	@echo "  build-angle    - build native with ANGLE in the GLES slot (MACTAK_GLES=angle) + commo"
+	@echo "  build-angle    - kernel jars + native with ANGLE in the GLES slot (MACTAK_GLES=angle) + commo"
 	@echo "  gdal-java      - G2.4b: build the GDAL SWIG Java bindings (org.gdal) against Homebrew libgdal into dev/g2/gdal-java-dist + smoke (dev/g2/fetch-gdal-java.sh)"
 	@echo "  test-gdal-projection - G2.4 b.2: the engine's GdalLibrary.init + GdalDatasetProjection2 on GDAL 3 with the axis-order patch (needs build-angle + gdal-java)"
 	@echo "  gen-gles-shim  - regenerate the android.opengl GLES shim (Java + JNI + stub) from the transplant jar x gl3.h"
@@ -22,6 +23,7 @@ help:
 	@echo "  check-transplants - fail if a committed transplant jar is unlisted in, or differs from, its SHA256SUMS (CI gate)"
 	@echo "  check-ots-profiles - fail if OpenTAKServer's upstream cert profiles differ from the copy test-tls pins (needs network; nightly CI)"
 	@echo "  test           - run smoke tests (dev/g1/smoke/run.sh)"
+	@echo "  test-kernel    - takkernel's own :port unit tests on Gradle 8.13 (dev/g1/kernel/test-kernel.sh; after kernel-jars)"
 	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"
@@ -37,13 +39,16 @@ help:
 hooks:
 	git config core.hooksPath .githooks
 
-build:
+kernel-jars:
+	bash dev/g1/kernel/build-kernel-jars.sh
+
+build: kernel-jars
 	bash dev/g1/build-native.sh && bash dev/g1/build-commo.sh
 
 angle:
 	bash dev/g2/fetch-angle.sh && bash dev/g2/smoke/run.sh
 
-build-angle: angle
+build-angle: angle kernel-jars
 	MACTAK_GLES=angle bash dev/g1/build-native.sh && bash dev/g1/build-commo.sh
 
 gdal-java:
@@ -76,6 +81,9 @@ check-ots-profiles:
 
 test:
 	bash dev/g1/smoke/run.sh
+
+test-kernel:
+	bash dev/g1/kernel/test-kernel.sh
 
 # G1.9: the JNI guard/behavior canary built by `make build`, run against
 # the staged dylibs. Boots the desktop JVM twice — guards mode (empty
@@ -172,4 +180,4 @@ lint:
 	fi
 
 clean:
-	rm -rf dev/g1/native-dist dev/g1/build-commo dev/g1/headless/build dev/g2/angle-dist dev/g2/build
+	rm -rf dev/g1/native-dist dev/g1/build-commo dev/g1/build-ngtcp2 dev/g1/kernel-dist dev/g1/kernel/build dev/g1/headless/build dev/g2/angle-dist dev/g2/build
