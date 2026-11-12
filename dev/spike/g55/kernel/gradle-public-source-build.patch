@@ -1,0 +1,124 @@
+diff --git a/takkernel/build.gradle b/takkernel/build.gradle
+index 53bc420..2116266 100644
+--- a/takkernel/build.gradle
++++ b/takkernel/build.gradle
+@@ -11,7 +11,10 @@ buildscript { scriptHandler ->
+         // `gradle-cmake-plugin` is not required for Android builds and is observed to cause Gradle
+         // sync issues in Android Studio when using the ATAK monorepo configuration; command-line
+         // builds and standalone `takkernel` development in Android Studio are not affected.
+-        if(project.findProperty('kernelBuildTarget') != 'android') {
++        // macTAK: `gov.tak.gradle.cmake:gradle-cmake-plugin` is only on the credential-gated TAK
++        // artifactory. -PuseTakRepo=true restores upstream; without it the Java build skips the
++        // native hook (macTAK builds the dylibs with its own wrapper).
++        if(project.hasProperty('useTakRepo') && project.findProperty('kernelBuildTarget') != 'android') {
+             classpath "gov.tak.gradle.cmake:gradle-cmake-plugin:$gradleCmakePluginVersion"
+         }
+         classpath "org.owasp:dependency-check-gradle:${owaspDependencyCheckVersion}"
+diff --git a/takkernel/engine/build.gradle b/takkernel/engine/build.gradle
+index 5a2d825..75adc8a 100644
+--- a/takkernel/engine/build.gradle
++++ b/takkernel/engine/build.gradle
+@@ -1,6 +1,10 @@
+ apply from: configProject.file('gradle/conan.gradle'), to: project
+ 
+-externalNativeBuild {
++// macTAK: -PuseTakRepo=true restores the upstream native build and its TAK-artifactory runtime
++// artifacts. Default off: Java only, against public artifacts; macTAK builds the dylibs itself.
++def useTakRepo = project.findProperty('useTakRepo') == 'true'
++
++if(useTakRepo) externalNativeBuild {
+     def conanPath = ''
+     if (project.getProperty(project, 'conan.dir', null)) {
+         conanPath = "${project.getProperty(project, 'conan.dir', null)}${File.separator}conan"
+@@ -53,12 +57,16 @@ dependencies {
+         testImplementation("junit:junit:${junitVersion}")
+ 
+         api("gov.tak.support:android-port:${androidPortVersion}")
+-        api("gov.tak.support:gles-jogl-c:${glesJoglCVersion}")
+-        api("gov.tak.thirdparty:takthirdparty-rt-${runtimePlatform}:${takthirdpartyVersion}")
+-        api("gov.tak.thirdparty:gdal:${takthirdpartyVersion}:tak")
+-        api("gov.tak.thirdparty:gdaldata:${takthirdpartyVersion}")
+-        api("gov.tak.thirdparty:jassimp:${takthirdpartyVersion}:tak")
+-        api("gov.tak.thirdparty:libLAS-${runtimePlatform}:${libLasVersion}")
++        // macTAK: TAK-artifactory runtime artifacts; the android-port substitute carries the
++        // org.gdal and jassimp classes the Java compiles against
++        if(useTakRepo) {
++            api("gov.tak.support:gles-jogl-c:${glesJoglCVersion}")
++            api("gov.tak.thirdparty:takthirdparty-rt-${runtimePlatform}:${takthirdpartyVersion}")
++            api("gov.tak.thirdparty:gdal:${takthirdpartyVersion}:tak")
++            api("gov.tak.thirdparty:gdaldata:${takthirdpartyVersion}")
++            api("gov.tak.thirdparty:jassimp:${takthirdpartyVersion}:tak")
++            api("gov.tak.thirdparty:libLAS-${runtimePlatform}:${libLasVersion}")
++        }
+ 
+         testImplementation("org.j3d:j3d-geom:${j3dVersion}")
+     } else if(isAndroidKernelBuild) {
+@@ -117,14 +125,21 @@ task cleanCMakeExports(type: Delete) {
+ // configure custom task dependencies
+ clean.dependsOn cleanCMakeExports
+ 
++// macTAK: the JNI headers, as upstream's generateJniHeaders emits them (javac -h)
++if(!useTakRepo) compileJava.options.compilerArgs += ['-h', "${buildDir}/generated/jni/"]
++
+ afterEvaluate {
+     if (isJavaKernelBuild) {
+         // Java specific
+         def runtimeJarTask = tasks.getByName('runtimePlatformJar')
+-        runtimeJarTask.dependsOn('postExternalNativeBuild')
+-        jar.dependsOn(runtimeJarTask)
++        if(useTakRepo) {
++            runtimeJarTask.dependsOn('postExternalNativeBuild')
++            jar.dependsOn(runtimeJarTask)
++        }
+ 
+-        publishing {
++        // macTAK: the rt-<platform> and -main publications package the native runtime jars;
++        // the plain jar publication from gradle/publishing.gradle still applies
++        if(useTakRepo) publishing {
+             publications {
+                 // jar publication defined in `publishing.gradle`
+                 jar.pom.withXml {
+diff --git a/takkernel/gradle/takrepo.gradle b/takkernel/gradle/takrepo.gradle
+index 9b90840..b5dda4a 100644
+--- a/takkernel/gradle/takrepo.gradle
++++ b/takkernel/gradle/takrepo.gradle
+@@ -18,6 +18,8 @@ repositories {
+     mavenLocal()
+     google()
+     mavenCentral()
++    // macTAK: JOGL 2.5.0 is not on Maven Central (it skips from 2.3.2 to 2.6.0)
++    maven { url 'https://jogamp.org/deployment/maven' }
+ }
+ 
+ ext.repos = repositories
+\ No newline at end of file
+diff --git a/takkernel/gradle/versions.gradle b/takkernel/gradle/versions.gradle
+index 143fcf6..326c118 100644
+--- a/takkernel/gradle/versions.gradle
++++ b/takkernel/gradle/versions.gradle
+@@ -11,7 +11,9 @@ ext {
+     kotlinVersion = '2.1.10'
+ 
+     // general dependencies
+-    androidPortVersion = '6.1.2'
++    // macTAK: 6.1.2 is only on the TAK artifactory; 3.1.0-g55 is the public-source, compile-only
++    // substitute built by macTAK's dev/spike/g55/android-port (Android SDK + the public CIV 5.5.1.8 apk)
++    androidPortVersion = '3.1.0-g55'
+     assertjVersion = '3.6.1'
+     bouncyCastleVersion = '1.78.1'
+     commonsTextVersion = '1.9'
+diff --git a/takkernel/settings.gradle b/takkernel/settings.gradle
+index 23c1e7c..603ff83 100644
+--- a/takkernel/settings.gradle
++++ b/takkernel/settings.gradle
+@@ -32,7 +32,9 @@ if(new File(settingsDir, 'controlled').exists()) {
+     include(':controlled')
+     project(':controlled').projectDir = new File(settingsDir, 'controlled')
+ }
+-if(new File(settingsDir, 'controlledaarbundle')) {
++// macTAK: a File is always truthy in Groovy; without .exists() public-source builds include a
++// project whose directory upstream does not publish.
++if(new File(settingsDir, 'controlledaarbundle').exists()) {
+     include(':controlledaar')
+     project(':controlledaar').projectDir = new File(settingsDir, 'controlledaarbundle')
+ }

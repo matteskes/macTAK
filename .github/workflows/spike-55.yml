@@ -1,6 +1,7 @@
 # Spike 1 of the 5.5 rebase (docs/rebase-study-5.5.md, dev/spike/g55/NOTES.md):
-# build the 5.5 engine on macOS arm64 without 3D Tiles and report every
-# source that fails. Evidence, not a gate: not a required check, and a red
+# build the 5.5 engine and its JNI glue on macOS arm64 without 3D Tiles,
+# report every source that fails, then load the glue in a JVM (the G1 load
+# canary) and run G1's JNI guard tests against it. Evidence, not a gate: not a required check, and a red
 # run is the spike's answer, not a regression (docs/ci-qa.md §7, the G0
 # precedent).
 #
@@ -17,6 +18,8 @@ on:
     branches: ['spike/g55-*']
     paths:
       - 'dev/spike/g55/**'
+      - 'dev/g1/jni-tests/**'
+      - 'dev/g1/smoke/**'
       - '.github/workflows/spike-55.yml'
 
 permissions:
@@ -28,7 +31,7 @@ concurrency:
 
 jobs:
   engine:
-    name: 5.5 engine without 3D Tiles (macOS arm64)
+    name: 5.5 engine + JNI without 3D Tiles (macOS arm64)
     runs-on: macos-26 # same toolchain as ci.yml's native-engine job
     timeout-minutes: 90
     steps:
@@ -37,7 +40,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 (engine, khronos, GLTF headers)
+      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 (takkernel, khronos, GLTF headers)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: TAK-Product-Center/atak-civ
@@ -46,8 +49,9 @@ jobs:
           fetch-depth: 1
           # depends/ holds Git LFS pointers; only the tinygltf tarball is
           # pulled below (the others include GDAL 2 and assimp sources)
+          # all of takkernel: the jars build from its Gradle projects
           sparse-checkout: |
-            takkernel/engine/src/main
+            takkernel
             khronos
             takengine/thirdparty/tinygltfloader
             depends
@@ -60,15 +64,60 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
-        # ci.yml's native-engine list minus the test/commo-only formulae,
-        # plus ninja (build-engine.sh uses -k 0), mdbtools and glib (5.5's
-        # MS Access provider) and assimp (5.5's ASSIMP scene SPI)
+        # ci.yml's native-engine list minus the commo-only formulae, plus
+        # ninja (build-engine.sh uses -k 0), mdbtools and glib (5.5's MS
+        # Access provider), assimp (5.5's ASSIMP scene SPI) and openssl@3
+        # (5.5's JNI libcurl client)
         run: >
           brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json
-          libxml2 mdbtools glib assimp
+          libxml2 mdbtools glib assimp openssl@3 googletest
 
-      - name: Build the 5.5 engine (dev/spike/g55/build-engine.sh)
+      - name: Set up Zulu 8 (arm64) for the android-port stubs
+        id: jdk8
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: zulu
+          java-version: '8'
+          architecture: aarch64
+
+      # last, so it is the JAVA_HOME left behind; the scripts take both
+      # JDKs from G55_JDK<v>_HOME regardless (dev/spike/g55/runtime.sh)
+      - name: Set up Zulu 21 (arm64) for Gradle 8.13 and the 5.5 jars (Java 11 bytecode)
+        id: jdk21
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: zulu
+          java-version: '21'
+          architecture: aarch64
+
+      - name: Build the 5.5 kernel jars and JNI headers (dev/spike/g55/kernel/build-kernel-jars.sh)
+        env:
+          G55_JDK8_HOME: ${{ steps.jdk8.outputs.path }}
+          G55_JDK21_HOME: ${{ steps.jdk21.outputs.path }}
+        run: bash dev/spike/g55/kernel/build-kernel-jars.sh upstream-55
+
+      - name: JNI headers match the committed dev/spike/g55/jni-include
+        # status, not diff: a header for a new native class is untracked
+        run: |
+          drift="$(git status --porcelain -- dev/spike/g55/jni-include)"
+          if [[ -n "$drift" ]]; then
+            echo "$drift"
+            echo "::error::regenerated JNI headers differ from the committed ones; commit dev/spike/g55/jni-include"
+            exit 1
+          fi
+
+      - name: Build the 5.5 engine and JNI glue (dev/spike/g55/build-engine.sh)
         run: bash dev/spike/g55/build-engine.sh upstream-55
+
+      - name: Load canary on 5.5 (dev/spike/g55/smoke.sh)
+        env:
+          G55_JDK21_HOME: ${{ steps.jdk21.outputs.path }}
+        run: bash dev/spike/g55/smoke.sh
+
+      - name: JNI guard tests on 5.5 (dev/spike/g55/jni-tests.sh)
+        env:
+          G55_JDK21_HOME: ${{ steps.jdk21.outputs.path }}
+        run: bash dev/spike/g55/jni-tests.sh
 
       - name: Upload build log and summary
         if: always()
@@ -79,5 +128,7 @@ jobs:
             dev/spike/g55/build/summary.txt
             dev/spike/g55/build/build.log
             dev/spike/g55/build/configure.log
+            dev/spike/g55/build/kernel/gradle.log
+            dev/spike/g55/build/dist/*.xml
           if-no-files-found: warn
           retention-days: 30

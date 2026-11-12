@@ -1,0 +1,37 @@
+--- a/tmp/takeng-src/jni/common.cpp
++++ b/tmp/takeng-src/jni/common.cpp
+@@ -817,13 +817,28 @@
+     mtag(nullptr)
+ {
+ #ifndef __ANDROID__
++    // macTAK: JNI_OnLoad builds this logger. When com.atakmap.coremap.log.Log
++    // cannot load (its class init needs slf4j on the classpath), FindClass
++    // returned NULL and GetStaticMethodID(NULL, ...) crashed the JVM. Each
++    // lookup now leaves NULL with no pending exception; print() skips NULL
++    // methods, so native logging goes quiet instead of taking the JVM down.
+     Log_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/coremap/log/Log");
+-    Log_class.v = env.GetStaticMethodID(Log_class.id, "v", "(Ljava/lang/String;Ljava/lang/String;)I");
+-    Log_class.d = env.GetStaticMethodID(Log_class.id, "d", "(Ljava/lang/String;Ljava/lang/String;)I");
+-    Log_class.i = env.GetStaticMethodID(Log_class.id, "i", "(Ljava/lang/String;Ljava/lang/String;)I");
+-    Log_class.w = env.GetStaticMethodID(Log_class.id, "w", "(Ljava/lang/String;Ljava/lang/String;)I");
+-    Log_class.e = env.GetStaticMethodID(Log_class.id, "e", "(Ljava/lang/String;Ljava/lang/String;)I");
+-    Log_class.wtf = env.GetStaticMethodID(Log_class.id, "wtf", "(Ljava/lang/String;Ljava/lang/String;)I");
++    if(!Log_class.id)
++        return;
++    const auto logMethod = [&env, logClass = Log_class.id](const char *name) -> jmethodID {
++        jmethodID method = env.GetStaticMethodID(logClass, name, "(Ljava/lang/String;Ljava/lang/String;)I");
++        if(env.ExceptionCheck()) {
++            env.ExceptionClear();
++            return nullptr;
++        }
++        return method;
++    };
++    Log_class.v = logMethod("v");
++    Log_class.d = logMethod("d");
++    Log_class.i = logMethod("i");
++    Log_class.w = logMethod("w");
++    Log_class.e = logMethod("e");
++    Log_class.wtf = logMethod("wtf");
+ 
+     Java::JNILocalRef mtag_local(env, env.NewStringUTF("TAKEngineJNI"));
+     mtag = env.NewGlobalRef(mtag_local);

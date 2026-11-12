@@ -13,6 +13,16 @@ top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
 
+## State (JNI glue — 2026-11-11): the 5.5 glue loads in a JVM and passes G1's jni-tests
+
+`libtakenginejni` builds beside the 5.5 engine; the G1 load canary
+returns `42` through Java → glue → C++ → sqlite on JDK 21, and
+`dev/g1/jni-tests` pass in both modes (7 guards, 6 kernel). In CI on
+`macos-26`, jar build and header-drift check included: run 43041239149
+(#99). The series is 37 patches (three new; traps 5–7). The 5.5 jars are
+Java 11 bytecode, so the move to JDK 21 is a step of its own before the
+re-pin. Next: the render gates on 5.5. Details in §JNI glue below.
+
 ## State (spike 1 — 2026-11-11): the 5.5 engine builds on macOS arm64 without 3D Tiles
 
 takkernel 8.30.5 with macTAK's 34-patch 5.5 series compiles and links on
@@ -55,37 +65,98 @@ What 5.5 asks of the build beyond 4.6:
 | `libkml_unzStringFileNameCompare` | `util/ZipFile.cpp` | One more line in the minizip rename list |
 | cesium-native, draco | `formats/c3dt/` (3D Tiles) | Left out, as planned |
 
-Still unanswered, on purpose: whether it *runs*. No test, canary or JVM
-load was attempted; the JNI glue and the gates are the next iteration
-(Exit).
+Still unanswered by that first iteration: whether it *runs*. The JNI
+iteration below answers it for the JVM half.
+
+## JNI glue
+
+**It loads and runs.** The 5.5 glue (`libtakenginejni`) builds next to
+the engine (624 of 624 steps); the G1 load canary passes on JDK 21
+(Java → glue → C++ `Database2` → sqlite → `42`), and G1's JNI guard
+tests pass in both modes, 7 guards-mode and 6 kernel-mode. The same on
+`macos-26` in CI, jar build and header-drift check included (13 min 33 s):
+run [43041239149](https://github.com/Chicago-Offline/macTAK/actions/runs/43041239149),
+
+```text
+[g55]   applied 37 patches
+[g55] build steps: 636, failed: 0
+[g55] PASS: libtakengine.dylib and libtakenginejni.dylib linked from the 5.5 tree
+[smoke] PASS: engine loads and runs in-process from the JVM
+[g55] jni-tests OK: guards and kernel modes green on 5.5
+```
+
+What it took:
+
+| Step | What 5.5 asked | Answer |
+|---|---|---|
+| Kernel jars | Gradle 8.13 (JDK 17+); the TAK-artifactory-only `gradle-cmake-plugin`, `android-port` 6.1.2 and native runtime artifacts; JOGL 2.5.0, which Maven Central skips | `kernel/gradle-public-source-build.patch` (G0's gradle patch, redone for 5.5) gates the native hook and the artifactory artifacts behind `-PuseTakRepo=true` and adds jogamp.org's repository; `android-port/` rebuilds G0's substitute with one more stub (`Resources.getColor`, `getStringArray`) as `3.1.0-g55`. `kernel/build-kernel-jars.sh` patches a copy of `takkernel`, builds into a private Maven repo (`~/.m2` untouched) and exports the engine's runtime classpath |
+| JNI headers | 5.5's glue includes one `javac -h` header per class (`com_atakmap_*.h`), not 4.6's javah bundles (`jdatabaseimpl.h`) | The Gradle build compiles with `-h`, as upstream's `generateJniHeaders`; the 116 headers are committed in `jni-include/`, so `build-engine.sh` needs no JDK. CI regenerates them and fails on a diff |
+| Glue build | `CXX_STANDARD 17` (upstream's `jni/CMakeLists.txt`): `util/Tasking.h` overloads on `noexcept` function types, a redefinition below C++17; libcurl and libssl (`jlibcurlhttpclientbuilder.cpp`, new) | Set on the target; link `curl` and Homebrew `openssl@3` |
+| LAS | `jsceneinfofactory.cpp` (new) registers the LAS SPIs unconditionally; libLAS is dead upstream and the engine is built without it | `jsceneinfofactory-las-optional.patch`: the LAS lines behind `LAS_ENABLED`, as upstream guards 3D Tiles with `C3DT_ENABLED` |
+| Java runtime | The desktop jars are **Java 11 bytecode** (`gradle/buildconfig.gradle`); G1 and CI run Zulu 8 | The 5.5 scripts run JDK 21. The re-pin moves CI and the launcher off Java 8 |
+| jni-tests | `ManagedTextFormatFactory` takes only the `JNIEnv` in 5.5 | `jni-tests/textformat2_guards_test.cpp`, a 5.5 copy of G1's with that call changed; it replaces G1's at the re-pin |
+
+New guards (patches, in the series):
+
+- **`common-managedlogger-guards`**: 5.5's `JNI_OnLoad` installs a
+  `ManagedLogger` that routes native logging to
+  `com.atakmap.coremap.log.Log`. When that class cannot load (its class
+  init needs slf4j on the classpath), `FindClass` returned NULL and
+  `GetStaticMethodID(NULL, …)` crashed the JVM (SIGSEGV in
+  `get_method_id`) before the glue finished loading. A/B, the canary
+  with slf4j left off the classpath: without the patch, SIGSEGV and an
+  `hs_err` file; with it, `JNI_OnLoad` returns and native logging goes
+  quiet.
+- **`jni-class-inits-new-in-55`**: the guards `jni-class-init-guards`
+  gives every other init, for the lookups 5.5 added or moved:
+  `HeightmapStrategy` and `HeightmapParams` in
+  `interop/elevation/Interop.cpp`, and the `FeatureDefinition` lookups
+  that moved to `interop/feature/ManagedFeatureDefinition.cpp`, whose
+  constructor also stops before `IsInstanceOf` against a class the
+  init could not find.
+
+Not done here: the `ManagedFeatureDefinition` consumers (`getRawGeometry`
+and the rest) still call through the method IDs when the init failed,
+as `ManagedTextFormat2`'s did before `textformat2-class-init-consumer-guards`;
+and no guards-mode test pins the two new patches yet (G1's suite pins
+the 4.6 ones).
 
 ## Reproduce
 
 ```sh
-brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools glib assimp
+brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools glib assimp openssl@3 googletest
 git clone --filter=blob:none --no-checkout https://github.com/TAK-Product-Center/atak-civ ../atak-civ
-git -C ../atak-civ sparse-checkout set takkernel/engine/src/main khronos takengine/thirdparty/tinygltfloader depends
+git -C ../atak-civ sparse-checkout set takkernel khronos takengine/thirdparty/tinygltfloader depends
 git -C ../atak-civ checkout 9f6893dd657feacc35ec5de03dad721c2e44170e
 git -C ../atak-civ lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
+bash dev/spike/g55/kernel/build-kernel-jars.sh ../atak-civ   # JDK 21 + JDK 8; network on first run
 bash dev/spike/g55/build-engine.sh ../atak-civ
+bash dev/spike/g55/smoke.sh
+bash dev/spike/g55/jni-tests.sh
 # re-sort the 4.6 series against a 5.5 tree (writes clean + refreshed only):
 python3 dev/spike/g55/refresh-patches.py ../atak-civ/takkernel/engine/src/main /tmp/out
 ```
 
 CI: `.github/workflows/spike-55.yml` (dispatch, or a push to a
-`spike/g55-*` branch that touches this directory) runs the same script
-on `macos-26` and uploads `build.log` and `summary.txt`. It is not a
-required check; a red run is the spike's answer, as G0's was
-([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
+`spike/g55-*` branch that touches this directory) runs the same scripts
+on `macos-26` and uploads the build and Gradle logs, `summary.txt` and
+the jni-tests XML. It is not a required check; a red run is the spike's
+answer, as G0's was ([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
 
 ## What's here
 
 | Path | Role |
 |---|---|
 | `refresh-patches.py` | Sorts the 4.6 series against a 5.5 tree, stacked in build order: clean, refreshed, review, upstream, failed |
-| `patches/` | The 5.5 series: 34 patches, applying at `--fuzz=0` in `build-native.sh`'s order (`gdal-drift-*` first, then sorted) |
-| `build-engine.sh` | The core-engine half of `build-native.sh` against a 5.5 checkout; `formats/c3dt` left out; `ninja -k 0` |
+| `patches/` | The 5.5 series: 37 patches, applying at `--fuzz=0` in `build-native.sh`'s order (`gdal-drift-*` first, then sorted) |
+| `build-engine.sh` | `build-native.sh` against a 5.5 checkout: the engine, the JNI glue and the jni-tests; `c3dt` left out; `ninja -k 0` |
 | `summarize-build.py` | Every failing source with its first error, the errors grouped by kind, and the undefined symbols of a failed link |
+| `kernel/` | `build-kernel-jars.sh`, its Gradle patch, and `runtime-classpath.gradle` (exports the engine's resolved runtime classpath) |
+| `android-port/` | `build-android-port.py` and the stub sources it adds to G0's `android-port-3.1.0` substitute; the jar is deterministic |
+| `jni-include/` | The 116 `javac -h` headers of takkernel 8.30.5 (generated; regenerate with `kernel/build-kernel-jars.sh`) |
+| `jni-tests/` | 5.5 copies of G1 jni-tests whose 4.6 versions no longer compile |
+| `runtime.sh` | Sourced: JDK lookup (`G55_JDK<v>_HOME`, else a version-checked `java_home`) and the kernel-first classpath |
+| `smoke.sh`, `jni-tests.sh` | The G1 load canary and the G1 jni-tests on the 5.5 build |
 
 ## The patch port
 
@@ -147,7 +218,8 @@ Left for the JNI iteration (the guard series does not reach code 5.5
 added): `FeatureDefinition` lookups moved to the new
 `jni/interop/feature/ManagedFeatureDefinition.cpp`, and
 `jni/interop/elevation/Interop.cpp` gained unguarded `HeightmapStrategy`
-lookups.
+lookups. Both are guarded now (§JNI glue), which with the LAS and logger
+patches brings the series to 37.
 
 ## Traps found on the way (do not rediscover these)
 
@@ -202,21 +274,38 @@ lookups.
    now triggers on any change under `.github/workflows/*.yml`, so a
    workflow that adds a package fails in its own PR (branch
    `ci/brewfile-spike-deps`).
+5. **`java_home -v N` answers a missing JDK with the default one.** With
+   no JDK 13 installed, `/usr/libexec/java_home -v 13` prints JDK 27's
+   home and exits 0, so a script asking for JDK 8 silently ran on
+   whatever is newest. **Guard:** `runtime.sh`'s `g55_jdk_home` checks
+   `JAVA_VERSION` in the JDK's `release` file and fails on a mismatch.
+6. **The android-port substitute shadows kernel classes.** It carries
+   the 5.5.1.8 apk's own `com.atakmap.*`, including an Android
+   `coremap.log.Log` that calls `android.util.Log`, whose substitute
+   throws `Stub!`. With the jars in directory order, `android-port-*`
+   came before `takkernel-*` and `EngineLibrary.initialize` died in
+   `Log.w`. G1's classpath has the same order constraint. **Guard:**
+   `g55_kernel_classpath` puts the kernel jars first and android-port
+   last.
+7. **A missing slf4j crashed `JNI_OnLoad`** (5.5's `ManagedLogger`,
+   §JNI glue). **Guard:** `common-managedlogger-guards.patch`; the
+   canaries take slf4j from the engine's own runtime classpath.
 
 ## Exit
 
 The question this spike asked, whether 5.5's engine builds on macOS
 without 3D Tiles, is answered yes, in one day of work, most of it the
-patch port. What remains before the re-pin (study step 4), in order,
-with estimates made from this spike's pace:
+patch port. The JNI step took another day: the 5.5 glue loads in a JVM
+and passes G1's JNI tests. What remains before the re-pin (study
+step 4), in order, with estimates made from this spike's pace:
 
-1. **JNI glue on 5.5** (2–3 days). Regenerate the pinned javah headers
-   (`dev/g1/gen-jni-headers.sh`) from the 5.5 jars; drop `jni/c3dt` and
-   `jni/interop/formats/c3dt` as `build-native.sh` drops `/c3dt/` today;
-   extend the guard series to the class-inits 5.5 added (above); rebuild
-   `dev/g1/jni-tests` and the JVM load canary. The engine jar and the
-   android-port transplant need their 5.5 builds (with `SHA256SUMS`, per
-   CONTRIBUTING).
+1. ~~**JNI glue on 5.5**~~ **Done** (§JNI glue). Carried forward: the
+   `ManagedFeatureDefinition` consumer guards and guards-mode pins for
+   the two new patches. Decided on #99's review: the 5.5 jars stay built
+   in CI as here (CONTRIBUTING allows it), and **moving off Java 8**
+   (the 5.5 jars are Java 11 bytecode: CI's Zulu 8 jobs, the launcher
+   and the headless app) is its own PR on JDK 21, after this stack and
+   before the re-pin.
 2. **The render gates on 5.5** (2–4 days). `make test-render` against
    ANGLE: the engine shadows (`GLQuadTileNode4` and the rest) regenerate
    from the 5.5 patches, and `KHR_debug` decides whether
@@ -226,7 +315,9 @@ with estimates made from this spike's pace:
    decision.
 4. **The re-pin** (1–2 days): fold `build-engine.sh`'s wrapper changes into
    `build-native.sh`, move `dev/spike/g55/patches` to `dev/g1/patches`,
+   `jni-include/` to `dev/g1/jni-include` (replacing `gen-jni-headers.sh`,
+   whose javah bundles 5.5 no longer uses) and `jni-tests/` over G1's,
    and change the 14 files that name `889eee2`.
 
-Roughly two to three weeks to a 5.5 baseline with today's gates green,
-3D Tiles still out.
+Roughly two weeks to a 5.5 baseline with today's gates green, 3D Tiles
+still out.

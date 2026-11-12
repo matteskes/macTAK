@@ -129,7 +129,10 @@ never emits it. TAK servers accept CoT without it today; adding
    could not build, and port the patch series. This is the G0-style answer to whether 5.5 builds here.
    **Done 2026-11-11: it builds** (471 of 471 steps, `libtakengine`
    links); the record, the remaining steps and a time estimate are in
-   [dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md).
+   [dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md). **The JNI glue
+   followed the same day:** it loads in a JVM and passes G1's JNI
+   tests, and showed that the 5.5 desktop jars need Java 11 or later
+   (macTAK runs Java 8 today).
 2. **Spike 5.5 commo.** Decide the QUIC crypto backend: Homebrew's ngtcp2,
    a quictls build, or a patch onto OpenSSL 3.5's own QUIC support. Then
    rerun `make test-roundtrip` and `make test-tls`.

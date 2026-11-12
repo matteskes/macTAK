@@ -1,0 +1,14 @@
+// Gradle init script (kernel/build-kernel-jars.sh): copies the engine's
+// resolved runtime classpath (the kernel jars, android-port and the Maven
+// dependencies) to -PmacTakRuntimeDir, so the 5.5 canaries load exactly
+// what Gradle compiled against.
+allprojects {
+    afterEvaluate { project ->
+        if (project.path == ':engine' && project.hasProperty('macTakRuntimeDir')) {
+            project.tasks.register('macTakRuntimeJars', Copy) {
+                from project.configurations.runtimeClasspath
+                into project.property('macTakRuntimeDir')
+            }
+        }
+    }
+}

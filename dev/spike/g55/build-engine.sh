@@ -20,8 +20,12 @@
 #     patched 4.0.1)
 #   - formats/c3dt/ (cesium-native + draco, 3D Tiles) is left out, as G0
 #     left out the LAS drivers; MacOSSources.cmake has no cesium-native
-#     or draco paths, so a stock 5.5 macOS build cannot compile it
-#   - no JNI glue, no tests, no canaries: the glue is the next iteration
+#     or draco paths, so a stock 5.5 macOS build cannot compile it. The
+#     JNI glue's c3dt/ and interop/formats/c3dt/ go with it
+#   - the JNI glue (libtakenginejni) compiles against the javac -h headers
+#     committed in dev/spike/g55/jni-include (kernel/build-kernel-jars.sh)
+#   - G1's JNI guard tests (dev/g1/jni-tests) build here; jni-tests.sh
+#     and smoke.sh run them and the load canary
 #   - ninja -k 0: one run lists every failing source, not just the first
 #
 # usage: build-engine.sh UPSTREAM_55
@@ -31,7 +35,7 @@
 #                     content of depends/tinygltf-2.4.1-mod.tar.gz)
 # out:   dev/spike/g55/build/build.log    full compiler output
 #        dev/spike/g55/build/summary.txt  failing sources, first error each
-# exit:  0 libtakengine linked; 1 compile or link failures; 2 usage or
+# exit:  0 libtakengine and libtakenginejni linked; 1 compile or link failures; 2 usage or
 #        preflight
 set -euo pipefail
 
@@ -61,18 +65,25 @@ done
 [[ -f "$TINYGLTFLOADER/tiny_gltf_loader.h" ]] || die "no tinygltfloader at $TINYGLTFLOADER"
 gzip -t "$TINYGLTF_TGZ" 2>/dev/null \
   || die "$TINYGLTF_TGZ is missing or an LFS pointer — git lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz"
+compgen -G "$G55/jni-include/*.h" >/dev/null \
+  || die "no JNI headers in $G55/jni-include — run kernel/build-kernel-jars.sh"
 # build-native.sh's list + mdbtools (5.5's MS Access provider,
-# formats/msaccess, links libmdb; its header includes glib's) + assimp
-for f in proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools glib assimp; do
+# formats/msaccess, links libmdb; its header includes glib's) + assimp +
+# openssl@3 (5.5's JNI libcurl client calls OPENSSL_init_ssl) + googletest
+# (the JNI guard tests)
+for f in proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools glib assimp openssl@3 googletest; do
   brew list --versions "$f" >/dev/null 2>&1 \
     || die "brew formula missing: $f
-       → brew install proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools glib assimp ninja"
+       → brew install proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools glib assimp openssl@3 googletest ninja"
 done
 GLIB="$(brew --prefix glib)"
+OPENSSL="$(brew --prefix openssl@3)"
 log "preflight ok (upstream=$UPSTREAM, -j$JOBS)"
 
 # --- work tree -----------------------------------------------------------
-rm -rf "$WORK"
+# build/kernel (kernel/build-kernel-jars.sh) survives: its jars took a
+# Gradle run to make
+find "$WORK" -mindepth 1 -maxdepth 1 ! -name kernel -exec rm -rf {} + 2>/dev/null || true
 mkdir -p "$WORK/gles-stub" "$WORK/overlay/tinygltf"
 
 log "copying engine tree → $WORK/engine"
@@ -132,8 +143,9 @@ target_include_directories(takengine PRIVATE
 )
 target_link_directories(takengine PRIVATE /opt/homebrew/lib)
 
-# libkml's renamed minizip -> Homebrew minizip, as build-native.sh
-target_compile_definitions(takengine PRIVATE
+# libkml's renamed minizip -> Homebrew minizip, as build-native.sh; the
+# JNI glue below needs the same renames
+set(_minizip_renames
     libkml_unzClose=unzClose
     libkml_unzOpen=unzOpen
     libkml_unzOpenCurrentFile=unzOpenCurrentFile
@@ -146,6 +158,7 @@ target_compile_definitions(takengine PRIVATE
     libkml_unzGetCurrentFileInfo=unzGetCurrentFileInfo
     libkml_unzStringFileNameCompare=unzStringFileNameCompare   # new in 5.5 (util/ZipFile.cpp)
 )
+target_compile_definitions(takengine PRIVATE \${_minizip_renames})
 target_link_libraries(takengine PRIVATE minizip)
 
 # LAS (dead upstream, as build-native.sh) and c3dt (3D Tiles, this spike)
@@ -170,6 +183,85 @@ list(APPEND _libs
     curl                               # new in 5.5: util URIOfflineCache
     $GLIB/lib/libglib-2.0.dylib)       # mdbtools.h's inline g_malloc/g_free
 set_target_properties(takengine PROPERTIES LINK_LIBRARIES "\${_libs}")
+
+# JNI glue -> libtakenginejni, as build-native.sh: upstream's source
+# lists, c3dt dropped with the engine's, macTAK's shims added
+set(JNI_DIR $WORK/engine/jni)
+set(SRC_DIR \${JNI_DIR})   # the name upstream's CommonSources.cmake expects
+include(\${JNI_DIR}/cmake/CommonSources.cmake)
+include(\${JNI_DIR}/cmake/MacOSSources.cmake)
+
+set(takenginejni_DEFS \${takenginejni_MACOS_DEFS})
+list(REMOVE_ITEM takenginejni_DEFS SQLITE_HAS_CODEC)
+
+set(_jni_kept)
+foreach(_s IN LISTS takenginejni_COMMON_SRCS takenginejni_MACOS_SRCS)
+    if(NOT _s MATCHES "/c3dt/")
+        list(APPEND _jni_kept \${_s})
+    endif()
+endforeach()
+list(APPEND _jni_kept
+    $DEV/g1/jni-extra/mactak_gdal.cpp
+    $DEV/g2/jni-extra/mactak_egl.cpp
+    $DEV/g2/jni-extra/mactak_gles.c
+)
+
+add_library(takenginejni SHARED \${_jni_kept})
+target_compile_definitions(takenginejni PRIVATE \${takenginejni_DEFS} \${_minizip_renames})
+target_compile_options(takenginejni PRIVATE \${takenginejni_MACOS_OPTS})
+target_include_directories(takenginejni PRIVATE
+    \${JNI_DIR}
+    $WORK/engine/cpp
+    /opt/homebrew/include
+    $KHRONOS/OpenGL/api
+    $KHRONOS/EGL/api
+    $WORK/overlay
+    $GLIB/include/glib-2.0
+    $GLIB/lib/glib-2.0/include
+    $G55/jni-include              # javac -h output, kernel/build-kernel-jars.sh
+    $DEV/g1/jdk-include           # pinned jni.h + jni_md.h
+)
+target_link_directories(takenginejni PRIVATE /opt/homebrew/lib)
+target_link_libraries(takenginejni PRIVATE takengine
+    $WORK/gles-stub/libGLESv2.dylib
+    /opt/homebrew/opt/sqlite/lib/libsqlite3.dylib
+    gdal
+    minizip
+    curl                          # new in 5.5: jlibcurlhttpclientbuilder.cpp
+    $OPENSSL/lib/libssl.dylib     # ... which also calls OPENSSL_init_ssl
+)
+set_target_properties(takenginejni PROPERTIES
+    CXX_STANDARD 17               # as upstream's jni/CMakeLists.txt: util/Tasking.h
+    CXX_STANDARD_REQUIRED ON      # overloads on noexcept function types
+    BUILD_RPATH "@loader_path;\${CMAKE_BINARY_DIR}/engine-cpp;$WORK/gles-stub"
+)
+
+# G1's JNI guard tests (dev/g1/jni-tests) against the 5.5 glue, as
+# build-native.sh: the executable boots a JVM itself (guards mode), the
+# module runs under the java launcher (kernel mode, jni-tests.sh)
+find_package(GTest REQUIRED)
+get_target_property(_jniincs takenginejni INCLUDE_DIRECTORIES)
+set(_jni_test_srcs
+    $G55/jni-tests/textformat2_guards_test.cpp   # 5.5 factory signature
+    $DEV/g1/jni-tests/interop_guards_test.cpp
+    $DEV/g1/jni-tests/onload_guards_test.cpp
+    $DEV/g1/jni-tests/ioprovider_kernel_test.cpp
+    $DEV/g1/jni-tests/module_main.cpp
+)
+add_executable(takengine-jni-tests \${_jni_test_srcs})
+add_library(takengine-jni-tests-module SHARED \${_jni_test_srcs})
+target_link_libraries(takengine-jni-tests PRIVATE takenginejni takengine GTest::gtest_main)
+target_link_libraries(takengine-jni-tests-module PRIVATE takenginejni takengine GTest::gtest)
+foreach(_t takengine-jni-tests takengine-jni-tests-module)
+    target_include_directories(\${_t} PRIVATE \${_jniincs} $DEV/g1/jni-tests)
+    target_compile_definitions(\${_t} PRIVATE \${takenginejni_DEFS})
+    target_compile_options(\${_t} PRIVATE -Wno-error=dynamic-exception-spec)
+    target_link_directories(\${_t} PRIVATE /opt/homebrew/lib)
+    set_target_properties(\${_t} PROPERTIES
+        CXX_STANDARD 17
+        BUILD_RPATH "@loader_path;\${CMAKE_BINARY_DIR};\${CMAKE_BINARY_DIR}/engine-cpp;$WORK/gles-stub"
+    )
+endforeach()
 CMAKE
 
 log "configuring (Ninja)"
@@ -186,8 +278,9 @@ set -e
 python3 "$G55/summarize-build.py" "$WORK/build.log" "$WORK/engine" >"$WORK/summary.txt"
 cat "$WORK/summary.txt"
 
-if (( build_rc == 0 )) && [[ -f "$WORK/cmake/engine-cpp/libtakengine.dylib" ]]; then
-  log "PASS: libtakengine.dylib linked from the 5.5 tree"
+if (( build_rc == 0 )) && [[ -f "$WORK/cmake/engine-cpp/libtakengine.dylib" \
+                           && -f "$WORK/cmake/libtakenginejni.dylib" ]]; then
+  log "PASS: libtakengine.dylib and libtakenginejni.dylib linked from the 5.5 tree"
   exit 0
 fi
 log "FAIL: ninja exit $build_rc (full log: $WORK/build.log)"

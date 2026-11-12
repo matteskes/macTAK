@@ -1,0 +1,75 @@
+--- a/tmp/takeng-src/jni/jsceneinfofactory.cpp
++++ b/tmp/takeng-src/jni/jsceneinfofactory.cpp
+@@ -7,8 +7,12 @@
+ #include <model/ContextCaptureSceneSpi.h>
+ #include <model/DAESceneInfoSpi.h>
+ #include <model/KMZSceneInfoSpi.h>
++// macTAK: libLAS is dead upstream and not in Homebrew, so the engine is
++// built without its LAS SPIs; LAS_ENABLED guards them like C3DT_ENABLED
++#if LAS_ENABLED
+ #include <model/LASSceneInfoSpi.h>
+ #include <model/LASSceneSpi.h>
++#endif
+ #include <model/OBJSceneInfoSpi.h>
+ #include <model/Pix4dGeoreferencer.h>
+ #include "port/STLVectorAdapter.h"
+@@ -61,13 +65,17 @@
+ #if C3DT_ENABLED
+     c3dtinfospi = new std::shared_ptr<TAK::Engine::Model::SceneInfoSpi>(new TAK::Engine::Model::Cesium3DTilesSceneInfoSpi());
+ #endif
++#if LAS_ENABLED
+     lasinfospi = new std::shared_ptr<TAK::Engine::Model::SceneInfoSpi>(new TAK::Engine::Model::LASSceneInfoSpi());
++#endif
+     assimpscenespi = new std::shared_ptr<TAK::Engine::Model::SceneSpi>(new TAK::Engine::Model::ASSIMPSceneSpi());
+     ccscenespi = new std::shared_ptr<TAK::Engine::Model::SceneSpi>(new TAK::Engine::Model::ContextCaptureSceneSpi());
+ #if C3DT_ENABLED
+     c3dtscenespi = new std::shared_ptr<TAK::Engine::Model::SceneSpi>(new TAK::Engine::Model::Cesium3DTilesSceneSpi());
+ #endif
++#if LAS_ENABLED
+     lasscenespi = new std::shared_ptr<TAK::Engine::Model::SceneSpi>(new TAK::Engine::Model::LASSceneSPI());
++#endif
+ }
+ 
+ ImplGlobals::~ImplGlobals()
+@@ -86,8 +94,10 @@
+     TAK::Engine::Model::SceneInfoFactory_unregisterSpi(*ImplGlobals::c3dtinfospi);
+     delete ImplGlobals::c3dtinfospi;
+ #endif
++#if LAS_ENABLED
+     TAK::Engine::Model::SceneInfoFactory_unregisterSpi(*ImplGlobals::lasinfospi);
+     delete ImplGlobals::lasinfospi;
++#endif
+     TAK::Engine::Model::SceneFactory_unregisterSpi(*ImplGlobals::assimpscenespi);
+     delete ImplGlobals::assimpscenespi;
+     TAK::Engine::Model::SceneFactory_unregisterSpi(*ImplGlobals::ccscenespi);
+@@ -96,8 +106,10 @@
+     TAK::Engine::Model::SceneFactory_unregisterSpi(*ImplGlobals::c3dtscenespi);
+     delete ImplGlobals::c3dtscenespi;
+ #endif
++#if LAS_ENABLED
+     TAK::Engine::Model::SceneFactory_unregisterSpi(*ImplGlobals::lasscenespi);
+     delete ImplGlobals::lasscenespi;
++#endif
+ }
+ 
+ namespace {
+@@ -124,7 +136,9 @@
+ #if C3DT_ENABLED
+     TAK::Engine::Model::SceneFactory_registerSpi(*implGlobals->c3dtscenespi);
+ #endif
++#if LAS_ENABLED
+     TAK::Engine::Model::SceneFactory_registerSpi(*implGlobals->lasscenespi);
++#endif
+     TAK::Engine::Model::SceneInfoFactory_registerSpi(*implGlobals->objinfospi);
+     TAK::Engine::Model::SceneInfoFactory_registerSpi(*implGlobals->daeinfospi);
+     TAK::Engine::Model::SceneInfoFactory_registerSpi(*implGlobals->kmzinfospi);
+@@ -132,7 +146,9 @@
+     TAK::Engine::Model::SceneInfoFactory_registerSpi(*implGlobals->c3dtinfospi);
+ #endif
+     TAK::Engine::Model::SceneInfoFactory_registerSpi(*implGlobals->ccinfospi);
++#if LAS_ENABLED
+     TAK::Engine::Model::SceneInfoFactory_registerSpi(*implGlobals->lasinfospi);
++#endif
+     TAK::Engine::Model::SceneInfoFactory_registerGeoreferencer(*implGlobals->pix4dgeoref);
+ //    TAK::Engine::Model::SceneInfoFactory_registerGeoreferencer(*implGlobals->contextCaptureGeoreferencer);
+     atexit(ImplGlobals_cleanup);

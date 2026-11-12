@@ -1,0 +1,112 @@
+--- a/tmp/takeng-src/jni/interop/elevation/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/elevation/Interop.cpp
+@@ -237,17 +237,43 @@
+         if(!NativeElevationSource_class.ctor)
+             return false;
+ 
++        // macTAK: the HeightmapStrategy/HeightmapParams lookups are new in
++        // 5.5; guarded like the rest of this init (jni-class-init-guards)
+         jclass HeightmapStrategyId = ATAKMapEngineJNI_findClass(env, "com/atakmap/map/elevation/ElevationManager$HeightmapStrategy");
+-        HeightmapStrategy_enum.HighestResolution = env->NewGlobalRef(env->GetStaticObjectField(HeightmapStrategyId, env->GetStaticFieldID(HeightmapStrategyId, "HighestResolution", "Lcom/atakmap/map/elevation/ElevationManager$HeightmapStrategy;")));
+-        HeightmapStrategy_enum.Low = env->NewGlobalRef(env->GetStaticObjectField(HeightmapStrategyId, env->GetStaticFieldID(HeightmapStrategyId, "Low", "Lcom/atakmap/map/elevation/ElevationManager$HeightmapStrategy;")));
+-        HeightmapStrategy_enum.LowFillHoles = env->NewGlobalRef(env->GetStaticObjectField(HeightmapStrategyId, env->GetStaticFieldID(HeightmapStrategyId, "LowFillHoles", "Lcom/atakmap/map/elevation/ElevationManager$HeightmapStrategy;")));
++        if(!HeightmapStrategyId)
++            return false;
++        const auto strategyConstant = [env, HeightmapStrategyId](const char *name) -> jobject {
++            jfieldID field = env->GetStaticFieldID(HeightmapStrategyId, name, "Lcom/atakmap/map/elevation/ElevationManager$HeightmapStrategy;");
++            return field ? env->NewGlobalRef(env->GetStaticObjectField(HeightmapStrategyId, field)) : nullptr;
++        };
++        HeightmapStrategy_enum.HighestResolution = strategyConstant("HighestResolution");
++        if(!HeightmapStrategy_enum.HighestResolution)
++            return false;
++        HeightmapStrategy_enum.Low = strategyConstant("Low");
++        if(!HeightmapStrategy_enum.Low)
++            return false;
++        HeightmapStrategy_enum.LowFillHoles = strategyConstant("LowFillHoles");
++        if(!HeightmapStrategy_enum.LowFillHoles)
++            return false;
+ 
+         HeightmapParams_class.id = ATAKMapEngineJNI_findClass(env, "com/atakmap/map/elevation/ElevationManager$HeightmapParams");
++        if(!HeightmapParams_class.id)
++            return false;
+         HeightmapParams_class.boundsID = env->GetFieldID(HeightmapParams_class.id, "bounds", "Lcom/atakmap/map/layer/feature/geometry/Envelope;");
++        if(!HeightmapParams_class.boundsID)
++            return false;
+         HeightmapParams_class.numPostsLatID = env->GetFieldID(HeightmapParams_class.id, "numPostsLat", "I");
++        if(!HeightmapParams_class.numPostsLatID)
++            return false;
+         HeightmapParams_class.numPostsLngID = env->GetFieldID(HeightmapParams_class.id, "numPostsLng", "I");
++        if(!HeightmapParams_class.numPostsLngID)
++            return false;
+         HeightmapParams_class.invertYAxisID = env->GetFieldID(HeightmapParams_class.id, "invertYAxis", "Z");
++        if(!HeightmapParams_class.invertYAxisID)
++            return false;
+         HeightmapParams_class.srid = env->GetFieldID(HeightmapParams_class.id, "srid", "I");
++        if(!HeightmapParams_class.srid)
++            return false;
+ 
+         return true;
+     }
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDefinition.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDefinition.cpp
+@@ -55,6 +55,9 @@
+         version(1u)
+ {
+     static bool clinit = FeatureDefinition2_class_init(env_);
++    // macTAK: IsInstanceOf against a class the init could not find crashes
++    if(!clinit)
++        return;
+     if(env_.IsInstanceOf(impl, FeatureDefinition_class.v4.id))
+         version = 4u;
+     else if(env_.IsInstanceOf(impl, FeatureDefinition_class.v3.id))
+@@ -322,20 +325,50 @@
+ {
+     bool FeatureDefinition2_class_init(JNIEnv &env) NOTHROWS
+     {
++        // macTAK: these lookups moved here from feature/Interop.cpp in 5.5,
++        // out of reach of jni-class-init-guards; guarded the same way
+         FeatureDefinition_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDefinition");
++        if(!FeatureDefinition_class.id)
++            return false;
+         FeatureDefinition_class.v2.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDefinition2");
++        if(!FeatureDefinition_class.v2.id)
++            return false;
+         FeatureDefinition_class.v3.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDefinition3");
++        if(!FeatureDefinition_class.v3.id)
++            return false;
+         FeatureDefinition_class.v4.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDefinition4");
++        if(!FeatureDefinition_class.v4.id)
++            return false;
+         FeatureDefinition_class.getRawGeom = env.GetMethodID(FeatureDefinition_class.id, "getRawGeometry", "()Ljava/lang/Object;");
++        if(!FeatureDefinition_class.getRawGeom)
++            return false;
+         FeatureDefinition_class.getGeomCoding = env.GetMethodID(FeatureDefinition_class.id, "getGeomCoding", "()I");
++        if(!FeatureDefinition_class.getGeomCoding)
++            return false;
+         FeatureDefinition_class.getName = env.GetMethodID(FeatureDefinition_class.id, "getName", "()Ljava/lang/String;");
++        if(!FeatureDefinition_class.getName)
++            return false;
+         FeatureDefinition_class.getStyleCoding = env.GetMethodID(FeatureDefinition_class.id, "getStyleCoding", "()I");
++        if(!FeatureDefinition_class.getStyleCoding)
++            return false;
+         FeatureDefinition_class.getRawStyle = env.GetMethodID(FeatureDefinition_class.id, "getRawStyle", "()Ljava/lang/Object;");
++        if(!FeatureDefinition_class.getRawStyle)
++            return false;
+         FeatureDefinition_class.getAttributes = env.GetMethodID(FeatureDefinition_class.id, "getAttributes", "()Lcom/atakmap/map/layer/feature/AttributeSet;");
++        if(!FeatureDefinition_class.getAttributes)
++            return false;
+         FeatureDefinition_class.v2.getTimestamp = env.GetMethodID(FeatureDefinition_class.v2.id, "getTimestamp", "()J");
++        if(!FeatureDefinition_class.v2.getTimestamp)
++            return false;
+         FeatureDefinition_class.v3.getAltitudeMode = env.GetMethodID(FeatureDefinition_class.v3.id, "getAltitudeMode", "()Lcom/atakmap/map/layer/feature/Feature$AltitudeMode;");
++        if(!FeatureDefinition_class.v3.getAltitudeMode)
++            return false;
+         FeatureDefinition_class.v3.getExtrude = env.GetMethodID(FeatureDefinition_class.v3.id, "getExtrude", "()D");
++        if(!FeatureDefinition_class.v3.getExtrude)
++            return false;
+         FeatureDefinition_class.v4.getTraits = env.GetMethodID(FeatureDefinition_class.v4.id, "getTraits", "()Lcom/atakmap/map/layer/feature/Feature$Traits;");
++        if(!FeatureDefinition_class.v4.getTraits)
++            return false;
+ 
+         return true;
+     }
