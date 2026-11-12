@@ -107,8 +107,21 @@ above is not needed. What follows from it:
 - **commo: the Swift app layer calls commo's C++ API directly** (decided
   2026-11-12), not through its Java binding. Fallback: if that proves
   challenging, it reverts to the existing JNI boundary, which the G1
-  comms gates already exercise. How the Swift layer reaches the engine
-  is still open, and is G3's first design question.
+  comms gates already exercise.
+- **The engine: a hybrid, JVM first** (decided 2026-11-12). Swift calls
+  a narrow Java facade (`EngineBridge`) over JNI, since the Java side
+  owns the imagery renderers, `GLMapView` and the layer objects; it
+  calls the engine's C++ directly only where C++ is the source of truth
+  and the call is easy from Swift, and records each such carve-out.
+  Swift map items (markers, routes, shapes) become features in an engine
+  feature store, written in batches, so the engine's batch renderer
+  draws them; Swift never draws GL itself. Why: the boundary carries
+  user-rate calls, so it costs little either way; the overhead that
+  matters (garbage-collection pauses, per-GL-call JNI in the Java
+  renderers, JVM memory and startup) is inside the engine, and is
+  measured at G2's exit run and paid down where the numbers show it,
+  by porting a hot Java renderer to C++ one at a time. Dropping the JVM
+  entirely is the long-term limit of that path, not a G3 step.
 - Porting cost is paid per package, so G3's feature list
   ([roadmap.md](roadmap.md) G3) is also its porting order.
 

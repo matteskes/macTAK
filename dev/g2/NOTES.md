@@ -1343,7 +1343,7 @@ starts. The M3 architecture above ("M3 design") is unchanged.
 
 | Step | What | Exit gate |
 |---|---|---|
-| M3.3 | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7) | resize during a pan without glitches; frame times logged; `make test-shell` green |
+| M3.3 | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7); the shell's JVM runs generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) from here on | resize during a pan without glitches; frame times logged; `make test-shell` green |
 | M3.4 | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
 | G2.4 b.1 | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
 | G2.6 | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
@@ -1377,6 +1377,11 @@ Dev Mac, manual, like `make test-shell`: a scripted 10 s pan, zoom and
 rotate (the injected events below) on a Retina window at the shell's
 default size, full stack. **Pass: p95 frame time ≤ 16.7 ms and no
 dropped presents.** The shell writes the per-frame log as the artifact.
+The same run also records, as numbers to report and not yet pass/fail
+thresholds, the longest garbage-collection pause, peak resident memory
+and cold-start time (shell launch to first presented frame); they are
+the evidence for porting a hot Java renderer to C++ (decided 2026-11-12,
+`docs/atak-feature-coverage.md` §The app-layer decision).
 CI has no fps gate (hosted runners draw at ~170 ms/frame).
 
 ### Gesture map (Apple Maps style)
@@ -1408,4 +1413,7 @@ forwards events ("Architecture (committed)").
 Whether ATAK's app code is reused on the JVM or rewritten in Swift was a
 G3 question; the owner decided it the same day: rewritten in Swift
 (`docs/atak-feature-coverage.md` §The app-layer decision). It changes
-nothing in G2: the Android stand-ins stay scoped to the render path.
+little in G2: the Android stand-ins stay scoped to the render path. The
+engine choice that came with it (a hybrid, JVM first) adds two things
+here: M3.3 moves the JVM to generational ZGC, and the exit run reports
+GC pauses, memory and cold start.
