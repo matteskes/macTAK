@@ -93,12 +93,12 @@ How the plan above actually materialized once G1 closed:
 ### As-landed, the 5.5 rebase (2026-11-11)
 
 - **`spike-55.yml`** builds the 5.5 engine without 3D Tiles on
-  `macos-26` (`dev/spike/g55/build-engine.sh`) and uploads the build log
-  and summary. It runs on pushes to `spike/g55-*` branches that touch
-  the spike, and on dispatch. It is not a required check: as with G0's
-  spike (§7), a red run is the spike's answer, not a regression. Later
-  rebase iterations add their gates to it as jobs; they move into
-  `ci.yml` at the re-pin.
+  `macos-26` and uploads the build log and summary. It runs on pushes to
+  `spike/g55-*` branches that touch the spike, and on dispatch. It is not
+  a required check: as with G0's spike (§7), a red run is the spike's
+  answer, not a regression. Later rebase iterations add their gates to
+  it as jobs; they move into `ci.yml` at the re-pin. (Retired at the
+  re-pin, below.)
 - **Lint** gained `dev/check-pipefail-grep.sh` (g55 trap 3).
 - **JDK 21** (2026-11-11): every job that starts a JVM installs Zulu 21,
   and `JAVA_HOME`/`PATH` point at it. The jobs that build 4.6 commo
@@ -106,6 +106,15 @@ How the plan above actually materialized once G1 closed:
   re-pin; the Gradle step pins `JAVA_HOME` to it. The required check
   keeps its name, `JVM tests (Zulu 8, macOS arm64)`, because renaming it
   would leave the ruleset waiting for a check that never reports.
+- **The re-pin** (2026-11-11): `ci.yml` and `cot-roundtrip.yml` check out
+  `TAK-Product-Center/atak-civ` @ `9f6893d`, sparse per job (the engine
+  jobs pull one Git LFS tarball), and install Zulu 21 only. Jobs that
+  start a JVM build the kernel jars first (`dev/g1/kernel`, ~1¼ min).
+  The JVM job, renamed `JVM tests (macOS arm64)` together with the
+  ruleset, runs `make test-kernel` (`:port`; `:shared` is open, g55 trap
+  11) and fails on a drift of `dev/g1/jni-include`. The comms job runs
+  `make test-quic`. The engine-shadow drift step and `spike-55.yml` are
+  gone.
 
 ## 5. Self-hosted pattern — VMPal golden VMs
 

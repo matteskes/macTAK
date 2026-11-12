@@ -147,7 +147,7 @@ commo and the hermetic round-trip.
    QUIC to a `takstream` server works, purpose check included
    ([dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md) §Commo).
 3. **Add cesium-native and draco** only when 3D Tiles is needed on macOS.
-4. **Re-pin.** CI checks out `889eee2` in two workflows
+4. **Re-pin.** **Done 2026-11-11** ([dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md), State: re-pin). CI checked out `889eee2` in two workflows
    (`ci.yml`, `cot-roundtrip.yml`), and twelve more files name it: the
    README, CONTRIBUTING, five docs, two NOTES, and three files under
    `dev/g1/tools`. Move them to the 5.5 tree, and update the

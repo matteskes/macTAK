@@ -1,5 +1,5 @@
-# Evidence clone: nested upstream git repo (deptofdefense/AndroidTacticalAssaultKit-CIV @ 889eee2),
-# ~1.8 GB. Kept as a sibling checkout for citation; never committed here.
+# Upstream clone: nested git repo (TAK-Product-Center/atak-civ @ 9f6893d, sparse,
+# CONTRIBUTING.md §Setup). Read-only; never committed here.
 /src/
 
 # GOTS WinTAK installers (~344 MB, public-release but never committed here)

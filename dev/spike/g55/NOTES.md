@@ -4,14 +4,36 @@ Step 1 of [docs/rebase-study-5.5.md](../../../docs/rebase-study-5.5.md)
 §Next steps. Question: does takkernel 8.30.5
 (`TAK-Product-Center/atak-civ` @ `9f6893d`, 5.5.1.10) build on macOS
 arm64 with Homebrew GDAL 3, once 3D Tiles is left out, and with
-macTAK's patch series carried over? Nothing here changes the build
-macTAK ships: `src/`, `dev/g1/build-native.sh` and the 4.6 pin are
-untouched. The re-pin is a later step.
+macTAK's patch series carried over? Through the stack this record did not
+change the build macTAK ships; the re-pin (top State section) made 5.5
+that build.
 
 Each iteration of the rebase adds a dated State section here, newest on
 top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
+
+## State (re-pin — 2026-11-11): 5.5 is macTAK's baseline; this record is history
+
+`main` builds and tests `TAK-Product-Center/atak-civ` 5.5.1.10 @ `9f6893d`
+(3D Tiles still out) through `dev/g1` and `dev/g2`, on JDK 21 only. The
+spike's pieces moved where they now live (§What's here) and its runners
+are gone; `spike-55.yml` with them. New since the stack: the full 5.5
+stack in one `atak-headless` JVM (`layer.sh`, the CoT round-trip,
+`test-tls`, first time on 5.5), `make test-quic` (hash-pinned aioquic) in
+the required comms job, `make test-kernel`, and macTAK's Java off the
+APIs 5.5 deprecates with no lint relaxations. Traps 10–13 below; 11 is
+open. From here, new traps go to the G1 and G2 lineages.
+
+```text
+[g1] G1.0/G1.1 OK — dylibs built, canaries green (4/4)
+[layer-test] PASS: offline layer(s) opened through FeatureDataStore2
+[g1-roundtrip] PASS — both ifaces up, B's presence+marker relayed to A, A's presence relayed to B, both persisted in the tracks DBs
+[quic-test] PASS: commo streams over QUIC and refuses a clientAuth-only server certificate
+[g1-kernel-tests] PASS: :port:test (Android-runtime classes excluded: port-tests.gradle)
+render-smoke: sentinel pixels left=0/262144 content pixels=262036 centre=(255,117,0,255)
+window-app: 5 frames, 42.8 ms/frame (incl. glFinish), glErrors=0
+```
 
 ## State (JDK 21 — 2026-11-11): every JVM macTAK starts runs on JDK 21; JDK 8 stays a 4.6 build tool
 
@@ -298,50 +320,32 @@ against `fake-cot-server.py`, all green.
 
 ## Reproduce
 
-```sh
-brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools glib assimp openssl@3 googletest
-git clone --filter=blob:none --no-checkout https://github.com/TAK-Product-Center/atak-civ ../atak-civ
-git -C ../atak-civ sparse-checkout set takkernel khronos takengine/thirdparty/tinygltfloader depends
-git -C ../atak-civ checkout 9f6893dd657feacc35ec5de03dad721c2e44170e
-git -C ../atak-civ lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
-bash dev/spike/g55/kernel/build-kernel-jars.sh ../atak-civ   # JDK 21 + JDK 8; network on first run
-make angle gdal-java                                         # ANGLE + org.gdal, as G2 (JDK 8, swig)
-G55_GLES=angle bash dev/spike/g55/build-engine.sh ../atak-civ
-bash dev/spike/g55/smoke.sh
-bash dev/spike/g55/jni-tests.sh
-bash dev/spike/g55/render.sh ../atak-civ
-# commo (adds commoncommo to the sparse checkout; needs dev/g1/native-dist
-# from build-native.sh, plus protobuf libmicrohttpd curl):
-git -C ../atak-civ sparse-checkout add commoncommo
-bash dev/spike/g55/commo.sh ../atak-civ
-# re-sort the 4.6 series against a 5.5 tree (writes clean + refreshed only):
-python3 dev/spike/g55/refresh-patches.py ../atak-civ/takkernel/engine/src/main /tmp/out
-```
+Since the re-pin, the spike's steps are the regular build: CONTRIBUTING.md
+§Setup populates `src/` with the 5.5 tree, and `make build-angle`,
+`make test`, `make test-jni`, `make test-quic`, `make test-kernel`,
+`make test-render` and `make test-shell` run what the spike's runners
+ran. `refresh-patches.py` stays for the next upstream bump:
 
-CI: `.github/workflows/spike-55.yml` (dispatch, or a push to a
-`spike/g55-*` branch that touches this directory) runs the same scripts
-on `macos-26` in two jobs, engine and commo, and uploads the build and
-Gradle logs, `summary.txt`, the jni-tests XML, the render PNGs and the
-commo logs. It is not a required check; a red run is the spike's
-answer, as G0's was ([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
+```sh
+python3 dev/spike/g55/refresh-patches.py <new-tree>/takkernel/engine/src/main /tmp/out
+```
 
 ## What's here
 
-| Path | Role |
+What stays: this record and `refresh-patches.py`, which sorts
+`dev/g1/patches` against a newer upstream tree (clean, refreshed, review,
+upstream, failed). What moved at the re-pin:
+
+| Spike path | Now |
 |---|---|
-| `refresh-patches.py` | Sorts the 4.6 series against a 5.5 tree, stacked in build order: clean, refreshed, review, upstream, failed |
-| `patches/` | The 5.5 series: 38 patches, applying at `--fuzz=0` in `build-native.sh`'s order (`gdal-drift-*` first, then sorted) |
-| `build-engine.sh` | `build-native.sh` against a 5.5 checkout: the engine, the JNI glue and the jni-tests, staged in `build/dist`; `G55_GLES=angle` links ANGLE; `c3dt` left out; `ninja -k 0` |
-| `summarize-build.py` | Every failing source with its first error, the errors grouped by kind, and the undefined symbols of a failed link |
-| `kernel/` | `build-kernel-jars.sh`, its Gradle patch, and `runtime-classpath.gradle` (exports the engine's resolved runtime classpath) |
-| `android-port/` | `build-android-port.py` and the stub sources it adds to G0's `android-port-3.1.0` substitute; the jar is deterministic |
-| `jni-include/` | The 116 `javac -h` headers of takkernel 8.30.5 (generated; regenerate with `kernel/build-kernel-jars.sh`) |
-| `jni-tests/` | 5.5 copies of G1 jni-tests whose 4.6 versions no longer compile |
-| `runtime.sh` | Sourced: JDK lookup (`G55_JDK<v>_HOME`, else a version-checked `java_home`) and the kernel-first classpath |
-| `smoke.sh`, `jni-tests.sh` | The G1 load canary and the G1 jni-tests on the 5.5 build |
-| `render.sh`, `render-env.sh` | The G2 render gates on the 5.5 build: `render.sh` runs ci.yml's render steps; `render-env.sh` is what `dev/g2/render/env.sh` sources instead (`MACTAK_RENDER_ENV`) |
-| `patches/commo/` | The 5.5 commo series: 5 patches, `-p1` on `commoncommo`, fuzz 0 |
-| `commo.sh`, `commo/` | Spike 2: `fetch-ngtcp2.sh` (ngtcp2 against `openssl@3`), `QuicStreamingTest.java` and `fake-quic-server.py` (the QUIC canary); `commo.sh` builds and runs it all |
+| `patches/`, `patches/commo/` | `dev/g1/patches`, `dev/g1/patches/commo` |
+| `build-engine.sh`, `summarize-build.py` | folded into `dev/g1/build-native.sh`; `dev/g1/summarize-build.py` |
+| `kernel/`, `android-port/`, `runtime.sh`'s classpath | `dev/g1/kernel/` (`build-kernel-jars.sh`, `classpath.sh`, `android-port/`) |
+| `jni-include/`, `jni-tests/` | `dev/g1/jni-include`, `dev/g1/jni-tests` |
+| `render-env.sh` | folded into `dev/g2/render/env.sh` |
+| `commo/fetch-ngtcp2.sh` | `dev/g1/fetch-ngtcp2.sh` |
+| `commo/QuicStreamingTest.java`, `fake-quic-server.py`, `commo.sh` step 4 | `dev/g1/headless/test/` (`quic.sh`, `make test-quic`) |
+| `smoke.sh`, `jni-tests.sh`, `render.sh`, `commo.sh` | the regular `make` targets |
 
 ## The patch port
 
@@ -498,6 +502,38 @@ patches brings the series to 37.
    **Guard:** `shell/run.sh` exports `JAVA_HOME` as the JDK that
    compiled the classes; with it, the same run boots
    `zulu-21.jdk/…/lib/libjli.dylib` and passes.
+10. **Two upstream engine tests are stale at 5.5.** The engine C++
+    canary (build-native.sh 2/4), which the spike never ran on 5.5,
+    failed `TessellationTests.tessellate_polygon_InvalidPointCount` and
+    `…_InvalidSrcStride`: `Expected: ((int)TE_Ok) != ((int)code),
+    actual: 0 vs 0`. 4.6's `Tessellate_polygon` returned `TE_InvalidArg`
+    for a ring under 3 points (`if (counts[i] < 3u)`); 5.5 rewrote the
+    ring path and dropped the check, so a degenerate ring tessellates to
+    nothing and returns `TE_Ok`. Every read stays inside the tests'
+    buffers. **Guard:** the canary excludes exactly those two by name
+    (`STALE_UPSTREAM_TESTS`); the other 32 must pass.
+11. **takkernel's `:shared` does not compile from public sources at 5.5**
+    (open). Its desktop MIL-STD-2525 glue (`milstd2525/MilStd2525dInterop`,
+    `RenderContextWrapper`) is written against a desktop `armyc2.c5isr`
+    renderer the public build cannot resolve (it gets one whose types are
+    Android `Bitmap`s). Left out, `shared` compiles and runs 297 tests,
+    43 failing for mixed reasons. `:port` runs (26 tests) minus
+    `JavaResourceManagerTest` and `BitmapTest(s)`, which need Android's
+    runtime (`dev/g1/kernel/port-tests.gradle`). **Guard: none yet** for
+    `shared`; closing it takes a Gradle init script leaving the 2525 glue
+    out and the 43 failures sorted (stand-in limits excluded by name, the
+    rest fixed), then `:shared:test` back in `make test-kernel`.
+12. **`atak-headless` kept classes compiled against the old jars.** It
+    recompiled only when a `.java` was newer than its class dir; a
+    re-pin swaps the jars and leaves the sources, so classes built
+    against 4.6 would have run against 5.5. **Guard:** it recompiles when
+    a kernel or commo jar is newer than its classes too, as
+    `dev/g2/render/env.sh` now does for sources, patches and jars.
+13. **`make lint` linted third-party docs the 5.5 build unpacks.**
+    markdownlint swept `dev/g1/build`: 5.5's style-asset `LICENSE.md`
+    files and the tinygltf tarball's examples (926 issues in 25 files).
+    **Guard:** `.markdownlint-cli2.jsonc` sets `"gitignore": true`, so
+    lint skips what `.gitignore` skips.
 
 ## Exit
 
@@ -529,7 +565,7 @@ passes the G1 comms gates. What remains before the re-pin (study step
    on JDK 21. Carried forward to the re-pin: JDK 8 itself, kept for
    4.6's Gradle 6.9.1 and `javah`; the re-pin's 5.5 Gradle 8.13 and
    `javac -h` remove it.
-5. **The re-pin** (1–2 days): fold `build-engine.sh`'s wrapper changes into
+5. ~~**The re-pin**~~ **Done** (§State, re-pin). It was: fold `build-engine.sh`'s wrapper changes into
    `build-native.sh`, move `dev/spike/g55/patches` to `dev/g1/patches`,
    `jni-include/` to `dev/g1/jni-include` (replacing `gen-jni-headers.sh`,
    whose javah bundles 5.5 no longer uses) and `jni-tests/` over G1's,
@@ -540,5 +576,8 @@ passes the G1 comms gates. What remains before the re-pin (study step
    `atak-headless`'s overrides), and change the 14 files that name
    `889eee2`.
 
-About a week to a 5.5 baseline with today's gates green, 3D Tiles
-still out: the Java 8 move and the re-pin.
+Carried forward past the rebase: `:shared`'s tests (trap 11), commo's
+QUIC failure cause (trap 8), the `ManagedFeatureDefinition` consumer
+guards and guards-mode pins for the two new JNI patches, peer-to-peer
+QUIC after the interface-scanner bug, and 3D Tiles (cesium-native and
+draco) when it is needed.

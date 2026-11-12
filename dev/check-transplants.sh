@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIRS=(dev/g1/transplants dev/spike/g0/transplants dev/spike/g55/transplants)
+DIRS=(dev/g1/transplants dev/spike/g0/transplants)
 
 if command -v sha256sum >/dev/null 2>&1; then
   SUM=(sha256sum)            # Linux (CI's lint runner)

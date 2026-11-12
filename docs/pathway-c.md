@@ -45,7 +45,7 @@ License: **GPL-3.0** propagates to any port of this tree; plan publication at fi
 | R4 | AppKit ↔ JVM/JNI threading conflicts | M×M | Hybrid split-process architecture (G2 decision) |
 | R5 | takkernel Gradle expects TAK artifact-repo creds | M×L | All-from-source path proven by public CI |
 | R6 | GPL-3.0 obligations constrain distribution | M×M | Publish plan at G0; org sign-off before any internal-only fork temptation |
-| R7 | Engine drift: upstream resumed — public 5.5 source at `TAK-Product-Center/atak-civ` (2026-11-11) | H×M | Keep the port a thin fork (no engine edits where host-side possible); rebase in stages per [rebase-study-5.5.md](rebase-study-5.5.md) |
+| R7 | Engine drift: upstream resumed — public 5.5 source at `TAK-Product-Center/atak-civ` (2026-11-11) | H×M | Keep the port a thin fork (no engine edits where host-side possible); rebase in stages per [rebase-study-5.5.md](rebase-study-5.5.md). **Re-pinned to 5.5.1.10 on 2026-11-11**; the next bump follows the same pattern (CONTRIBUTING.md, "Moving the upstream baseline") |
 | R8 | Feature-comparison pressure vs WinTAK/TAKX (closed, GOTS) | H×M | Manage expectations via parity-ladder rungs (roadmap G6); never promise parity dates |
 | R9 | Plugin ecosystem loss vs Android ATAK | H×L | Native extension API; explicit scope statement |
 | R10 | Comms path choice (JNI vs ObjC bindings) rework | L×L | Decide at G1; both bind the same C++ core |

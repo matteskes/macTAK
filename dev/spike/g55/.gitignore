@@ -1,3 +1,0 @@
-# throwaway build tree (build-engine.sh rebuilds all of it but kernel/,
-# which kernel/build-kernel-jars.sh owns)
-build/

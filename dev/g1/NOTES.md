@@ -1,5 +1,18 @@
 # dev/g1 — G1: JVM host + native JNI glue (macOS arm64)
 
+## State (re-pin — 2026-11-11): the baseline is ATAK-CIV 5.5.1.10; JDK 21 only
+
+`src/` is `TAK-Product-Center/atak-civ` @ `9f6893d` (takkernel 8.30.5),
+sparse (CONTRIBUTING.md §Setup). `build-native.sh` builds it with the
+38-patch 5.5 series (3D Tiles left out), the kernel jars come from
+`kernel/build-kernel-jars.sh` instead of the 0.59.1 transplants, commo
+is 5.5's with QUIC on ngtcp2 (`fetch-ngtcp2.sh`, `make test-quic`), and
+`atak-headless` runs the whole 5.5 stack in one JVM on JDK 21. How it got
+here, step by step, with its traps: `dev/spike/g55/NOTES.md`. Sections
+below this one describe the 4.6 build they were written for; file paths
+and patch names still hold unless g55's §What's here says they moved.
+New G1 traps continue this file's numbering.
+
 ## State (G1): M1–M4 DONE — G1 exit criteria met: engine + comms in one JVM, CoT in/out persisted to the engine's tracks DB, offline layers open; witnessed on OpenTAKServer (TCP + SSL) and hermetically in CI
 
 `dev/g1/build-native.sh` now produces **two** dylibs:
