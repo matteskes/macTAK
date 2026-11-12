@@ -115,6 +115,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `CONTRIBUTING.md`'s rebase section allows a 5.5 run to reuse a G1/G2
+  gate through an opt-in `MACTAK_*` override in the 4.6 script (unset, no
+  change; documented in the script's header), rather than a copy under
+  `dev/spike/g55/`, so both versions run one copy of each gate.
 - The 5.5 rebase follows house style (docs only). `CONTRIBUTING.md` has a
   "Rebase work (4.6 → 5.5), until the re-pin" section that says where 5.5
   patches, harness changes and jars land, that a 4.6 patch fix lands in
