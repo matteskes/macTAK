@@ -1,5 +1,19 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (M3.3 — 2026-11-12): the window is live — continuous loop, live resize, Retina, generational ZGC
+
+After the first frame the render thread keeps rendering and presenting
+until the shell stops it. The window resizes (the shell sets the layer's
+drawableSize, the render thread recreates the EGL surface), renders at the
+display's backing scale (640×480 pt → 1280×960 px, dpi 144), pauses while
+occluded, and logs frame times. `make test-shell` gains a third leg,
+`shell/test/live.sh`: a 6 s scripted pan with a resize halfway, gated on
+every present, no GL error, the resize reaching the surface, the content
+gate at the new size and both PNGs decoding. On the dev Mac (M5 Max):
+**60.2 fps, 0 dropped frames, render CPU p50 1.8 ms / p95 2.5 ms**.
+The shell's JVM runs generational ZGC. Section "M3.3" at the end, with
+traps #57–#61. M3.4 (gestures, the R4 verdict) is next.
+
 ## State (plan — 2026-11-12): the rest of G2 is decided; M3.3 is next
 
 The owner settled seven open questions before the remaining G2 work
@@ -20,7 +34,7 @@ georeferenced images to the addressable `[0, w-1]` pixels:
 `GdalProjectionSmoke` accepts exactly 4.6's and 5.5's conventions
 (`(63,63)`/`(31.5,31.5)` now), and the basemap frame covers 262 036 px
 where 4.6 covered 262 144. Details: `dev/spike/g55/NOTES.md`. New G2
-traps continue this file's numbering (#57 next).
+traps continue this file's numbering (#57 next; #62 since M3.3).
 
 ## State (M3.2 — 2026-11-07): the Swift/AppKit shell boots the JVM in-process and hosts the window; `make test-shell` is green
 
@@ -562,7 +576,7 @@ layout (`lib/libjli.dylib`) via `/usr/libexec/java_home -v 1.8`; Swift
 | M3.0 (~1 d) | `smoke/egl-triangle-window.m`: NSWindow → `CAMetalLayer` → `eglCreateWindowSurface` → visible triangle, on the staged Electron-bundled ANGLE pair | verifies the one upstream-true-but-unproven claim before any shell exists |
 | M3.1 | window natives + dynamic-size `EglRenderContext` (exercised headlessly; pbuffer still in CI) | pbuffer canary stays green |
 | M3.2 | shell + static frame (`WindowApp.java` lifts Globe/layers setup from `RenderSmoke`) | static frame on screen; readback PNG passes |
-| M3.3 | loop + live resize + Retina (occlusion pauses the loop) | resize during pan without glitches; 60 fps logged |
+| M3.3 | loop + live resize + Retina (occlusion pauses the loop) — **done 2026-11-12** | resize during pan without glitches; 60 fps logged |
 | M3.4 | `InputBridge` gestures (drag→panBy, scroll/pinch→zoomBy with focus point, two-finger rotate→rotateBy); fps log; **R4 verdict recorded here and in the roadmap** | gesture-driven pan/zoom/rotate at 60 fps — G2's exit criterion |
 
 CI: the pbuffer canary stays the automated gate; a compile-only job keeps
@@ -1093,7 +1107,7 @@ fixed on its own branch, in this order.
 | 4 | Low | `Uri.getQueryParameter` leaves `+` as `+`; Android decodes it to a space | **Fixed** (branch `g2/uri-query-plus`), guarded by `render/test/uri.sh` |
 | 5 | Low | `shell/run.sh` leaks its scratch `MACTAK_HOME` every run: the `EXIT` trap never fires after `exec` | **Fixed** (branch `g2/shell-run-scratch-cleanup`): no `exec`, guarded by `dev/check-trap-exec.sh` |
 | 6 | Low | A value option given last crashes the Swift shell (array index out of range); `RenderSmoke` dies with a stack trace instead of usage | **Fixed** (branch `g2/cli-missing-value`), guarded by `shell/test/args.sh` and `render/test/args.sh` |
-| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; ~~`fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents)~~ (fixed on branch `chore/rebase-guards`, with `lipo` twice more, guarded by `dev/check-pipefail-grep.sh`); the GLES shim does not bounds-check array offsets | Open |
+| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; ~~`fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents)~~ (fixed on branch `chore/rebase-guards`, with `lipo` twice more, guarded by `dev/check-pipefail-grep.sh`); the GLES shim does not bounds-check array offsets | `WindowApp.teardown`: **fixed in M3.3**; the rest open |
 | 8 | High | The Swift shell exited 0 whatever the render did: AppKit's `terminate` ends the process itself, so the code that read `WindowApp`'s exit code never ran and `make test-shell` could not fail | **Fixed** (branch `g2/shell-exit-code`): `applicationWillTerminate` exits with the code, guarded by `shell/test/exit-code.sh` (manual gate) |
 
 Settled on the bench (2026-11-10): the reading left open whether the
@@ -1405,7 +1419,7 @@ starts. The M3 architecture above ("M3 design") is unchanged.
 
 | Step | What | Exit gate |
 |---|---|---|
-| M3.3 | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7); the shell's JVM runs generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) from here on | resize during a pan without glitches; frame times logged; `make test-shell` green |
+| M3.3 (**done**) | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7); the shell's JVM runs generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) from here on | resize during a pan without glitches; frame times logged; `make test-shell` green |
 | M3.4 | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
 | G2.4 b.1 | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
 | G2.6 | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
@@ -1437,8 +1451,12 @@ proves a GeoTIFF DEM and DTED; the other formats are G4 import parity.
 
 Dev Mac, manual, like `make test-shell`: a scripted 10 s pan, zoom and
 rotate (the injected events below) on a Retina window at the shell's
-default size, full stack. **Pass: p95 frame time ≤ 16.7 ms and no
-dropped presents.** The shell writes the per-frame log as the artifact.
+default size, full stack. **Pass: zero dropped frames** (a present
+interval over 25 ms, 1.5 × the 60 Hz refresh) **and no failed presents.**
+p95 and the other interval figures are reported, not gated: presents are
+quantized to the display, so a perfect 60 Hz run reads p95 ≈ 17–17.8 ms
+(trap #61; restated 2026-11-12 from "p95 ≤ 16.7 ms", which such a run
+would fail). The shell writes the per-frame log as the artifact.
 The same run also records, as numbers to report and not yet pass/fail
 thresholds, the longest garbage-collection pause, peak resident memory
 and cold-start time (shell launch to first presented frame); they are
@@ -1479,3 +1497,98 @@ little in G2: the Android stand-ins stay scoped to the render path. The
 engine choice that came with it (a hybrid, JVM first) adds two things
 here: M3.3 moves the JVM to generational ZGC, and the exit run reports
 GC pauses, memory and cold start.
+
+## M3.3 — the live window: loop, live resize, Retina (2026-11-12, branch `g2/m3.3-loop-resize`)
+
+### What changed
+
+- **`WindowApp`**: after the first-frame gate (unchanged) the render
+  thread runs `live()` until `stop()` instead of parking. Each turn it
+  adopts a size the shell handed over (`resize(w, h, dpi)`: latest wins),
+  waits while the window is occluded (`setVisible`), renders only on
+  `requestRefresh` when continuous rendering is off, presents, records the
+  frame, and honours `setFrameRate` as a clamp. With `--live MS` the first
+  MS are the M3.3 gate: the camera pans every frame (`panStep`, a sine
+  sweep of a quarter of the surface width over 4 s), and `liveGate` then
+  checks presents, GL errors, resizes and the content at the current size,
+  and writes `<out>-live.png`. Frame times: the interval between presents,
+  and the render thread's **CPU** time in `view.render()` (trap #60).
+  `start` takes the dpi, the script and a frame-log path.
+- **`EglRenderContext`**: `requestRefresh` raises a dirty flag the loop
+  consumes; `setFrameRate`, `setContinuousRenderEnabled` and the dpi are
+  live (`setDpi`).
+- **The shell**: the window is resizable; `MetalView` sets
+  `contentsScale` to the backing scale and `drawableSize` to points ×
+  scale on every frame or backing change, and reports each new backing to
+  `WindowApp.resize` (dpi = 72 × scale); occlusion notifications go to
+  `WindowApp.setVisible`. `--size` is now in points. New options `--live`,
+  `--resize-to` (resize the window halfway through `--live`) and
+  `--frame-log`; the linger stretches to cover the script.
+- **`run.sh`**: `-XX:+UseZGC -XX:+ZGenerational` (confirmed: the JVM logs
+  `Using The Z Garbage Collector`; `ZGenerational = true`).
+- **G2.5 #7, the teardown part**: `WindowApp.teardown` now destroys EGL
+  whenever `NativeEgl.init` succeeded (`eglUp`), not only once the render
+  context existed. No gate forces a failure between EGL init and the
+  context, so this one is a code fix without a test.
+
+### Gate results (dev Mac, M5 Max, 2560×1440 display at 2×)
+
+| Leg | Result |
+|---|---|
+| first frame | 640×480 pt → 1280×960 px surface, dpi 144; 5 frames, `glErrors=0`, PASS; then live: 60.4 fps, interval p95 16.9 ms |
+| exit-code canary | a failed render still exits 2 |
+| live (`shell/test/live.sh`) | 363 frames presented, 0 failed, `glErrors=0`; window resized to 800×560 pt and the surface followed to 1600×1120 px; content 1,791,866 px (need 896,000); both PNGs decode; **live: PASS** |
+| frame times (live leg) | 60.2 fps; interval p50 16.6 ms, p95 17.6 ms, max 21 ms; **0 dropped (> 25 ms)**; render CPU p50 1.8 ms, p95 2.5 ms, max 6.4 ms |
+| occlusion (one-off probe) | minimized mid-run: the shell reports `occluded`, the loop pauses, a restart marker in the frame log on `visible` |
+| repeat | the scripted resize, 6 runs in a row: 6 PASS (before the fix for trap #58: 1 of 5) |
+
+`make test-render`, `test-render-resize`, `test-render-window`, `make
+lint` and the shell's args canary stay green.
+
+### Traps found on the way (#57–#61)
+
+- **#57 — a present can block for a second while the window leaves the
+  screen.** Minimizing mid-run produced one 1015 ms frame: the present in
+  flight while the window animated into the Dock waited out the
+  `CAMetalLayer`'s next-drawable timeout (1 s) before the occlusion
+  notification arrived and the loop paused. The loop recovers; the exit
+  run's frame times must come from a run with the window on screen.
+- **#58 — compare against what you reported, not the layer.** The shell
+  first decided "the backing changed" by comparing the new pixel size with
+  the layer's `drawableSize`. In most runs (4 of 5) Core Animation had
+  already moved `drawableSize` with the layer's bounds by the time
+  `setFrameSize` ran, so the shell saw no change, never told the render
+  thread, and the surface stayed at the old size (`resizes=0`). Now
+  `MetalView` keeps the last backing it reported and compares with that;
+  6 of 6 scripted resizes land. A diagnostic print in the resize path hid
+  the race (it passed 4 of 4 with the print in).
+- **#59 — the shell's PNGs never decoded (since M3.2).** The AWT-free
+  `writePng` wrote the zlib stream straight into the file after `IHDR`,
+  with no `IDAT` framing (length, type, CRC). `file` reads only the
+  header, so the artifact looked fine; `sips` and every decoder refused
+  it. Fixed: deflate into memory, write one `IDAT` chunk. **Guard:**
+  `shell/test/live.sh` decodes both of its PNGs with `sips` and checks
+  their sizes.
+- **#60 — wall-clock render time includes the wait for the display.**
+  ANGLE's Metal backend takes the next drawable lazily, at the first draw,
+  so `view.render()` itself blocks until the display is ready: its wall
+  time read 16.5 ms per frame, the whole frame. The loop records the
+  render thread's CPU time instead (`ThreadMXBean`): 1.8 ms p50. GPU time
+  is not in it.
+- **#61 — present intervals are quantized to the display.** At a steady
+  60 Hz with no dropped frame, the interval p95 reads 16.9–17.8 ms: the
+  refresh is 16.67 ms and ordinary jitter puts the 95th percentile just
+  above it. The G2 exit gate as first decided ("p95 frame time ≤ 16.7 ms")
+  would fail a perfect run. **Resolved 2026-11-12 (owner):** the gate is
+  zero dropped frames, a present interval over 25 ms (1.5 × the refresh);
+  p95 is reported, not gated ("The 60 fps gate"). The live loop counts
+  them: the scripted pan and resize, 0 dropped.
+
+### Found, not fixed here
+
+- **Point icons spawn a thread per attempt.** With the landmarks layer the
+  live loop logs `failed to handle URI asset:/icons/reference_point.png`
+  about 30 times a second, each from a new thread: the engine resolves the
+  Android `asset:` URI the stand-ins do not serve, fails, and retries. The
+  icons do not draw (labels do). It costs threads every frame; it belongs
+  with G2.4's stand-in work or its own fix.

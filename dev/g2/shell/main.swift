@@ -1,4 +1,4 @@
-// main.swift — macTAK G2 M3.2: the app shell (host model A, NOTES §M3).
+// main.swift — macTAK G2 M3.2–M3.3: the app shell (host model A, NOTES §M3).
 //
 // This process owns both lifecycles. AppKit's main thread creates the
 // NSWindow + CAMetalLayer, starts the JVM in-process through libjli
@@ -7,7 +7,9 @@
 // end-to-end; the main thread never touches EGL. The main thread keeps a
 // poll timer: WindowApp.pollStatus says where the render thread is
 // (RENDERING → FRAME_DONE → EXITED); on FRAME_DONE the window lingers for
-// --linger ms so a human can eyeball the frame; then -- or on window close
+// --linger ms so a human can eyeball the frame, live (M3.3: the render
+// thread keeps presenting; the window resizes, follows the display's backing
+// scale and pauses while occluded); then -- or on window close
 // or a failure -- the shell asks WindowApp.stop, waits for EXITED (clean
 // engine/EGL teardown on the render thread), and exits with WindowApp's
 // code. The JVM is never destroyed: DestroyJavaVM blocks on lingering
@@ -51,6 +53,9 @@ struct ShellOptions {
     var res = Double.nan
     var atLat = Double.nan
     var atLon = Double.nan
+    var liveMs: Int64 = 0
+    var resizeTo: (Int, Int)?
+    var frameLog: String?
 }
 
 let USAGE = """
@@ -58,13 +63,15 @@ usage: \(SHELL) --classpath CP --lib PATH [--lib PATH ...] --egl PATH --gles PAT
                    [--prop JVM_OPTION ...] [--size WxH] [--frames N] [--settle MS]
                    [--linger MS | --wait] [--out FILE.png] [--layer FILE ...]
                    [--basemap FILE ...] [--layer-db DIR] [--res M] [--at LAT,LON]
+                   [--live MS [--resize-to WxH]] [--frame-log FILE.csv]
   --classpath CP  the JVM classpath (built by dev/g2/shell/run.sh; the JVM
                   starts with -Djava.class.path=CP)
   --lib PATH      native library to System.load, in order (libtakengine,
                   libtakenginejni)
   --egl PATH      ANGLE libEGL.dylib; --gles PATH  ANGLE libGLESv2.dylib
   --prop OPT      a raw JVM option, e.g. -Djava.awt.headless=true (repeatable)
-  --size WxH      window and surface size in pixels (default 640x480)
+  --size WxH      window size in points (default 640x480); the surface is
+                  that times the display's backing scale (2 on Retina)
   --frames N      frames to render (default 5; plus the --settle tail)
   --settle MS     min wall time to keep rendering while layers load (default 3000)
   --linger MS     keep the window up this long after the frame is done, then
@@ -76,6 +83,11 @@ usage: \(SHELL) --classpath CP --lib PATH [--lib PATH ...] --egl PATH --gles PAT
   --layer-db DIR  feature store dir (default: temp)
   --res M         camera resolution, metres/pixel (default: fit content bounds)
   --at LAT,LON    camera centre (default: content bounds centre)
+  --live MS       after the first frame, a scripted live phase (the M3.3
+                  gate): the camera pans every frame for MS, then the live
+                  gate checks presents, GL errors, resizes and content
+  --resize-to WxH resize the window to WxH points halfway through --live
+  --frame-log F   CSV of the live phase's frame times
 """
 
 func parseSize(_ s: String, _ what: String) -> (Int, Int) {
@@ -122,6 +134,9 @@ while i < argv.count {
     case "--basemap": o.basemaps.append(optionValue())
     case "--layer-db": o.layerDb = optionValue()
     case "--res": o.res = parseDouble(optionValue(), "res")
+    case "--live": o.liveMs = Int64(optionValue()) ?? -1
+    case "--resize-to": o.resizeTo = parseSize(optionValue(), "resize-to")
+    case "--frame-log": o.frameLog = optionValue()
     case "--at":
         let at = optionValue()
         let ll = at.split(separator: ",", maxSplits: 1).map(String.init)
@@ -138,6 +153,10 @@ guard let cp = o.classpath, !cp.isEmpty else { fputs("\(SHELL): --classpath is r
 guard !o.libs.isEmpty, o.egl != nil, o.gles != nil else { fputs("\(SHELL): --lib/--egl/--gles are required\n\(USAGE)\n", stderr); exit(2) }
 guard o.frames >= 1 else { fputs("\(SHELL): --frames must be >= 1\n", stderr); exit(2) }
 guard o.settleMs >= 0, o.lingerMs >= 0 else { fputs("\(SHELL): --settle/--linger must be >= 0\n", stderr); exit(2) }
+guard o.liveMs >= 0 else { fputs("\(SHELL): --live must be >= 0\n", stderr); exit(2) }
+guard o.resizeTo == nil || o.liveMs > 0 else { fputs("\(SHELL): --resize-to needs --live\n", stderr); exit(2) }
+// the scripted phase runs inside the linger: keep the window up past it
+if o.liveMs > 0 { o.lingerMs = max(o.lingerMs, o.liveMs + 2000) }
 
 // ---- JVM bootstrap (jni_boot.c) -----------------------------------------
 
@@ -223,21 +242,28 @@ func jniCallInt(_ mid: jmethodID) -> jint {
     return v
 }
 
-func jniCallVoid(_ mid: jmethodID) {
-    JNF.CallStaticVoidMethodA!(env, gWindowApp, mid, nil)
+func jniCallVoid(_ mid: jmethodID, _ args: [jvalue] = []) {
+    var a = args
+    a.withUnsafeMutableBufferPointer { p in
+        JNF.CallStaticVoidMethodA!(env, gWindowApp, mid, p.baseAddress)
+    }
     if jniExceptionPending("calling") { exit(2) }
 }
 
 // start(long layerPtr, int w, int h, String[] libs, String egl, String gles,
 //       String[] layers, String[] basemaps, String layerDb, String out,
-//       double res, double atLat, double atLon, int frames, long settleMs)
+//       double res, double atLat, double atLon, int frames, long settleMs,
+//       double dpi, long liveMs, int expectResizes, String frameLog)
 let SIG_START = "(JII[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-    + "[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;DDDIJ)V"
+    + "[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;DDDIJ"
+    + "DJILjava/lang/String;)V"
 
 guard let midStart = jniStaticMethod(gWindowApp, "start", SIG_START),
       let midPoll = jniStaticMethod(gWindowApp, "pollStatus", "()I"),
       let midExit = jniStaticMethod(gWindowApp, "exitCode", "()I"),
-      let midStop = jniStaticMethod(gWindowApp, "stop", "()V")
+      let midStop = jniStaticMethod(gWindowApp, "stop", "()V"),
+      let midResize = jniStaticMethod(gWindowApp, "resize", "(IID)V"),
+      let midVisible = jniStaticMethod(gWindowApp, "setVisible", "(Z)V")
 else { exit(2) }
 
 // No Metal device (headless Mac, VM without a GPU): the CAMetalLayer below
@@ -251,21 +277,62 @@ guard MTLCreateSystemDefaultDevice() != nil else {
 
 final class MetalView: NSView {
     let metalLayer: CAMetalLayer
+    /// Called with the new drawableSize (pixels) and dpi after every backing
+    /// change, once the render thread exists (set after WindowApp.start).
+    var onBackingChange: ((Int, Int, Double) -> Void)?
+    /// The backing last reported: compared against, not the layer's
+    /// drawableSize, which Core Animation may already have moved along with
+    /// the layer's bounds by the time setFrameSize runs (trap #58).
+    private var reported: (w: Int, h: Int, scale: CGFloat)?
 
     override init(frame frameRect: NSRect) {
         metalLayer = CAMetalLayer()
         metalLayer.device = MTLCreateSystemDefaultDevice()
-        // M3.2 pins contentsScale to 1: drawableSize == EGL surface == the
-        // readback PNG, all the w,h the shell passes. Retina calibration
-        // (drawableSize = point size x backing scale) is M3.3 (NOTES §M3).
-        metalLayer.contentsScale = 1.0
-        metalLayer.drawableSize = CGSize(width: frameRect.width, height: frameRect.height)
         super.init(frame: frameRect)
         self.layer = metalLayer          // set explicitly, Chromium-style: on
         self.wantsLayer = true           // current macOS a +layerClass override
-    }                                    // is ignored for backing layers (M3.0)
+        syncBacking()                    // is ignored for backing layers (M3.0)
+    }
 
     required init?(coder: NSCoder) { fatalError("no nib") }
+
+    var backingScale: CGFloat {
+        window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+    }
+
+    /// Pixels the surface needs: the view's points times the backing scale.
+    var pixelSize: (Int, Int) {
+        let s = backingScale
+        return (max(1, Int((bounds.width * s).rounded())), max(1, Int((bounds.height * s).rounded())))
+    }
+
+    /// M3.3 Retina: drawableSize = points x backing scale, contentsScale =
+    /// that scale, dpi = 72 x scale. The layer's drawableSize is the host's
+    /// truth; the render thread adopts it (WindowApp.resize → EGL recreate).
+    func syncBacking() {
+        let (w, h) = pixelSize
+        let size = CGSize(width: w, height: h)
+        let scale = backingScale
+        if let r = reported, r.w == w, r.h == h, r.scale == scale { return }
+        reported = (w, h, scale)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)   // no implicit animation of the backing
+        metalLayer.contentsScale = scale
+        metalLayer.drawableSize = size
+        CATransaction.commit()
+        print("\(SHELL): backing \(w)x\(h) px @\(scale)x\(onBackingChange == nil ? " (before start)" : "")")
+        onBackingChange?(w, h, 72.0 * Double(scale))
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        syncBacking()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        syncBacking()
+    }
 }
 
 final class Shell: NSObject, NSApplicationDelegate {
@@ -279,6 +346,8 @@ final class Shell: NSObject, NSApplicationDelegate {
     var stopRequestedByUs = false
     var stopRequestedAt: Date?
     var lastSt = -1
+    var scriptedResizeAt: Date?
+    var midVisible: jmethodID?          // WindowApp.setVisible, set after start
 
     init(window: NSWindow, opt: ShellOptions, midPoll: jmethodID, midExit: jmethodID, midStop: jmethodID) {
         self.window = window
@@ -296,6 +365,10 @@ final class Shell: NSObject, NSApplicationDelegate {
         }
         if st == 1 && !frameDoneLogged {                       // PHASE_FRAME_DONE
             frameDoneLogged = true
+            if let (rw, rh) = opt.resizeTo {
+                scriptedResizeAt = Date().addingTimeInterval(Double(opt.liveMs) / 2000.0)
+                print("\(SHELL): live script: resizing the window to \(rw)x\(rh) pt in \(Double(opt.liveMs) / 2000.0) s")
+            }
             if opt.wait {
                 print("\(SHELL): frame done — keeping the window up (--wait); close it to exit")
             } else {
@@ -307,6 +380,12 @@ final class Shell: NSObject, NSApplicationDelegate {
             if !frameDoneLogged { print("\(SHELL): render failed — closing the window") }
             NSApp.terminate(nil)      // shouldTerminate: EXITED → .terminateNow
             return
+        }
+        if let at = scriptedResizeAt, Date() >= at, let (rw, rh) = opt.resizeTo {
+            scriptedResizeAt = nil
+            window.setContentSize(NSSize(width: rw, height: rh))
+            let s = window.backingScaleFactor
+            print("\(SHELL): resized the window to \(rw)x\(rh) pt (\(Int((Double(rw) * s).rounded()))x\(Int((Double(rh) * s).rounded())) px)")
         }
         if let dl = lingerDeadline, Date() >= dl, !opt.wait, !stopRequestedByUs {
             // Linger over: wind the render thread down from here, while the
@@ -351,6 +430,16 @@ final class Shell: NSObject, NSApplicationDelegate {
         return .terminateNow
     }
 
+    /// M3.3: an occluded window renders nothing; WindowApp's loop pauses.
+    @objc func occlusionChanged(_ note: Notification) {
+        let shown = window.occlusionState.contains(.visible)
+        print("\(SHELL): window \(shown ? "visible" : "occluded")")
+        guard let mid = midVisible else { return }
+        var a = [jvalue](repeating: jvalue(), count: 1)
+        a[0].z = jboolean(shown ? JNI_TRUE : JNI_FALSE)
+        jniCallVoid(mid, a)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true                              // user-close flows into the path above
     }
@@ -373,14 +462,15 @@ app.activate()                            // regular policy so the window is key
 let frame = NSRect(x: 0, y: 0, width: CGFloat(o.w), height: CGFloat(o.h))
 let view = MetalView(frame: frame)
 let window = NSWindow(contentRect: frame,
-                      styleMask: [.titled, .closable],
+                      styleMask: [.titled, .closable, .miniaturizable, .resizable],
                       backing: .buffered,
                       defer: false)
-window.title = "macTAK M3.2 — shell"
+window.title = "macTAK — shell"
 window.isReleasedWhenClosed = false
 window.contentView = view
 window.center()
 window.makeKeyAndOrderFront(nil)
+view.syncBacking()   // the window's screen sets the real backing scale
 
 let shell = Shell(window: window, opt: o, midPoll: midPoll, midExit: midExit, midStop: midStop)
 app.delegate = shell
@@ -388,12 +478,14 @@ app.delegate = shell
 // The layer pointer crosses JNI as an opaque jlong; Java never dereferences
 // it (the engine's createWindowSurface does). The view keeps the layer alive.
 let layerPtr = UInt(bitPattern: unsafeBitCast(view.metalLayer, to: Int.self))
-print("\(SHELL): CAMetalLayer @ 0x\(String(layerPtr, radix: 16)) drawable=\(o.w)x\(o.h) contentsScale=1")
+let (pxW, pxH) = view.pixelSize
+let startDpi = 72.0 * Double(view.backingScale)
+print("\(SHELL): CAMetalLayer @ 0x\(String(layerPtr, radix: 16)) window=\(o.w)x\(o.h) pt drawable=\(pxW)x\(pxH) px contentsScale=\(view.backingScale) dpi=\(startDpi)")
 
-var startArgs = [jvalue](repeating: jvalue(), count: 15)
+var startArgs = [jvalue](repeating: jvalue(), count: 19)
 startArgs[0].j = jlong(bitPattern: layerPtr)
-startArgs[1].i = jint(o.w)
-startArgs[2].i = jint(o.h)
+startArgs[1].i = jint(pxW)
+startArgs[2].i = jint(pxH)
 startArgs[3].l = jniNewStringArray(o.libs)
 startArgs[4].l = jniNewString(o.egl!)
 startArgs[5].l = jniNewString(o.gles!)
@@ -406,6 +498,10 @@ startArgs[11].d = jdouble(o.atLat)
 startArgs[12].d = jdouble(o.atLon)
 startArgs[13].i = jint(o.frames)
 startArgs[14].j = jlong(o.settleMs)
+startArgs[15].d = jdouble(startDpi)
+startArgs[16].j = jlong(o.liveMs)
+startArgs[17].i = jint(o.resizeTo == nil ? 0 : 1)
+startArgs[18].l = o.frameLog.flatMap { jniNewString($0) }
 // 3..7 must exist (libs, egl, gles, layers, basemaps); 8 (layerDb) and
 // 9 (out) are nullable by contract — WindowApp substitutes a temp dir and
 // skips the frame write respectively.
@@ -414,6 +510,20 @@ for (n, a) in startArgs.enumerated() where n >= 3 && n <= 7 && a.l == nil {
 }
 JNF.CallStaticVoidMethodA!(env, gWindowApp, midStart, &startArgs)
 if jniExceptionPending("calling WindowApp.start") { exit(2) }
+
+// M3.3: from here on, backing changes (live resize, a display with another
+// scale) and occlusion reach the render thread. Both calls are quick
+// synchronized setters on the Java side; the main thread never waits on
+// the render thread.
+view.onBackingChange = { w, h, dpi in
+    var a = [jvalue](repeating: jvalue(), count: 3)
+    a[0].i = jint(w); a[1].i = jint(h); a[2].d = jdouble(dpi)
+    jniCallVoid(midResize, a)
+}
+shell.midVisible = midVisible
+NotificationCenter.default.addObserver(shell, selector: #selector(Shell.occlusionChanged(_:)),
+                                       name: NSWindow.didChangeOcclusionStateNotification,
+                                       object: window)
 
 // The terminate handshake parks the run loop: applicationShouldTerminate
 // returning .terminateLater runs it in NSModalPanelRunLoopMode, where timers

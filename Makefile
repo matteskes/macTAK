@@ -148,6 +148,7 @@ build-shell:
 test-shell: build-shell
 	bash dev/g2/shell/run.sh --out dev/g2/build/shell-frame.png
 	bash dev/g2/shell/test/exit-code.sh
+	bash dev/g2/shell/test/live.sh
 
 # M3.0 manual gate (dev Mac, GUI session): `angle` stages the ANGLE pair and
 # runs the headless pbuffer canary first, then the window opens for ~3 s and

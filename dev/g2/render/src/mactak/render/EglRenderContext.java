@@ -20,8 +20,14 @@ import java.util.Set;
  * layer renderers call that. The thread that constructs it is the render
  * thread; it owns the EGL context and drains {@link #queueEvent} work via
  * {@link #pump()} before each frame. The surface is resizeable at run time
- * ({@link #resize}): today a pbuffer rebuild; once a host owns a CAMetalLayer
- * its window surface takes the same path (adopt the layer's drawableSize).
+ * ({@link #resize}): a pbuffer rebuild, or for a host's CAMetalLayer the
+ * window surface adopting the layer's drawableSize.
+ *
+ * <p>M3.3: the loop's controls are live. {@link #requestRefresh} raises a
+ * dirty flag the render loop consumes ({@link #takeRefreshRequest}) when
+ * continuous rendering is off; {@link #setFrameRate} is the loop's clamp
+ * (0 = present as fast as the swap allows); {@link #setDpi} follows the
+ * host's backing scale (72 x scale on macOS).
  */
 @SuppressWarnings("deprecation")   // GLMapSurface.getGLMapView() is typed with the deprecated MapRenderer
 final class EglRenderContext extends GLMapSurface {
@@ -30,7 +36,11 @@ final class EglRenderContext extends GLMapSurface {
     private final ArrayDeque<Runnable> queue = new ArrayDeque<>();
     /** Surface size; written on the render thread, readable from any (volatile). */
     private volatile int width, height;
-    private final double dpi;
+    private volatile double dpi;
+    private final java.util.concurrent.atomic.AtomicBoolean refreshRequested =
+            new java.util.concurrent.atomic.AtomicBoolean(true);
+    private volatile float frameRate;
+    private volatile boolean continuousRender = true;
     private ByteBuffer readback;
     private final Set<OnSizeChangedListener> listeners =
             java.util.Collections.newSetFromMap(new IdentityHashMap<OnSizeChangedListener, Boolean>());
@@ -42,6 +52,12 @@ final class EglRenderContext extends GLMapSurface {
     }
 
     void setGLMapView(com.atakmap.map.MapRenderer view) { this.glMapView = view; }
+
+    /** The host's dots per inch: 72 x backing scale on macOS. Any thread. */
+    void setDpi(double dpi) { this.dpi = dpi; }
+
+    /** Consume a pending {@link #requestRefresh}; the render loop's dirty check. */
+    boolean takeRefreshRequest() { return refreshRequested.getAndSet(false); }
 
     /** Run everything queued from other threads; call on the render thread each frame. */
     void pump() {
@@ -101,11 +117,14 @@ final class EglRenderContext extends GLMapSurface {
         synchronized (queue) { queue.addLast(r); }
     }
 
-    @Override public void requestRefresh() { }
-    @Override public void setFrameRate(float rate) { }
-    @Override public float getFrameRate() { return 0f; }
-    @Override public void setContinuousRenderEnabled(boolean enabled) { }
-    @Override public boolean isContinuousRenderEnabled() { return true; }
+    @Override public void requestRefresh() { refreshRequested.set(true); }
+    @Override public void setFrameRate(float rate) { frameRate = Math.max(rate, 0f); }
+    @Override public float getFrameRate() { return frameRate; }
+    @Override public void setContinuousRenderEnabled(boolean enabled) {
+        continuousRender = enabled;
+        if (enabled) refreshRequested.set(true);
+    }
+    @Override public boolean isContinuousRenderEnabled() { return continuousRender; }
     @Override public boolean supportsChildContext() { return false; }
     // upstream declares these with the raw type (so does JOGLRenderContext)
     @SuppressWarnings("rawtypes")
