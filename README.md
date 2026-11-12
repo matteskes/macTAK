@@ -32,7 +32,7 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 All of these, plus the engineering notes under `dev/` (the G1 and G2
 records and the spike notes), are also published as one browsable site,
 with a sidebar, search and a table of contents on every page:
-`https://matteskes.github.io/macTAK/`. It is built from these same files
+<https://matteskes.github.io/macTAK/>. It is built from these same files
 on every merge to `main` (`dev/docs-site/`, `make docs-site`).
 
 | Doc | Contents |
