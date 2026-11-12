@@ -152,9 +152,12 @@ The upstream baseline is moving from `889eee2` to
   the same PR, or the PR says why it does not apply to 5.5. Harness
   changes go in `dev/spike/g55/`; `src/`, `dev/g1/build-native.sh` and
   the `889eee2` pin stay as they are until the re-pin.
-- **Binaries.** 5.5 jars go in `dev/spike/g55/transplants/` with a
-  `SHA256SUMS` that lists every one; `dev/check-transplants.sh` and the
-  pre-commit hook already cover that directory.
+- **Binaries.** 5.5 jars may be built in CI from the pinned upstream
+  commit (the 5.5 engine and android-port jars are), so no binary enters
+  the repo. A 5.5 jar that is committed goes in
+  `dev/spike/g55/transplants/` with a `SHA256SUMS` that lists every one;
+  `dev/check-transplants.sh` and the pre-commit hook already cover that
+  directory.
 - **Shadows.** No 5.5 engine shadow lands without a drift gate that does
   for it what `check-engine-shadows` does for 4.6.
 - **Branches, commits, CI.** Branches are `spike/g55-<topic>` (what
