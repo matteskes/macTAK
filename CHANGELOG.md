@@ -9,6 +9,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Spike 1, render step (`dev/spike/g55/`, NOTES §Render gates): the G2
+  render gates pass on the 5.5 build linked against ANGLE/Metal. These
+  are the same nine steps as `ci.yml`'s `render-angle` job, from GDAL
+  georeferencing to the CAMetalLayer window surface, each with
+  `glErrors=0` and `KHR_debug` on. `render.sh` runs the existing gate
+  scripts unchanged: `dev/g2/render/env.sh` gains a `MACTAK_RENDER_ENV`
+  hook (inert when unset) that hands it to `render-env.sh` (JDK 21, the
+  5.5 jars, engine shadows regenerated from the 5.5 patches).
+  `build-engine.sh` gains `G55_GLES=angle` and stages a signed
+  `build/dist`. New patch `antialiased-lines-pattern-uint`: 5.5's
+  anti-aliased line shader declared `in int a_pattern` but is fed
+  unsigned shorts, so Metal refused every line draw
+  (`GL_INVALID_OPERATION`); the series is now 38 patches.
+  `GdalProjectionSmoke` now derives the expected centre from the
+  image's own SE corner, because 5.5 maps the geo extent to the
+  addressable `[0, w-1]` pixels (4.6: `[0, w]`); 4.6 still reads
+  exactly (32, 32). `GLBatchGeometryRenderer4` needs no attribute
+  guards. The steps also showed that 5.5 deprecates the
+  `FeatureDataStore` APIs `LayerStore` uses, and that JDK 21's javac
+  adds a `this-escape` lint.
+
 - Spike 1, JNI step (`dev/spike/g55/`, NOTES §JNI glue): the 5.5 JNI
   glue builds, loads in a JVM and passes G1's JNI tests. The G1 load
   canary returns 42 through Java → glue → C++ → sqlite on JDK 21, and

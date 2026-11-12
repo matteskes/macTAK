@@ -94,17 +94,30 @@ public final class GdalProjectionSmoke {
                 + " srid=" + proj.getNativeSpatialReferenceID());
         check(proj.getNativeSpatialReferenceID() == 4326, "srid != 4326");
 
-        // pixel (0,0) → NW corner; pixel centre (32,32) → centre
+        // pixel (0,0) → NW corner; the centre and SE corner below
         final GeoPoint g = GeoPoint.createMutable();
         check(proj.imageToGround(new PointD(0, 0), g), "imageToGround(0,0) returned false");
         System.out.println(String.format("gdal-projection-smoke: image(0,0) → lat %.6f lon %.6f", g.getLatitude(), g.getLongitude()));
         check(Math.abs(g.getLatitude() - north) < 1e-9 && Math.abs(g.getLongitude() - west) < 1e-9,
                 "image(0,0) != (" + north + ", " + west + ")");
 
+        // ground(centre) → the midpoint of image(0,0) and ground(SE corner)'s
+        // image. Where the SE corner lands is upstream's pixel convention:
+        // 4.6 maps the extent to [0, w] (centre 32), 5.5 to the addressable
+        // [0, w-1] (GdalDatasetProjection2.GeoTransform's pixelScale, centre
+        // 31.5). Either way it lies in [w-1, w] on both axes; an axis swap or
+        // a non-linear mapping fails here or at image(0,0) above.
+        final PointD se = new PointD(0, 0);
+        check(proj.groundToImage(new GeoPoint(north - h * dy, west + w * dx), se), "groundToImage(SE) returned false");
+        System.out.println(String.format("gdal-projection-smoke: ground(SE corner) → image(%.6f, %.6f)", se.x, se.y));
+        check(se.x >= w - 1 - 1e-6 && se.x <= w + 1e-6 && se.y >= h - 1 - 1e-6 && se.y <= h + 1e-6,
+                "ground(SE corner) outside image [" + (w - 1) + ", " + w + "]");
+
         final PointD p = new PointD(0, 0);
         check(proj.groundToImage(new GeoPoint(north - 32 * dy, west + 32 * dx), p), "groundToImage returned false");
         System.out.println(String.format("gdal-projection-smoke: ground(centre) → image(%.6f, %.6f)", p.x, p.y));
-        check(Math.abs(p.x - 32) < 1e-6 && Math.abs(p.y - 32) < 1e-6, "ground(centre) != image(32,32)");
+        check(Math.abs(p.x - se.x / 2) < 1e-6 && Math.abs(p.y - se.y / 2) < 1e-6,
+                "ground(centre) != half of image(SE corner)");
 
         ds.delete();
 

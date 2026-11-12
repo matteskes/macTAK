@@ -1,0 +1,39 @@
+--- a/tmp/takeng-src/cpp/renderer/feature/BatchGeometryAntiAliasedLines.vert
++++ b/tmp/takeng-src/cpp/renderer/feature/BatchGeometryAntiAliasedLines.vert
+@@ -23,7 +23,12 @@
+ in vec4 a_outlineColor;
+ in float a_normal;
+ in float a_dir;
+-in int a_pattern;
++// macTAK: uint, not int. The pattern is laid out GL_UNSIGNED_SHORT and fed
++// with glVertexAttribIPointer (GLGeometryBatchBuilder, GLLinesEmulation);
++// GLES 3 leaves a signed/unsigned mismatch undefined, and ANGLE's Metal
++// backend refuses the pipeline (GL_INVALID_OPERATION on every line draw).
++// Signed data would not do: 0xFFFF must read as 65535 (solidLine below).
++in uint a_pattern;
+ in float a_factor;
+ in vec2 a_cap;
+ in float a_halfStrokeWidth;
+@@ -80,7 +85,7 @@
+   // outputs to fragment shader
+   v_color = a_color;
+   v_outlineColor = mix(a_color, a_outlineColor, step(0.5, a_outlineWidth));
+-  f_pattern = a_pattern;
++  f_pattern = int(a_pattern);
+   f_factor = a_factor;
+   f_dist = dist;
+   f_halfStrokeWidth = (uStrokeScale*a_halfStrokeWidth)+hitTestRadius;
+--- a/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryRenderer4.cpp
++++ b/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryRenderer4.cpp
+@@ -1854,7 +1854,10 @@
+     glVertexAttrib4f(shader.a_outlineColor, 0.f, 0.f, 0.f, 0.f);
+     glVertexAttrib1f(shader.a_halfStrokeWidth, 1.f);
+     glVertexAttrib1f(shader.a_factor, 0.f);
+-    glVertexAttrib1f(shader.a_pattern, 0.f); // since a_factor == 0, this is ignored
++    // macTAK: a_pattern is uint (antialiased-lines-pattern-uint); ANGLE checks
++    // a disabled attribute's current value against the input type as well,
++    // so a float here fails the draw, not only the value
++    glVertexAttribI4ui(shader.a_pattern, 0u, 0u, 0u, 0u); // since a_factor == 0, this is ignored
+     glVertexAttrib2f(shader.a_cap, 1.f, 1.f);
+ 
+     // instance data

@@ -19,8 +19,8 @@ source "$G55/runtime.sh"
 DEV="$(cd "$G55/../.." && pwd)"
 BUILD="$G55/build"
 JARS="$BUILD/kernel/jars"
-CORE_LIB="$BUILD/cmake/engine-cpp/libtakengine.dylib"
-JNI_LIB="$BUILD/cmake/libtakenginejni.dylib"
+CORE_LIB="$BUILD/dist/libtakengine.dylib"
+JNI_LIB="$BUILD/dist/libtakenginejni.dylib"
 JDK_VERSION=21
 
 die() { printf '[g55-smoke] FATAL: %s\n' "$*" >&2; exit 2; }
