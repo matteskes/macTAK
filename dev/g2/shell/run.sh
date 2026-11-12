@@ -3,8 +3,11 @@
 # G2 M3.2 shell run: build + launch the Swift/AppKit shell (dev/g2/shell) —
 # the process that starts the JVM in-process through libjli, opens an
 # NSWindow over a CAMetalLayer, and upcalls WindowApp.start; the JVM's
-# render thread drives the engine into the layer on ANGLE/Metal. The frame
-# is static (M3.2): no resize, no gestures yet (M3.3).
+# render thread drives the engine into the layer on ANGLE/Metal. After the
+# first frame the window stays live (M3.3): it resizes, follows the
+# display's backing scale and pauses while occluded; gestures are M3.4.
+# The JVM runs generational ZGC (sub-millisecond pauses: smooth frames,
+# dev/g2/NOTES.md "The rest of G2 — decided 2026-11-12").
 #
 # The run opens a real window (auto-closes --linger ms after the frame, or
 # stays up with --wait), so it needs a GUI session — a dev-Mac manual gate
@@ -12,7 +15,8 @@
 #
 # Usage: dev/g2/shell/run.sh [--compile-only] [same flags as the shell:
 #   --size WxH --frames N --settle MS --linger MS --wait --out FILE.png
-#   --layer FILE --basemap FILE --layer-db DIR --res M --at LAT,LON]
+#   --layer FILE --basemap FILE --layer-db DIR --res M --at LAT,LON
+#   --live MS --resize-to WxH --frame-log FILE.csv]
 # Prereqs: MACTAK_GLES=angle engine (dev/g1/build-native.sh), staged ANGLE
 #   (dev/g2/fetch-angle.sh) — the same as render/run.sh.
 set -euo pipefail
@@ -75,6 +79,7 @@ set +e
   --egl "$DIST/libEGL.dylib" --gles "$DIST/libGLESv2.dylib" \
   --prop "-Djava.library.path=$DIST:$GDAL_JAVA" \
   --prop "-Djava.awt.headless=true" \
+  --prop "-XX:+UseZGC" --prop "-XX:+ZGenerational" \
   --prop "-Dmactak.gdal.data=$GDAL_DATA_DIR" \
   --prop "-Dorg.slf4j.simpleLogger.defaultLogLevel=${MACTAK_LOG_LEVEL:-warn}" \
   ${SHELL_ARGS[@]+"${SHELL_ARGS[@]}"}

@@ -9,6 +9,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G2 M3.3, the live window (`dev/g2/NOTES.md` §M3.3): after the first
+  frame `WindowApp` keeps rendering until the shell stops it, applies live
+  resizes (the shell sets the layer's drawableSize; the render thread
+  recreates the EGL surface), renders at the display's backing scale
+  (dpi = 72 × scale), pauses while occluded, honours `requestRefresh` /
+  `setFrameRate` / continuous rendering, and logs frame times (present
+  interval and render CPU time). The shell's JVM runs generational ZGC.
+  `make test-shell` gains `shell/test/live.sh`: a scripted pan with a
+  resize halfway, gated on presents, GL errors, the resize, content at
+  the new size and decodable PNGs. Dev Mac: 60.2 fps, render CPU p95
+  2.5 ms.
 - A docs site: the README, CONTRIBUTING, CHANGELOG, the program documents
   in `docs/` and the engineering notes under `dev/` as one browsable site
   on GitHub Pages, with a sidebar, search and a table of contents on
@@ -299,6 +310,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The Swift shell's PNG artifacts never decoded since M3.2: the AWT-free
+  writer left the zlib stream unframed (no `IDAT` chunk). Fixed, and the
+  live leg now decodes its PNGs (`dev/g2/NOTES.md` trap #59).
+- `WindowApp.teardown` destroys EGL whenever it was initialized, also when
+  a run fails before the render context exists (G2.5 #7, its teardown
+  part).
 - `ManagedFeatureDefinition`'s consumers no longer call through the NULL
   method IDs a failed class init leaves (`dev/g1/NOTES.md` G1.17). New
   `managedfeaturedefinition-consumer-guards.patch`: they return `TE_Err`

@@ -44,10 +44,11 @@ import java.util.zip.DeflaterOutputStream;
  * <ol>
  * <li>{@link #PHASE_RENDERING} — frames under way; failure jumps straight
  * to EXITED so the shell can close the window and report the code.</li>
- * <li>{@link #PHASE_FRAME_DONE} — PASS candidate: readback done, PNG
- * written, last frame presented. The render thread parks (the window stays
- * up, frame on screen) until {@link #stop} or the shell's linger expires.
- * On the success path only — a failed run reports immediately.</li>
+ * <li>{@link #PHASE_FRAME_DONE} — the first-frame gate passed: readback
+ * done, PNG written, frame presented. The render thread then runs the live
+ * loop (M3.3) until {@link #stop}: the window stays live, resizes and
+ * follows the backing scale. On the success path only — a failed run
+ * reports immediately.</li>
  * <li>{@link #PHASE_EXITED} — teardown done on the render thread (engine,
  * EGL; the shell owns the layer/window). {@link #exitCode} is final.</li>
  * </ol>
@@ -58,8 +59,17 @@ import java.util.zip.DeflaterOutputStream;
  * never destroyed ({@code DestroyJavaVM} blocks on lingering non-daemon
  * engine threads; the proven path is shell {@code System.exit}).
  *
- * <p>Not in this gate (M3.3): live resize, real dpi (the surface is built
- * with RenderSmoke's 128 m/px placeholder), Retina calibration.
+ * <p>M3.3, the live loop: after the first frame the render thread keeps
+ * rendering and presenting until {@link #stop}. It applies the size the
+ * shell hands over in {@link #resize} (the shell sets the layer's
+ * drawableSize first: the host's truth), pauses while the shell reports the
+ * window occluded ({@link #setVisible}), renders only on
+ * {@code requestRefresh} when continuous rendering is off, honours
+ * {@code setFrameRate} as a clamp, and logs frame times. With
+ * {@code liveMs > 0} it runs a scripted phase first, the M3.3 gate: the
+ * camera pans every frame for {@code liveMs} while the shell resizes the
+ * window, then the live gate checks presents, GL errors, the resizes and the
+ * content at the new size (writes {@code <out>-live.png}).
  */
 public final class WindowApp {
 
@@ -74,6 +84,12 @@ public final class WindowApp {
     private static volatile int exitCode = -1;
     private static volatile boolean stopRequested;
     private static Thread renderThread;
+    // Shell → render thread (M3.3): the latest size wins; 0 = nothing pending.
+    private static int pendingW, pendingH;
+    private static double pendingDpi;
+    private static boolean visible = true;
+    // Where the first frame put the camera: the scripted pan's anchor.
+    private static double camLat = Double.NaN, camLon = Double.NaN, camRes = Double.NaN;
 
     // Teardown bookkeeping: whatever the render body built, for the render
     // thread to release in reverse order once the shell asks for shutdown.
@@ -82,6 +98,9 @@ public final class WindowApp {
     private static LayerStore store;
     private static PersistentRasterDataStore rasterStore;
     private static EglRenderContext ctx;
+    /** NativeEgl.init succeeded: teardown must destroy EGL even when it
+     *  failed before the render context existed (G2.5 #7). */
+    private static boolean eglUp;
 
     private WindowApp() { }
 
@@ -91,15 +110,22 @@ public final class WindowApp {
      * shell's {@code CAMetalLayer*} — opaque here, dereferenced only by the
      * engine's {@code createWindowSurface}.
      *
+     * @param w h       surface size in pixels (window points x backing scale)
      * @param atLat atLon camera centre; NaN means frame on content bounds
      * @param res   metres/pixel; NaN means fit content bounds
+     * @param dpi   72 x the window's backing scale
+     * @param liveMs scripted live phase after the first frame (0: none)
+     * @param expectResizes resizes the shell will drive during that phase
+     * @param frameLog CSV of the live phase's frame intervals, or null
      */
     public static synchronized void start(long layerPtr, int w, int h,
                                           String[] libs, String eglPath, String glesPath,
                                           String[] layers, String[] basemaps,
                                           String layerDb, String outPath,
                                           double res, double atLat, double atLon,
-                                          int frames, long settleMs) {
+                                          int frames, long settleMs,
+                                          double dpi, long liveMs, int expectResizes,
+                                          String frameLog) {
         if (renderThread != null)
             throw new IllegalStateException(TAG + ": start called twice");
         if (layerPtr == 0)
@@ -110,6 +136,8 @@ public final class WindowApp {
             throw new IllegalArgumentException(TAG + ": --lib/--egl/--gles are required");
         if (frames < 1) throw new IllegalArgumentException(TAG + ": --frames must be >= 1");
         if (settleMs < 0) throw new IllegalArgumentException(TAG + ": --settle must be >= 0");
+        if (!(dpi > 0)) throw new IllegalArgumentException(TAG + ": bad dpi " + dpi);
+        if (liveMs < 0 || expectResizes < 0) throw new IllegalArgumentException(TAG + ": --live must be >= 0");
         final String[] layerList = (layers == null) ? new String[0] : layers;
         final String[] basemapList = (basemaps == null) ? new String[0] : basemaps;
 
@@ -117,7 +145,8 @@ public final class WindowApp {
         exitCode = -1;
         stopRequested = false;
         renderThread = new Thread(() -> render(layerPtr, w, h, libs, eglPath, glesPath,
-                layerList, basemapList, layerDb, outPath, res, atLat, atLon, frames, settleMs),
+                layerList, basemapList, layerDb, outPath, res, atLat, atLon, frames, settleMs,
+                dpi, liveMs, expectResizes, frameLog),
                 "mactak-render");
         renderThread.start();
     }
@@ -135,7 +164,27 @@ public final class WindowApp {
      */
     public static synchronized void stop() {
         stopRequested = true;
-        WindowApp.class.notifyAll();   // the render thread parks on this monitor
+        WindowApp.class.notifyAll();   // the render thread waits on this monitor
+    }
+
+    /**
+     * The window's backing changed (live resize, or a move to a display with
+     * another scale): the shell has set the layer's drawableSize to
+     * {@code w x h} pixels; the render thread adopts it before its next
+     * frame. Latest call wins. Non-blocking, AppKit main thread.
+     */
+    public static synchronized void resize(int w, int h, double dpi) {
+        if (w <= 0 || h <= 0 || !(dpi > 0)) return;
+        pendingW = w;
+        pendingH = h;
+        pendingDpi = dpi;
+        WindowApp.class.notifyAll();
+    }
+
+    /** The window's occlusion state; the loop pauses while it is hidden. */
+    public static synchronized void setVisible(boolean isVisible) {
+        visible = isVisible;
+        WindowApp.class.notifyAll();
     }
 
     // -----------------------------------------------------------------------
@@ -148,12 +197,14 @@ public final class WindowApp {
                                String[] layers, String[] basemaps,
                                String layerDb, String outPath,
                                double res, double atLat, double atLon,
-                               int frames, long settleMs) {
+                               int frames, long settleMs,
+                               double dpi, long liveMs, int expectResizes, String frameLog) {
         int code = 1;   // default when stop() arrives before the frame is done
         try {
             for (String lib : libs) System.load(lib);
 
-            if (!NativeEgl.init(eglPath, glesPath, w, h)) {
+            eglUp = NativeEgl.init(eglPath, glesPath, w, h);
+            if (!eglUp) {
                 System.err.println(TAG + ": EGL init failed: "
                         + NativeEgl.getString(NativeEgl.STR_LAST_ERROR));
                 finish(3);
@@ -191,7 +242,7 @@ public final class WindowApp {
                 return;
             }
 
-            ctx = new EglRenderContext(w, h, 128d);
+            ctx = new EglRenderContext(w, h, dpi);
             px = ctx.readbackBuffer();   // the context owns the readback from here on
             // Initialise the engine BEFORE any native interop: ATAKMapEngineJNI_findClass
             // holds a non-recursive mutex while FindClass runs Java <clinit>s, and
@@ -278,6 +329,9 @@ public final class WindowApp {
                     res = Math.max(spanM / Math.min(w, h), 0.5);
                 }
                 view.lookAt(new GeoPoint(clat, clon), res, 0d, 0d, false);
+                camLat = clat;
+                camLon = clon;
+                camRes = res;
                 System.out.printf(TAG + ": camera (%.5f, %.5f) @ %.2f m/px%n", clat, clon, res);
             }
 
@@ -371,18 +425,17 @@ public final class WindowApp {
 
         if (code == 0) {
             // Frame on screen, artifact written: publish FRAME_DONE (the
-            // shell's linger timer starts on it), then hold the window up
-            // for the shell's linger / until the user closes it, then tear
-            // down on this thread (the EGL context never leaves it).
-            synchronized (WindowApp.class) {
-                phase = PHASE_FRAME_DONE;
-                while (!stopRequested) {
-                    try {
-                        WindowApp.class.wait();
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                }
+            // shell's linger timer starts on it), then keep the window live
+            // until the shell stops us; teardown stays on this thread (the
+            // EGL context never leaves it).
+            synchronized (WindowApp.class) { phase = PHASE_FRAME_DONE; }
+            try {
+                code = live(outPath, layers.length > 0, basemaps.length > 0,
+                        liveMs, expectResizes, frameLog);
+            } catch (Throwable t) {
+                System.err.println(TAG + ": FAIL: uncaught in the live loop");
+                t.printStackTrace();
+                code = 1;
             }
         }
         teardown();
@@ -393,7 +446,230 @@ public final class WindowApp {
         }
     }
 
-    /** Record a failure and end the render thread without parking. */
+    // -----------------------------------------------------------------------
+    // M3.3: the live loop
+    // -----------------------------------------------------------------------
+
+    /** Scripted pan: a full east-west sweep every PAN_PERIOD_S seconds. */
+    private static final double PAN_PERIOD_S = 4d;
+    /** Pan amplitude as a fraction of the surface width. */
+    private static final double PAN_SWING = 0.25;
+    private static final long PAUSE_POLL_MS = 16;
+    private static final java.lang.management.ThreadMXBean CPU =
+            java.lang.management.ManagementFactory.getThreadMXBean();
+
+    /**
+     * Render and present until {@link #stop}; render thread only. With
+     * {@code liveMs > 0} the first {@code liveMs} are the scripted gate
+     * (camera pans every frame; the shell resizes the window meanwhile) and
+     * its verdict is the exit code; without a script the window simply stays
+     * live and the exit code stays 0. Returns the exit code.
+     */
+    private static int live(String outPath, boolean hasLayers, boolean hasBasemaps,
+                            long liveMs, int expectResizes, String frameLog) throws IOException {
+        final FrameTimes times = new FrameTimes();
+        final long t0 = System.nanoTime();
+        final boolean scripted = liveMs > 0;
+        boolean scriptDone = !scripted;
+        int glErrors = 0, presented = 0, swapFails = 0, resizes = 0;
+        long lastPresent = 0;
+
+        while (true) {
+            int rw, rh;
+            double rdpi;
+            boolean show;
+            synchronized (WindowApp.class) {
+                if (stopRequested) break;
+                rw = pendingW;
+                rh = pendingH;
+                rdpi = pendingDpi;
+                pendingW = pendingH = 0;
+                show = visible;
+                if (rw == 0 && !show) {
+                    // occluded: no frames until the shell says we are seen,
+                    // resized or stopped (all three notify this monitor)
+                    try { WindowApp.class.wait(); } catch (InterruptedException e) { break; }
+                    lastPresent = 0;   // a pause is not a frame interval
+                    continue;
+                }
+            }
+            if (rw > 0) {
+                ctx.setDpi(rdpi);
+                if (!ctx.resize(rw, rh)) {
+                    System.err.println(TAG + ": FAIL: resize to " + rw + "x" + rh + ": "
+                            + NativeEgl.getString(NativeEgl.STR_LAST_ERROR));
+                    return 1;
+                }
+                resizes++;
+                ctx.requestRefresh();
+                System.out.printf(TAG + ": live: surface now %dx%d px, dpi %.0f%n", rw, rh, rdpi);
+                if (!show) continue;
+            }
+            final boolean scriptRunning = !scriptDone;
+            if (!scriptRunning && !ctx.isContinuousRenderEnabled() && !ctx.takeRefreshRequest()) {
+                synchronized (WindowApp.class) {
+                    try { WindowApp.class.wait(PAUSE_POLL_MS); } catch (InterruptedException e) { break; }
+                }
+                continue;
+            }
+
+            ctx.pump();
+            final long now = System.nanoTime();
+            if (scriptRunning) panStep((now - t0) / 1e9);
+            final long renderCpuStart = CPU.getCurrentThreadCpuTime();
+            view.render();
+            int err;
+            while ((err = NativeEgl.getGlError()) != 0) {
+                glErrors++;
+                if (glErrors <= 10) System.err.printf(TAG + ": live frame GL error 0x%04x%n", err);
+            }
+            // The engine's cost: CPU time, not wall time. ANGLE's Metal backend
+            // takes the next drawable lazily at the first draw, so the wait
+            // for the display happens inside render(); blocking is not CPU.
+            final long renderNs = CPU.getCurrentThreadCpuTime() - renderCpuStart;
+            if (NativeEgl.swap()) presented++; else swapFails++;
+            final long presentedAt = System.nanoTime();
+            times.add(lastPresent == 0 ? -1 : presentedAt - lastPresent, renderNs);
+            lastPresent = presentedAt;
+            clampFrameRate(presentedAt);
+
+            if (scriptRunning && presentedAt - t0 >= liveMs * 1_000_000L) {
+                scriptDone = true;
+                times.report(TAG + ": live", frameLog);
+                final int verdict = liveGate(outPath, hasLayers, hasBasemaps, glErrors, presented,
+                        swapFails, resizes, expectResizes);
+                if (verdict != 0) return verdict;
+            }
+        }
+        if (scripted && !scriptDone) {
+            System.err.println(TAG + ": FAIL: stopped before the live script finished");
+            return 1;
+        }
+        if (!scripted) times.report(TAG + ": live", frameLog);
+        return 0;
+    }
+
+    /** One step of the scripted pan: the camera swings east and west of where the first frame put it. */
+    private static void panStep(double seconds) {
+        if (Double.isNaN(camLat)) return;   // no content framed: nothing to pan over
+        final double mPerDegLon = 111320d * Math.cos(Math.toRadians(camLat));
+        final double swingDeg = PAN_SWING * ctx.getWidth() * camRes / mPerDegLon;
+        final double lon = camLon + swingDeg * Math.sin(2 * Math.PI * seconds / PAN_PERIOD_S);
+        view.lookAt(new GeoPoint(camLat, lon), camRes, 0d, 0d, false);
+    }
+
+    /** {@code setFrameRate} as a clamp: sleep out the rest of the frame's slot. */
+    private static void clampFrameRate(long presentedAt) {
+        final float rate = ctx.getFrameRate();
+        if (rate <= 0f) return;
+        final long slotEnd = presentedAt + (long) (1e9 / rate);
+        final long sleepNs = slotEnd - System.nanoTime();
+        if (sleepNs > 0) {
+            try { Thread.sleep(sleepNs / 1_000_000L, (int) (sleepNs % 1_000_000L)); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
+    }
+
+    /**
+     * The M3.3 gate, after the scripted phase: every present succeeded, no GL
+     * error, the shell's resizes all landed, and the content gate holds at
+     * the surface's current (resized) size. Writes {@code <out>-live.png}.
+     */
+    private static int liveGate(String outPath, boolean hasLayers, boolean hasBasemaps,
+                                int glErrors, int presented, int swapFails,
+                                int resizes, int expectResizes) throws IOException {
+        final int w = ctx.getWidth(), h = ctx.getHeight();
+        // the back buffer is undefined after a present: draw once more, unpresented
+        view.render();
+        NativeEgl.finish();
+        final ByteBuffer px = ctx.readbackBuffer();
+        final boolean readOk = NativeEgl.readPixels(px);
+        final long content = countNonClear(px, w, h);
+        final long required = ContentGate.requiredPixels(w, h, hasLayers, hasBasemaps);
+        System.out.printf(TAG + ": live: %d presented, %d failed, glErrors=%d, resizes=%d (expected %d), "
+                + "surface %dx%d, content pixels=%d (need %d)%n",
+                presented, swapFails, glErrors, resizes, expectResizes, w, h, content, required);
+        if (outPath != null) {
+            final String livePath = outPath.replaceFirst("(\\.[A-Za-z]+)?$", "-live$1");
+            if (livePath.toLowerCase().endsWith(".png")) writePng(livePath, px, w, h); else writePpm(livePath, px, w, h);
+            System.out.println(TAG + ": wrote " + livePath);
+        }
+        boolean pass = true;
+        if (!readOk) { System.err.println(TAG + ": FAIL: live readback failed"); pass = false; }
+        if (presented == 0) { System.err.println(TAG + ": FAIL: live phase presented nothing"); pass = false; }
+        if (swapFails > 0) { System.err.println(TAG + ": FAIL: " + swapFails + " live present(s) failed"); pass = false; }
+        if (glErrors > 0) { System.err.println(TAG + ": FAIL: " + glErrors + " GL error(s) in the live phase"); pass = false; }
+        if (resizes < expectResizes) {
+            System.err.println(TAG + ": FAIL: " + resizes + " of " + expectResizes + " expected resize(s) reached the surface");
+            pass = false;
+        }
+        if (content < required) {
+            System.err.println(TAG + ": FAIL: " + ContentGate.failure(content, required, w, h, hasBasemaps));
+            pass = false;
+        }
+        System.out.println(pass ? TAG + ": live: PASS" : TAG + ": live: FAIL");
+        return pass ? 0 : 1;
+    }
+
+    /**
+     * Frame times of the live loop: the interval between presents (what a
+     * viewer sees; the display paces it) and the render thread's CPU time in
+     * {@code view.render()} plus the GL error drain (what the engine costs on
+     * the CPU; GPU time and the wait for a drawable are not in it).
+     * {@link #report} prints mean/p50/p95/max and, given a path, writes CSV.
+     */
+    private static final class FrameTimes {
+        private long[] interval = new long[1024];
+        private long[] work = new long[1024];
+        private int n;
+
+        /** @param intervalNs -1 for the first frame after a start or pause */
+        void add(long intervalNs, long workNs) {
+            if (n == interval.length) {
+                interval = java.util.Arrays.copyOf(interval, n * 2);
+                work = java.util.Arrays.copyOf(work, n * 2);
+            }
+            interval[n] = intervalNs;
+            work[n] = workNs;
+            n++;
+        }
+
+        void report(String tag, String csvPath) throws IOException {
+            final long[] iv = java.util.Arrays.stream(interval, 0, n).filter(v -> v >= 0).sorted().toArray();
+            final long[] wk = java.util.Arrays.copyOf(work, n);
+            java.util.Arrays.sort(wk);
+            if (iv.length == 0) {
+                System.out.println(tag + ": no frame intervals recorded");
+            } else {
+                System.out.printf("%s: %d frames; interval ms mean %.2f p50 %.2f p95 %.2f max %.2f (%.1f fps); "
+                        + "render CPU ms p50 %.2f p95 %.2f max %.2f%n",
+                        tag, n, mean(iv) / 1e6, pct(iv, 50) / 1e6, pct(iv, 95) / 1e6, iv[iv.length - 1] / 1e6,
+                        1e9 / mean(iv), pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
+            }
+            if (csvPath != null) {
+                try (java.io.PrintWriter out = new java.io.PrintWriter(new FileOutputStream(csvPath))) {
+                    out.println("frame,interval_ms,render_cpu_ms");
+                    for (int i = 0; i < n; i++)
+                        out.printf("%d,%s,%.3f%n", i, interval[i] < 0 ? "" : String.format("%.3f", interval[i] / 1e6), work[i] / 1e6);
+                }
+                System.out.println(tag + ": frame log " + csvPath);
+            }
+        }
+
+        private static double mean(long[] v) {
+            double sum = 0;
+            for (long x : v) sum += x;
+            return sum / v.length;
+        }
+
+        /** Nearest-rank percentile of a sorted array. */
+        private static long pct(long[] sorted, int p) {
+            final int rank = (int) Math.ceil(p / 100d * sorted.length);
+            return sorted[Math.max(0, Math.min(sorted.length - 1, rank - 1))];
+        }
+    }
+
+    /** Record a failure and end the render thread without the live loop. */
     private static void finish(int code) {
         teardown();
         synchronized (WindowApp.class) {
@@ -422,10 +698,11 @@ public final class WindowApp {
             rasterStore.dispose();
             rasterStore = null;
         }
-        if (ctx != null) {
+        ctx = null;
+        if (eglUp) {
             NativeEgl.release();
             NativeEgl.destroy();
-            ctx = null;
+            eglUp = false;
         }
         // The layer/window stay with the shell — that is its half of the split.
     }
@@ -479,19 +756,24 @@ public final class WindowApp {
             ihdr[9] = 2;    // colour type: truecolour RGB
             chunk(d, crc, "IHDR", ihdr);
 
-            DeflaterOutputStream z = new DeflaterOutputStream(d);
-            byte[] row = new byte[1 + w * 3];   // filter byte 0 + RGB8
-            for (int y = h - 1; y >= 0; y--) {  // GL rows are bottom-up
-                row[0] = 0;
-                for (int x = 0; x < w; x++) {
-                    int i = (y * w + x) * 4;
-                    row[1 + x * 3]     = px.get(i);
-                    row[1 + x * 3 + 1] = px.get(i + 1);
-                    row[1 + x * 3 + 2] = px.get(i + 2);
+            // The zlib stream is the IDAT chunk's data: deflate into memory,
+            // then frame it (length, type, CRC). Writing it straight into the
+            // file left a PNG no decoder reads (G2 trap #59).
+            java.io.ByteArrayOutputStream idat = new java.io.ByteArrayOutputStream();
+            try (DeflaterOutputStream z = new DeflaterOutputStream(idat)) {
+                byte[] row = new byte[1 + w * 3];   // filter byte 0 + RGB8
+                for (int y = h - 1; y >= 0; y--) {  // GL rows are bottom-up
+                    row[0] = 0;
+                    for (int x = 0; x < w; x++) {
+                        int i = (y * w + x) * 4;
+                        row[1 + x * 3]     = px.get(i);
+                        row[1 + x * 3 + 1] = px.get(i + 1);
+                        row[1 + x * 3 + 2] = px.get(i + 2);
+                    }
+                    z.write(row);
                 }
-                z.write(row);
             }
-            z.finish();                          // flushes the zlib stream; d stays open
+            chunk(d, crc, "IDAT", idat.toByteArray());
             chunk(d, crc, "IEND", new byte[0]);
         }
     }

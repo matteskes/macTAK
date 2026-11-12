@@ -82,7 +82,7 @@ gate passes, the artifact was really produced this run.
 | `make check-gen-gles-shim` | committed GLES shim matches its generator's output | CI + local |
 | `make build-shell` | the Swift/C shell compiles | CI + local |
 | `make docs-site` | the docs site builds in MkDocs strict mode: every link and anchor between the documents resolves | CI (`docs-site.yml`) + local |
-| `make smoke-window` / `make test-shell` | a real window opens and presents frames | **dev Mac only** — needs a GUI session; CI runners have no WindowServer, so CI compiles the shell but the last mile of every window milestone is a local gate |
+| `make smoke-window` / `make test-shell` | a real window opens and presents frames; `test-shell`'s live leg keeps it rendering through a scripted pan and resize (Retina, frame times logged) | **dev Mac only** — needs a GUI session; CI runners have no WindowServer, so CI compiles the shell but the last mile of every window milestone is a local gate |
 
 Run the affected gates before pushing; CI will re-run the ones it can.
 

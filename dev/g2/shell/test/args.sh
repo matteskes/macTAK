@@ -14,7 +14,7 @@ trap 'rm -f "$ERR"' EXIT
 
 rc_all=0
 for opt in --classpath --lib --prop --egl --gles --size --frames --settle --linger \
-           --out --layer --basemap --layer-db --res --at; do
+           --out --layer --basemap --layer-db --res --at --live --resize-to --frame-log; do
   set +e
   "$BIN" "$opt" > /dev/null 2> "$ERR"
   rc=$?
