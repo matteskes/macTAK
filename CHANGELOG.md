@@ -192,6 +192,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- atak-headless's outgoing CoT carries `access='Undefined'` on both its
+  events, presence and marker (`CotXml.java`). MIL-STD-6090 requires the
+  attribute, and 5.5's `takproto/cotevent.proto` asks new clients to
+  populate it on every outgoing message (`docs/rebase-study-5.5.md`,
+  "Finding independent of the rebase"). `CotEventSelfTest` checks both
+  events; the hermetic round-trip shows commo relays it.
 - macTAK runs on JDK 21 (`dev/spike/g55/NOTES.md` §State, JDK 21; the
   #99 review's decision). Every JVM macTAK starts, and the `javac` for
   its own Java (`--release 21`), use JDK 21: the canaries,
