@@ -8,6 +8,19 @@ macTAK's patch series carried over? Nothing here changes the build
 macTAK ships: `src/`, `dev/g1/build-native.sh` and the 4.6 pin are
 untouched. The re-pin is a later step.
 
+Each iteration of the rebase adds a dated State section here, newest on
+top, and its traps continue this file's numbering (the g55 lineage).
+After the re-pin this record stays as history, and new traps go back to
+the G1 and G2 lineages.
+
+## State (spike 1 — 2026-11-11): the 5.5 engine builds on macOS arm64 without 3D Tiles
+
+takkernel 8.30.5 with macTAK's 34-patch 5.5 series compiles and links on
+`macos-26`: 471 of 471 build steps, `libtakengine.dylib` linked
+(`spike-55.yml` run 42970368105, PR #98). Not yet run: no JNI glue, no
+canary, no gate. Next is the JNI glue on 5.5 (§Exit). Details in
+§Result below.
+
 ## Result
 
 **Yes.** On `macos-26` (Xcode 26 toolchain, Homebrew GDAL 3.13.3), the
@@ -136,7 +149,7 @@ added): `FeatureDefinition` lookups moved to the new
 `jni/interop/elevation/Interop.cpp` gained unguarded `HeightmapStrategy`
 lookups.
 
-## Traps found on the way
+## Traps found on the way (do not rediscover these)
 
 1. **`--fuzz=3` places hunks with no context.** GNU patch at fuzz N
    ignores N context lines at each end of a hunk; a 3-line-context hunk

@@ -113,6 +113,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   without a JDK 8; CI's native job installs Zulu 8 and uploads
   `takengine-jni-guards.xml` + `takengine-jni-kernel.xml`.
 
+### Changed
+
+- The 5.5 rebase follows house style (docs only). `CONTRIBUTING.md` has a
+  "Rebase work (4.6 → 5.5), until the re-pin" section that says where 5.5
+  patches, harness changes and jars land, that a 4.6 patch fix lands in
+  both series, that 5.5 shadows need a drift gate, and how branches, CI
+  (`spike-55.yml`) and the g55 trap lineage work; its reading order and CI
+  table add `dev/spike/g55/NOTES.md`, `spike-55.yml` and
+  `ots-profile-drift.yml`. `dev/spike/g55/NOTES.md` opens with a dated
+  State section. `docs/rebase-study-5.5.md`'s patch table now gives
+  spike 1's measured port (17 unchanged, 1 refreshed, 7 hand-ported,
+  9 reworked, 3 upstream) instead of the `--fuzz=3` dry-run (g55 traps
+  1–2). The roadmap has spike 1's dated paragraph, `docs/ci-qa.md` an
+  as-landed note for `spike-55.yml`, and the README lists both 2026-11-11
+  docs.
+
 ### Fixed
 
 - The Brewfile lists the spike's Homebrew packages (`ninja`, `mdbtools`,
