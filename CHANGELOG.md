@@ -25,6 +25,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   narrow JVM facade, with direct C++ calls only where C++ owns the data;
   Swift map items become engine features. G2's exit run also reports GC
   pauses, peak memory and cold start, and M3.3 runs generational ZGC.
+- The roadmap's G6 parity ladder gains rung 8, a native engine with no
+  Java: the JVM leaves the shipped app after the application stands up
+  (G3–G5), as the engine's Java renderers and layer code move to C++ one
+  at a time in the order measurements point to.
 - `make test-quic` gains a `peer` leg (`QuicPeerTest`): two commo
   instances with no server; B finds A from A's SA multicast on `lo0` and
   delivers a marker to A's QUIC inbound (`dev/g1/NOTES.md` G1.18). The
