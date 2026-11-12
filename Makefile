@@ -27,7 +27,7 @@ help:
 	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"
-	@echo "  test-quic      - QUIC canary: commo streams over QUIC (ngtcp2 ossl backend) and refuses a client-only impostor"
+	@echo "  test-quic      - QUIC canary: commo streams over QUIC (ngtcp2 ossl backend), refuses a client-only impostor, names a failed handshake's cause"
 	@echo "  test-render    - G2 render smoke: engine GLGlobe into an EGL pbuffer on ANGLE, bare + GeoJSON layer + MBTiles basemap (dev/g2/render/run.sh)"
 	@echo "  test-render-resize - M3.1 dynamic-size exercise: --resize mid-run, bare + GeoJSON layer (surface OnSizeChangedListeners must fire)"
 	@echo "  build-window-host - compile the M3.1 window-harness host dylib (WindowHost.m -> build/window-host.dylib)"

@@ -10,12 +10,15 @@
 #   refuse  the server presents the impostor: commo refuses it
 #           (CONN_SSL_PEER_CERT_NOT_TRUSTED), as patches/commo/0002 makes
 #           it on TCP — G1 security finding #1, on the QUIC path
+#   cause   nothing listens: the handshake's read fails with ECONNREFUSED,
+#           and commo's log must say so (g55 trap 8, patches/commo/0006)
 #
 # From spike 2 (dev/spike/g55/NOTES.md §Commo). aioquic installs into a
 # venv from the hash-pinned requirements-quic.txt (--require-hashes).
 #
 # usage: test/quic.sh   (needs dev/g1/native-dist from build-commo.sh)
-# env:   QUIC_TEST_PORT (default 18190; the refuse leg uses +1),
+# env:   QUIC_TEST_PORT (default 18190; the refuse leg uses +1, the cause
+#        leg +2, which must have no listener),
 #        QUIC_TEST_VERBOSE=1 prints commo's whole log
 set -euo pipefail
 
@@ -109,4 +112,9 @@ quic_leg() {   # quic_leg SERVER_CERT accept|refuse PORT
 quic_leg server accept "$PORT"
 quic_leg impostor refuse "$((PORT + 1))"
 
-log "PASS: commo streams over QUIC and refuses a clientAuth-only server certificate"
+log "cause leg: nothing listens on :$((PORT + 2))"
+"$JDK/bin/java" -cp "$DIST/jcommoncommo.jar:$WORK/classes" QuicStreamingTest \
+  "$DIST/libcommoncommo.dylib" "$DIST/libcommoncommojni.dylib" \
+  "$WORK/client.p12" "$WORK/truststore.p12" "$((PORT + 2))" cause
+
+log "PASS: commo streams over QUIC, refuses a clientAuth-only server certificate, and names a failed handshake's cause"

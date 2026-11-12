@@ -455,8 +455,9 @@ jobs:
       - name: QUIC canary (make test-quic)
         # commo's streaming QUIC client on ngtcp2's ossl backend against an
         # aioquic stand-in (hash-pinned venv): a takstream handshake that
-        # delivers a marker, and a clientAuth-only impostor refused
-        # (security #1 on the QUIC path)
+        # delivers a marker, a clientAuth-only impostor refused (security
+        # #1 on the QUIC path), and a closed port's ECONNREFUSED named in
+        # commo's log (g55 trap 8, patches/commo/0006)
         if: needs.changes.outputs.changed == 'true'
         run: make test-quic
 
