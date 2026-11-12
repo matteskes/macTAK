@@ -1,0 +1,28 @@
+--- a/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryRenderer4.cpp
++++ b/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryRenderer4.cpp
+@@ -1554,8 +1554,14 @@
+     glEnable(GL_POLYGON_OFFSET_FILL);
+     glPolygonOffset(1.f, 1.f);
+ 
++    // macTAK (G2): desktop-GL state. GL ES always honours gl_PointSize and
++    // always rasterizes points as sprites, and has neither enum: on ANGLE
++    // each call raised GL_INVALID_ENUM every frame points drew. Kept for a
++    // desktop-GL host (TE_GLSL_DESKTOP, see glsl-es-version-on-angle).
++#ifdef TE_GLSL_DESKTOP
+     glEnable(GL_PROGRAM_POINT_SIZE);
+     glEnable(GL_POINT_SPRITE);
++#endif
+ 
+     PointsShader shader;
+     GLBatchGeometryShaderOptions opts;
+@@ -1729,8 +1735,10 @@
+     glBindBuffer(GL_ARRAY_BUFFER, GL_NONE);
+     glUseProgram(GL_NONE);
+ 
++#ifdef TE_GLSL_DESKTOP
+     glDisable(GL_PROGRAM_POINT_SIZE);
+     glDisable(GL_POINT_SPRITE);
++#endif
+ 
+     glDisable(GL_POLYGON_OFFSET_FILL);
+     glPolygonOffset(0.f, 0.f);

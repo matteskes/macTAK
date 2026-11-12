@@ -1346,6 +1346,68 @@ bash dev/g2/shell/test/exit-code.sh
 exit=0
 ```
 
+## Asset icons — point icons resolve, and draw on ANGLE (2026-11-12, branch `g2/asset-icons`)
+
+Found in M3.3's live loop: with the landmarks layer, the engine logged
+`failed to handle URI asset:/icons/reference_point.png` about 30 times a
+second, each attempt on a new thread, and the point icons never drew (the
+labels did). The static render smoke hid it: 62 failures in one
+landmarks render, and the smoke still passed.
+
+**Cause.** `GLBitmapLoader`'s asset loader opens
+`context.getAssets().open(path)` on the context the render surface hands
+it. `EglRenderContext.getContext()` returned the android-port
+substitute's `Context`, whose `getAssets()` returns null (a compile-time
+stand-in), so every `asset:` load failed with a `NullPointerException`
+inside the handler and `AsyncBitmapLoader2` logged and retried. The icon
+is not missing: takkernel's desktop jar packages `src/main/assets` as
+classpath resources (`assets/icons/reference_point.png`), as upstream's
+desktop build reads them.
+
+**Fix.** `render/src/mactak/render/ClasspathAssets.java`: a `Context`
+subclass whose `getAssets()` returns an `AssetManager` subclass opening
+`assets/<path>` from the classpath (both substitute classes are concrete
+and non-final, so nothing is replaced and every other `Context` method
+behaves as before). `EglRenderContext.getContext()` hands it out.
+
+**What that uncovered.** With the icons loading, the point renderer ran
+for the first time on ANGLE, and every frame raised `GL_INVALID_ENUM`
+twice: `GLBatchGeometryRenderer4` brackets the point draw with
+`glEnable`/`glDisable` of `GL_PROGRAM_POINT_SIZE` and `GL_POINT_SPRITE`,
+desktop-GL state that GL ES does not have (ES always honours
+`gl_PointSize` and always draws points as sprites). ANGLE's `KHR_debug`
+named both: `Enum 0x8642 / 0x8861 is currently not supported`, 240 times
+each in a 120-frame render. **Fix:**
+`../g1/patches/points-es-state-desktop-only.patch` (the series is now
+40) keeps the four calls only for a desktop-GL host, `TE_GLSL_DESKTOP`,
+the switch `glsl-es-version-on-angle` already uses.
+`GLStarsRenderable` (Java) has the same `GL_PROGRAM_POINT_SIZE` call; it
+is not on this path.
+
+| Landmarks render | Asset failures | GL errors | Point icons |
+|---|---|---|---|
+| `main` | 62 | 0 | not drawn |
+| `ClasspathAssets` only | 0 | 119 (`GL_INVALID_ENUM`) | — |
+| `ClasspathAssets` + patch | 0 | 0 (no `KHR_debug` message) | drawn |
+
+**Guard.** `render/test/asset-icons.sh` runs the landmarks render (`make
+test-render`'s layer step and CI's) and fails on any unresolved `asset:`
+URI; without `ClasspathAssets` it fails, with it it passes. The render's
+own `glErrors=0` gate keeps the patch honest: without it, the same render
+fails on the 119 errors.
+
+### Traps found on the way (#62–#63; #57–#61 are M3.3's)
+
+- **#62 — a passing render can hide a failing loader.** The asset loads
+  failed on the engine's loader threads and the points just did not draw;
+  the content gate counts pixels, and the polygons and labels met it.
+  Each failed load also cost a new thread. A log line was the only
+  evidence; `asset-icons.sh` now gates on it.
+- **#63 — fixing one stand-in can surface GL errors downstream.** The
+  first render with icons loading went from `glErrors=0` to 119: a code
+  path that never ran (points) carried desktop-GL calls. Run the render
+  gates after any stand-in change that lets more of the engine run.
+
 ## The rest of G2 — decided 2026-11-12
 
 What G2 still owes its exit criterion ("layered map (imagery + vector +
