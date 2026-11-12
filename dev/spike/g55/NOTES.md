@@ -157,6 +157,22 @@ lookups.
    port's own replay helper): `grep -q` exits on the first match, `git
    log` takes SIGPIPE, and the pipeline reports failure, so an applied
    patch read as not applied. Read the log into a variable first.
+4. **A new workflow escaped the Brewfile drift check.** `spike-55.yml`
+   installs `ninja`, `mdbtools`, `glib` and `assimp`, none of them in
+   the `Brewfile`. `supply-chain.yml`'s drift step reads every workflow,
+   but the job ran only on PRs touching `ci.yml`, `cot-roundtrip.yml`,
+   itself or the Brewfile pair, so #98 merged green and the next PR to
+   touch `ci.yml` (#102) went red for it:
+
+   ```text
+   ##[error]Brewfile != union of the workflows' brew install lines
+     in workflows only: assimp glib mdbtools ninja
+   ```
+
+   **Guard:** the four are in the `Brewfile` and its lock, and the job
+   now triggers on any change under `.github/workflows/*.yml`, so a
+   workflow that adds a package fails in its own PR (branch
+   `ci/brewfile-spike-deps`).
 
 ## Exit
 

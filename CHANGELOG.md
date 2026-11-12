@@ -115,6 +115,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The Brewfile lists the spike's Homebrew packages (`ninja`, `mdbtools`,
+  `glib`, `assimp`, from `spike-55.yml`), so they are in the lock and
+  the OSV scan; `supply-chain.yml` now runs on any workflow change,
+  since its drift step reads them all (`dev/spike/g55/NOTES.md` trap 4).
 - The Swift shell exits with the render's exit code (`dev/g2/NOTES.md`
   §G2.5, trap #56, G2 correctness audit #8). It exited 0 on every run:
   AppKit's `terminate` ends the process itself, so the lines after

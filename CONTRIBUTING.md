@@ -30,7 +30,7 @@ assumes them:
 macOS arm64; Homebrew for the native dependency sets:
 
 ```bash
-brew bundle install              # Brewfile = the union of ci.yml's engine + comms sets
+brew bundle install              # Brewfile = the union of every workflow's brew installs
 make hooks                       # install the pre-commit gate (core.hooksPath .githooks)
 ```
 
