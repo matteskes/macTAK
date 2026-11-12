@@ -13,6 +13,16 @@ top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
 
+## State (render gates — 2026-11-11): the G2 render gates pass on 5.5 with ANGLE/Metal
+
+The nine steps of `ci.yml`'s `render-angle` job run green on the 5.5
+build linked against ANGLE, each with `glErrors=0` and `KHR_debug` on,
+through `dev/g2/render/env.sh`'s `MACTAK_RENDER_ENV` override (#100).
+One new patch, `antialiased-lines-pattern-uint`, makes the series 38.
+`GdalProjectionSmoke` accepts exactly two pixel conventions, 4.6's
+`[0, w]` and 5.5's `[0, w-1]`, so 4.6 still reads exactly `(32, 32)`.
+No new traps. Next: commo on 5.5. Details in §Render gates below.
+
 ## State (JNI glue — 2026-11-11): the 5.5 glue loads in a JVM and passes G1's jni-tests
 
 `libtakenginejni` builds beside the 5.5 engine; the G1 load canary
@@ -121,6 +131,53 @@ as `ManagedTextFormat2`'s did before `textformat2-class-init-consumer-guards`;
 and no guards-mode test pins the two new patches yet (G1's suite pins
 the 4.6 ones).
 
+## Render gates
+
+**They pass.** The G2 render gates, the same nine steps as `ci.yml`'s
+`render-angle` job, run green on the 5.5 build linked against ANGLE on
+Metal: GDAL georeferencing, the GLES shim Buffer contract, the
+argument canary, globe, vector layer, MBTiles basemap, the basemap
+negative canary, resize mid-run, and the CAMetalLayer window surface.
+Every leg has `glErrors=0`, with ANGLE's `KHR_debug` callback on
+(`MACTAK_GL_DEBUG=1`):
+
+```text
+render-smoke: 128 frames, 23.6 ms/frame (incl. glFinish), glErrors=0
+render-smoke: sentinel pixels left=0/262144 content pixels=26328 centre=(255,117,0,255)
+[basemap-gate] PASS: an off-frame basemap fails the smoke
+[g55-render] PASS: the G2 render gates are green on the 5.5 build
+```
+
+How: `render.sh` exports `MACTAK_RENDER_ENV=render-env.sh`, and
+`dev/g2/render/env.sh` hands its whole job to that file when it is
+set. The gate scripts run unchanged, on the 5.5 dylibs (from
+`build-engine.sh` with `G55_GLES=angle`, staged in `build/dist`), the
+5.5 classpath and JDK 21. `render-env.sh` regenerates the engine shadows
+on every run from the 5.5 sources plus the series' Java hunks. Both
+apply at `--fuzz=0`, so there is no committed copy to drift.
+
+What 5.5 changed, and what each took:
+
+| Found | Evidence | Answer |
+|---|---|---|
+| **Anti-aliased lines never drew on ANGLE/Metal.** `BatchGeometryAntiAliasedLines.vert` declares `in int a_pattern`; `GLGeometryBatchBuilder` lays it out `GL_UNSIGNED_SHORT` and feeds it with `glVertexAttribIPointer`, as `GLLinesEmulation` does. GLES 3 leaves the signed/unsigned mismatch undefined, and Metal refuses the pipeline | Vector-layer leg: 44 × `GL_INVALID_OPERATION` from frame 32; `MACTAK_GL_DEBUG=2` names it: *Vertex attribute _ua_pattern(7) of type int cannot be read using MTLAttributeFormatUShort*, from `GLBatchGeometryRenderer4::drawLineBuffers` (all 113 debug messages were this one) | `antialiased-lines-pattern-uint.patch`: `in uint a_pattern`, `f_pattern = int(a_pattern)`. The value must stay unsigned: `0xFFFF` has to read as 65535 for `solidLine`. The same patch changes the lollipop draw's constant `glVertexAttrib1f(a_pattern, 0)` to `glVertexAttribI4ui`, since GLES 3 leaves a current-value type mismatch undefined too (found in review; the gates don't show whether that path ran). After: `glErrors=0` and no `KHR_debug` message at all, content 25 292 → 26 328 px, and the strokes are back in the PNG |
+| `GLBatchGeometryRenderer4`'s unguarded `glEnableVertexAttribArray` calls (the open question from the patch port) | No `GL_INVALID_VALUE` in the `KHR_debug` log, so no attribute location comes back -1 on this scene | No attribute guards needed; `attrib-location-guards` stays without a `GLBatchGeometryRenderer4` hunk |
+| **5.5 changed the georeferencing pixel convention.** `GdalDatasetProjection2.GeoTransform` scales image coordinates by `(w-1)/w`, so the geo extent maps to the addressable `[0, w-1]` (upstream's comment says so) | `GdalProjectionSmoke` on 5.5: ground(centre) → image(31.5, 31.5), and the smoke wanted (32, 32) | The smoke asserted 4.6's convention, not the axis order it exists for. It now takes the expected centre from the SE corner's image (4.6: 64 → 32; 5.5: 63 → 31.5) and requires that corner to fall in `[w-1, w]`. An axis swap or a non-linear map still fails. 4.6: `make test-gdal-projection` PASS, centre still (32, 32) |
+| 5.5 deprecates the `FeatureDataStore` APIs that `LayerStore` (6 uses), `RenderSmoke` and `WindowApp` (2 each) build layers with | `-Xlint:all` deprecation warnings | Compiled with `-Xlint:-deprecation` for now; moving to `FeatureDataStore4` is re-pin work |
+| JDK 21's javac adds the `this-escape` lint, which `android.graphics.Matrix` trips | `-Werror` on JDK 21 | `-Xlint:-this-escape`; this comes from the Java 8 → 21 move, not from 5.5 |
+
+Shipping files touched, both inert or equivalent on 4.6:
+
+- `dev/g2/render/env.sh` gains the `MACTAK_RENDER_ENV` hook; unset, the
+  file is unchanged.
+- `GdalProjectionSmoke` gains the convention-free centre check.
+
+4.6, verified after both changes: `MACTAK_GLES=angle build-native.sh`
+(all 4 canaries), `make test-render`, `make test-gdal-projection` and
+`make check-engine-shadows`, all green. Not run on 5.5:
+`dev/g1/headless/test/layer.sh`, the headless launcher's canary,
+because it waits for the launcher's move off Java 8.
+
 ## Reproduce
 
 ```sh
@@ -130,17 +187,19 @@ git -C ../atak-civ sparse-checkout set takkernel khronos takengine/thirdparty/ti
 git -C ../atak-civ checkout 9f6893dd657feacc35ec5de03dad721c2e44170e
 git -C ../atak-civ lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
 bash dev/spike/g55/kernel/build-kernel-jars.sh ../atak-civ   # JDK 21 + JDK 8; network on first run
-bash dev/spike/g55/build-engine.sh ../atak-civ
+make angle gdal-java                                         # ANGLE + org.gdal, as G2 (JDK 8, swig)
+G55_GLES=angle bash dev/spike/g55/build-engine.sh ../atak-civ
 bash dev/spike/g55/smoke.sh
 bash dev/spike/g55/jni-tests.sh
+bash dev/spike/g55/render.sh ../atak-civ
 # re-sort the 4.6 series against a 5.5 tree (writes clean + refreshed only):
 python3 dev/spike/g55/refresh-patches.py ../atak-civ/takkernel/engine/src/main /tmp/out
 ```
 
 CI: `.github/workflows/spike-55.yml` (dispatch, or a push to a
 `spike/g55-*` branch that touches this directory) runs the same scripts
-on `macos-26` and uploads the build and Gradle logs, `summary.txt` and
-the jni-tests XML. It is not a required check; a red run is the spike's
+on `macos-26` and uploads the build and Gradle logs, `summary.txt`,
+the jni-tests XML and the render PNGs. It is not a required check; a red run is the spike's
 answer, as G0's was ([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
 
 ## What's here
@@ -148,8 +207,8 @@ answer, as G0's was ([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
 | Path | Role |
 |---|---|
 | `refresh-patches.py` | Sorts the 4.6 series against a 5.5 tree, stacked in build order: clean, refreshed, review, upstream, failed |
-| `patches/` | The 5.5 series: 37 patches, applying at `--fuzz=0` in `build-native.sh`'s order (`gdal-drift-*` first, then sorted) |
-| `build-engine.sh` | `build-native.sh` against a 5.5 checkout: the engine, the JNI glue and the jni-tests; `c3dt` left out; `ninja -k 0` |
+| `patches/` | The 5.5 series: 38 patches, applying at `--fuzz=0` in `build-native.sh`'s order (`gdal-drift-*` first, then sorted) |
+| `build-engine.sh` | `build-native.sh` against a 5.5 checkout: the engine, the JNI glue and the jni-tests, staged in `build/dist`; `G55_GLES=angle` links ANGLE; `c3dt` left out; `ninja -k 0` |
 | `summarize-build.py` | Every failing source with its first error, the errors grouped by kind, and the undefined symbols of a failed link |
 | `kernel/` | `build-kernel-jars.sh`, its Gradle patch, and `runtime-classpath.gradle` (exports the engine's resolved runtime classpath) |
 | `android-port/` | `build-android-port.py` and the stub sources it adds to G0's `android-port-3.1.0` substitute; the jar is deterministic |
@@ -157,6 +216,7 @@ answer, as G0's was ([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
 | `jni-tests/` | 5.5 copies of G1 jni-tests whose 4.6 versions no longer compile |
 | `runtime.sh` | Sourced: JDK lookup (`G55_JDK<v>_HOME`, else a version-checked `java_home`) and the kernel-first classpath |
 | `smoke.sh`, `jni-tests.sh` | The G1 load canary and the G1 jni-tests on the 5.5 build |
+| `render.sh`, `render-env.sh` | The G2 render gates on the 5.5 build: `render.sh` runs ci.yml's render steps; `render-env.sh` is what `dev/g2/render/env.sh` sources instead (`MACTAK_RENDER_ENV`) |
 
 ## The patch port
 
@@ -295,9 +355,10 @@ patches brings the series to 37.
 
 The question this spike asked, whether 5.5's engine builds on macOS
 without 3D Tiles, is answered yes, in one day of work, most of it the
-patch port. The JNI step took another day: the 5.5 glue loads in a JVM
-and passes G1's JNI tests. What remains before the re-pin (study
-step 4), in order, with estimates made from this spike's pace:
+patch port. The JNI and render steps took about a day together: the 5.5
+glue loads in a JVM, passes G1's JNI tests and draws every G2 render
+gate on ANGLE/Metal. What remains before the re-pin (study step 4), in
+order, with estimates made from this spike's pace:
 
 1. ~~**JNI glue on 5.5**~~ **Done** (§JNI glue). Carried forward: the
    `ManagedFeatureDefinition` consumer guards and guards-mode pins for
@@ -306,18 +367,20 @@ step 4), in order, with estimates made from this spike's pace:
    (the 5.5 jars are Java 11 bytecode: CI's Zulu 8 jobs, the launcher
    and the headless app) is its own PR on JDK 21, after this stack and
    before the re-pin.
-2. **The render gates on 5.5** (2–4 days). `make test-render` against
-   ANGLE: the engine shadows (`GLQuadTileNode4` and the rest) regenerate
-   from the 5.5 patches, and `KHR_debug` decides whether
-   `GLBatchGeometryRenderer4` needs the attrib guards
-   `GLBatchGeometryRenderer3` had.
+2. ~~**The render gates on 5.5**~~ **Done** (§Render gates). Carried
+   forward: `LayerStore`, `RenderSmoke` and `WindowApp` off the
+   deprecated `FeatureDataStore` APIs, and the headless `layer.sh`
+   canary, which waits for the launcher's move off Java 8.
 3. **Spike 2, commo on 5.5** (study step 2; 3–5 days): the QUIC backend
    decision.
 4. **The re-pin** (1–2 days): fold `build-engine.sh`'s wrapper changes into
    `build-native.sh`, move `dev/spike/g55/patches` to `dev/g1/patches`,
    `jni-include/` to `dev/g1/jni-include` (replacing `gen-jni-headers.sh`,
    whose javah bundles 5.5 no longer uses) and `jni-tests/` over G1's,
-   and change the 14 files that name `889eee2`.
+   point `dev/g2/render/env.sh` at the 5.5 build (dropping the
+   `MACTAK_RENDER_ENV` hook and the committed engine shadows for
+   `render-env.sh`'s regenerated ones), and change the 14 files that
+   name `889eee2`.
 
-Roughly two weeks to a 5.5 baseline with today's gates green, 3D Tiles
-still out.
+About a week and a half to a 5.5 baseline with today's gates green,
+3D Tiles still out: the commo spike, the Java 8 move and the re-pin.

@@ -13,6 +13,15 @@
 # nothing: callers add the JVM's GDAL_DATA / MACTAK_HOME themselves.
 # Exits (killing the sourcing shell) when the environment is unusable.
 
+# MACTAK_RENDER_ENV: another build's environment script, setting the same
+# variables (dev/spike/g55/render-env.sh runs these gates on the 5.5 build).
+# Unset, this file is unchanged.
+if [[ -n "${MACTAK_RENDER_ENV:-}" ]]; then
+  # shellcheck source=/dev/null
+  source "$MACTAK_RENDER_ENV"
+  return 0
+fi
+
 ENV_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g2/render
 G2="$(cd "$ENV_SH_DIR/.." && pwd)"                          # <repo>/dev/g2
 ROOT="$(cd "$G2/../.." && pwd)"                             # <repo>

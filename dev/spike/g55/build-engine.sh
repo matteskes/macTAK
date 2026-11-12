@@ -27,13 +27,18 @@
 #   - G1's JNI guard tests (dev/g1/jni-tests) build here; jni-tests.sh
 #     and smoke.sh run them and the load canary
 #   - ninja -k 0: one run lists every failing source, not just the first
+#   - G55_GLES=angle links ANGLE (dev/g2/angle-dist) in the GLES slot, as
+#     build-native.sh's MACTAK_GLES=angle; render.sh needs it
 #
 # usage: build-engine.sh UPSTREAM_55
 #        UPSTREAM_55  root of an atak-civ checkout at 5.5.1.10 (needs
 #                     takkernel/engine/src/main, khronos/,
 #                     takengine/thirdparty/tinygltfloader/ and the LFS
 #                     content of depends/tinygltf-2.4.1-mod.tar.gz)
-# out:   dev/spike/g55/build/build.log    full compiler output
+# out:   dev/spike/g55/build/dist/         the staged, re-signed dylibs and
+#                                          test binaries (+ ANGLE's EGL and
+#                                          GLESv2 when G55_GLES=angle)
+#        dev/spike/g55/build/build.log    full compiler output
 #        dev/spike/g55/build/summary.txt  failing sources, first error each
 # exit:  0 libtakengine and libtakenginejni linked; 1 compile or link failures; 2 usage or
 #        preflight
@@ -53,6 +58,18 @@ ENGINE_MAIN="$UPSTREAM/takkernel/engine/src/main"
 KHRONOS="$UPSTREAM/khronos"
 TINYGLTF_TGZ="$UPSTREAM/depends/tinygltf-2.4.1-mod.tar.gz"
 TINYGLTFLOADER="$UPSTREAM/takengine/thirdparty/tinygltfloader"
+DIST="$WORK/dist"
+
+# GLES slot, as build-native.sh: the no-op stub, or ANGLE on Metal
+GLES="${G55_GLES:-stub}"
+ANGLE_DIST="$DEV/g2/angle-dist"
+case "$GLES" in
+  stub)  GLES_LIB="$WORK/gles-stub/libGLESv2.dylib"; GLES_RPATH="$WORK/gles-stub" ;;
+  angle) GLES_LIB="$ANGLE_DIST/libGLESv2.dylib";      GLES_RPATH="$ANGLE_DIST"
+         [[ -f "$ANGLE_DIST/libGLESv2.dylib" && -f "$ANGLE_DIST/libEGL.dylib" ]] \
+           || die "G55_GLES=angle but $ANGLE_DIST is not staged — run dev/g2/fetch-angle.sh" ;;
+  *)     die "G55_GLES must be 'stub' or 'angle' (got '$GLES')" ;;
+esac
 
 # --- preflight -----------------------------------------------------------
 [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] \
@@ -78,7 +95,7 @@ for f in proj geos gdal libspatialite minizip nlohmann-json libxml2 mdbtools gli
 done
 GLIB="$(brew --prefix glib)"
 OPENSSL="$(brew --prefix openssl@3)"
-log "preflight ok (upstream=$UPSTREAM, -j$JOBS)"
+log "preflight ok (upstream=$UPSTREAM, GLES=$GLES, -j$JOBS)"
 
 # --- work tree -----------------------------------------------------------
 # build/kernel (kernel/build-kernel-jars.sh) survives: its jars took a
@@ -171,18 +188,19 @@ foreach(_s IN LISTS _srcs)
 endforeach()
 set_target_properties(takengine PROPERTIES SOURCES "\${_kept}")
 
-# ttp-dist libs out, GLES stub in, Homebrew sqlite and libxml2 by full
+# ttp-dist libs out, the GLES slot in, Homebrew sqlite and libxml2 by full
 # path (one runtime each, as build-native.sh)
 get_target_property(_libs takengine LINK_LIBRARIES)
 list(REMOVE_ITEM _libs las las_c charset GLESv2)
 list(APPEND _libs
-    $WORK/gles-stub/libGLESv2.dylib
+    $GLES_LIB
     /opt/homebrew/opt/sqlite/lib/libsqlite3.dylib
     /opt/homebrew/opt/libxml2/lib/libxml2.dylib
     assimp
     curl                               # new in 5.5: util URIOfflineCache
     $GLIB/lib/libglib-2.0.dylib)       # mdbtools.h's inline g_malloc/g_free
 set_target_properties(takengine PROPERTIES LINK_LIBRARIES "\${_libs}")
+set_target_properties(takengine PROPERTIES BUILD_RPATH "@loader_path;$GLES_RPATH")
 
 # JNI glue -> libtakenginejni, as build-native.sh: upstream's source
 # lists, c3dt dropped with the engine's, macTAK's shims added
@@ -223,7 +241,7 @@ target_include_directories(takenginejni PRIVATE
 )
 target_link_directories(takenginejni PRIVATE /opt/homebrew/lib)
 target_link_libraries(takenginejni PRIVATE takengine
-    $WORK/gles-stub/libGLESv2.dylib
+    $GLES_LIB
     /opt/homebrew/opt/sqlite/lib/libsqlite3.dylib
     gdal
     minizip
@@ -233,7 +251,7 @@ target_link_libraries(takenginejni PRIVATE takengine
 set_target_properties(takenginejni PROPERTIES
     CXX_STANDARD 17               # as upstream's jni/CMakeLists.txt: util/Tasking.h
     CXX_STANDARD_REQUIRED ON      # overloads on noexcept function types
-    BUILD_RPATH "@loader_path;\${CMAKE_BINARY_DIR}/engine-cpp;$WORK/gles-stub"
+    BUILD_RPATH "@loader_path;\${CMAKE_BINARY_DIR}/engine-cpp;$GLES_RPATH"
 )
 
 # G1's JNI guard tests (dev/g1/jni-tests) against the 5.5 glue, as
@@ -259,7 +277,7 @@ foreach(_t takengine-jni-tests takengine-jni-tests-module)
     target_link_directories(\${_t} PRIVATE /opt/homebrew/lib)
     set_target_properties(\${_t} PROPERTIES
         CXX_STANDARD 17
-        BUILD_RPATH "@loader_path;\${CMAKE_BINARY_DIR};\${CMAKE_BINARY_DIR}/engine-cpp;$WORK/gles-stub"
+        BUILD_RPATH "@loader_path;\${CMAKE_BINARY_DIR};\${CMAKE_BINARY_DIR}/engine-cpp;$GLES_RPATH"
     )
 endforeach()
 CMAKE
@@ -278,10 +296,27 @@ set -e
 python3 "$G55/summarize-build.py" "$WORK/build.log" "$WORK/engine" >"$WORK/summary.txt"
 cat "$WORK/summary.txt"
 
-if (( build_rc == 0 )) && [[ -f "$WORK/cmake/engine-cpp/libtakengine.dylib" \
-                           && -f "$WORK/cmake/libtakenginejni.dylib" ]]; then
-  log "PASS: libtakengine.dylib and libtakenginejni.dylib linked from the 5.5 tree"
-  exit 0
+if (( build_rc != 0 )) || [[ ! -f "$WORK/cmake/engine-cpp/libtakengine.dylib" \
+                            || ! -f "$WORK/cmake/libtakenginejni.dylib" ]]; then
+  log "FAIL: ninja exit $build_rc (full log: $WORK/build.log)"
+  exit 1
 fi
-log "FAIL: ninja exit $build_rc (full log: $WORK/build.log)"
-exit 1
+
+# as build-native.sh: one directory the runners load from; ANGLE beside
+# the engine (@loader_path); every staged binary re-signed, since
+# re-staged linker-signed dylibs were SIGKILLed on dlopen (dev/g2/NOTES.md
+# §M3.1)
+log "staging → $DIST"
+rm -rf "$DIST"
+mkdir -p "$DIST"
+cp "$WORK/cmake/engine-cpp/libtakengine.dylib" "$WORK/cmake/libtakenginejni.dylib" \
+   "$WORK/cmake/takengine-jni-tests" "$DIST/"
+cp "$WORK/cmake/libtakengine-jni-tests-module.dylib" "$DIST/libtakengine-jni-tests.dylib"
+if [[ "$GLES" == angle ]]; then
+  cp "$ANGLE_DIST/libEGL.dylib" "$ANGLE_DIST/libGLESv2.dylib" "$DIST/"
+fi
+for f in "$DIST"/*.dylib "$DIST/takengine-jni-tests"; do
+  codesign --force --sign - "$f" 2>/dev/null || die "codesign failed on staged $f"
+done
+
+log "PASS: libtakengine.dylib and libtakenginejni.dylib linked from the 5.5 tree (GLES=$GLES)"
