@@ -1,15 +1,16 @@
 --- a/tmp/takeng-src/jni/common.cpp
 +++ b/tmp/takeng-src/jni/common.cpp
-@@ -155,15 +155,27 @@
+@@ -194,15 +194,27 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm_, void *reserved)
          ClassLoader_class.runtime = NULL;
  
          ClassLoader_class.id = ATAKMapEngineJNI_findClass(env, "java/lang/ClassLoader");
 +        if(!ClassLoader_class.id)
 +            return JNI_ERR;
          ClassLoader_class.loadClass = env->GetMethodID(ClassLoader_class.id, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+-
 +        if(!ClassLoader_class.loadClass)
 +            return JNI_ERR;
- 
++
 +        // The Class/EngineLibrary lookups are failure-tolerant on purpose:
 +        // guarding them with early returns makes the JVM eagerly link
 +        // EngineLibrary here (whose verification needs bcprov on the
@@ -28,8 +29,8 @@
 +            env->ExceptionClear();
      }
  
- 
-@@ -623,7 +635,11 @@
+     // Load externed classes/methods
+@@ -721,7 +733,11 @@ bool ATAKMapEngineJNI_equals(JNIEnv *env, jobject a, jobject b) NOTHROWS
      if(env->IsSameObject(a, b))
          return true;
      jclass Object_class = ATAKMapEngineJNI_findClass(env, "java/lang/Object");

@@ -1,6 +1,6 @@
 --- a/tmp/takeng-src/jni/interop/renderer/ManagedTextFormat2.cpp
 +++ b/tmp/takeng-src/jni/interop/renderer/ManagedTextFormat2.cpp
-@@ -80,6 +80,8 @@
+@@ -80,6 +80,8 @@ ManagedTextFormat2::~ManagedTextFormat2() NOTHROWS
  }
  float ManagedTextFormat2::getStringWidth(const char *text) NOTHROWS
  {
@@ -9,7 +9,7 @@
      LocalJNIEnv env;
      Java::JNILocalRef mtext(*env, env->NewStringUTF(text));
      return env->CallIntMethod(mimpl, MapTextFormat_class.measureTextWidth, (jstring)mtext);
-@@ -90,37 +92,53 @@
+@@ -90,37 +92,53 @@ float ManagedTextFormat2::getCharPositionWidth(const char *text, int position) N
  }
  float ManagedTextFormat2::getCharWidth(const unsigned int chr) NOTHROWS
  {
@@ -63,16 +63,16 @@
      /*
              glyphBitmap = Bitmap.createBitmap(
                      (int) Math.max(Math.ceil(this.textFormat.getCharWidth(s.charAt(off))),1),
-@@ -224,6 +242,8 @@
- 
- TAK::Engine::Util::TAKErr ManagedTextFormatFactory::createTextFormat(TAK::Engine::Renderer::TextFormat2Ptr& value, const TAK::Engine::Renderer::TextFormatParams& params) NOTHROWS
- {
-+    if(!TextFormatFactory_class.createTextFormat)
-+        return TE_Err;
+@@ -218,6 +236,8 @@ TAK::Engine::Util::TAKErr ManagedTextFormatFactory::createTextFormat(TAK::Engine
      LocalJNIEnv env;
  
+     static bool cinit = ManagedTextFormatFactory_init(*env);
++    if(!GLText_class.createTextFormat)
++        return TE_Err;
      Java::JNILocalRef mtext(*env, env->NewStringUTF(params.fontName));
-@@ -249,19 +269,45 @@
+     if(env->ExceptionCheck()) {
+         env->ExceptionClear();
+@@ -248,19 +268,45 @@ namespace
      bool ManagedTextFormat2_init(JNIEnv &env) NOTHROWS
      {
          MapTextFormat_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/android/maps/MapTextFormat");
@@ -118,7 +118,7 @@
          {
              Java::JNILocalRef e(env, nullptr);
              if(Java::JNIEnum_value(e, env, "android/graphics/Bitmap$Config", "ARGB_8888") != TE_Ok)
-@@ -269,7 +315,11 @@
+@@ -268,7 +314,11 @@ namespace
              Bitmap_class.Config_enum.ARGB_8888 = env.NewWeakGlobalRef(e);
          }
          Canvas_class.id = ATAKMapEngineJNI_findClass(&env, "android/graphics/Canvas");
@@ -130,17 +130,17 @@
  
  
          return true;
-@@ -278,9 +328,13 @@
+@@ -277,9 +327,13 @@ namespace
      bool ManagedTextFormatFactory_init(JNIEnv &env) NOTHROWS
      {
-         TextFormatFactory_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/opengl/TextFormatFactory");
-+        if(!TextFormatFactory_class.id)
+         GLText_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/opengl/GLText");
++        if(!GLText_class.id)
 +            return false;
-         TextFormatFactory_class.createTextFormat = env.GetMethodID(TextFormatFactory_class.id,
+         GLText_class.createTextFormat = env.GetStaticMethodID(GLText_class.id,
                  "createTextFormat",
-                 "(ZZIZZ)Lcom/atakmap/android/maps/MapTextFormat;");
-+        if(!TextFormatFactory_class.createTextFormat)
+                 "(Ljava/lang/String;ZZIZZZ)Lcom/atakmap/android/maps/MapTextFormat;");
++        if(!GLText_class.createTextFormat)
 +            return false;
-         return TextFormatFactory_class.id != 0 && TextFormatFactory_class.createTextFormat != 0;
+         return true;
      }
  }

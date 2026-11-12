@@ -1,9 +1,9 @@
 --- a/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryShaders.cpp
 +++ b/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryShaders.cpp
-@@ -176,7 +176,6 @@
-     shader.uTanHalfFov = glGetUniformLocation(shader.handle, "uTanHalfFov");
-     shader.uViewportHeight = glGetUniformLocation(shader.handle, "uViewportHeight");
-     shader.uDrawTilt = glGetUniformLocation(shader.handle, "uDrawTilt");
+@@ -444,7 +444,6 @@ PointsShader TAK::Engine::Renderer::Feature::GLBatchGeometryShaders_getPointsSha
+     shader.uClampToSurface = glGetUniformLocation(shader.handle, "uClampToSurface");
+     shader.uLevelOfDetail = glGetUniformLocation(shader.handle, "uLevelOfDetail");
+     shader.uHitTestRadius = glGetUniformLocation(shader.handle, "uHitTestRadius");
 -    shader.aColor = glGetUniformLocation(shader.handle, "aRotation");
      shader.aPointSize = glGetAttribLocation(shader.handle, "aPointSize");
      shader.aRotation = glGetAttribLocation(shader.handle, "aRotation");

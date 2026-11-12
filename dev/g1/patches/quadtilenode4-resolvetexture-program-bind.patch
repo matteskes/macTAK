@@ -1,9 +1,9 @@
 --- a/tmp/takeng-src/java/com/atakmap/map/layer/raster/tilereader/opengl/GLQuadTileNode4.java
 +++ b/tmp/takeng-src/java/com/atakmap/map/layer/raster/tilereader/opengl/GLQuadTileNode4.java
-@@ -1000,6 +1000,19 @@
-                 } while(false);
+@@ -1168,6 +1168,19 @@ public class GLQuadTileNode4 implements
  
-                 if (fboCreated) {
+                 if (fboCreated)
+                 {
 +                    // the composite below sets uniforms and attribute pointers
 +                    // on core.shader, but this method also runs off the draw
 +                    // path (TileReader error callback via queueEvent) where no
@@ -20,7 +20,7 @@
                      // x,y,width,height
                      int[] viewport = new int[4];
                      GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, viewport, 0);
-@@ -1090,6 +1103,13 @@
+@@ -1264,6 +1277,13 @@ public class GLQuadTileNode4 implements
                      // restore the viewport
                      GLES30.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
  
@@ -32,5 +32,5 @@
 +                    GLES30.glUseProgram(callerProgram[0]);
 +
                      this.textureCoordsValid = false;
-                     this.receivedUpdate = true;
+                     this.hints |= HINT_RECEIVED_UPDATE;
  

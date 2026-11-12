@@ -9,6 +9,10 @@
  * DeleteGlobalRef is null-guarded, and the constructor's static clinit
  * runs (and fails) the class init — exactly the state the guards are for.
  * Patch under test: textformat2-class-init-consumer-guards.patch.
+ *
+ * 5.5 copy of dev/g1/jni-tests/textformat2_guards_test.cpp: 5.5's factory
+ * takes only the JNIEnv (it calls the static GLText.createTextFormat), so
+ * the 4.6 file no longer compiles here. Replaces it at the re-pin.
  */
 #include <jni.h>
 
@@ -33,7 +37,7 @@ TEST_F(JniGuardsTextFormat2, FactoryCreateTextFormatBailsOut)
     JNIEnv *env = jnitest::jni_env();
     ASSERT_NE(env, nullptr);
 
-    ManagedTextFormatFactory factory(*env, nullptr);
+    ManagedTextFormatFactory factory(*env);
 
     TAK::Engine::Renderer::TextFormat2Ptr value(nullptr, nullptr);
     const TAK::Engine::Renderer::TextFormatParams params("sans-serif", 14.f);

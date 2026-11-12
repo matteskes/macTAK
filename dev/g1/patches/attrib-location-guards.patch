@@ -1,6 +1,6 @@
 --- a/tmp/takeng-src/cpp/renderer/core/GLGlobe.cpp
 +++ b/tmp/takeng-src/cpp/renderer/core/GLGlobe.cpp
-@@ -2996,7 +2996,11 @@
+@@ -3086,7 +3086,11 @@ namespace
          glUniform4f(shader.base.uColor, r, g, b, a);
  
          glEnableVertexAttribArray(shader.base.aVertexCoords);
@@ -13,7 +13,7 @@
  
          // draw terrain tiles
          std::size_t idx = 0u;
-@@ -3011,7 +3015,8 @@
+@@ -3101,7 +3105,8 @@ namespace
          }
  
          glDisableVertexAttribArray(shader.base.aVertexCoords);
@@ -25,7 +25,7 @@
      void drawTerrainMeshImpl(const GLGlobe::State &state, const TerrainTileShader &shader, const Matrix2 &mvp, const Matrix2 *local, const std::size_t numLocal, const GLTerrainTile &gltile, const float r, const float g, const float b, const float a) NOTHROWS
 --- a/tmp/takeng-src/cpp/renderer/core/GLMapView2.cpp
 +++ b/tmp/takeng-src/cpp/renderer/core/GLMapView2.cpp
-@@ -3203,7 +3203,11 @@
+@@ -3234,7 +3234,11 @@ namespace
          glUniform4f(shader.base.uColor, r, g, b, a);
  
          glEnableVertexAttribArray(shader.base.aVertexCoords);
@@ -38,7 +38,7 @@
  
          // draw terrain tiles
          std::size_t idx = 0u;
-@@ -3214,7 +3218,8 @@
+@@ -3245,7 +3249,8 @@ namespace
          }
  
          glDisableVertexAttribArray(shader.base.aVertexCoords);
@@ -48,78 +48,3 @@
      }
  
      void drawTerrainMeshImpl(const GLMapView2::State &state, const TerrainTileShader &shader, const Matrix2 &mvp, const Matrix2 *local, const std::size_t numLocal, const GLTerrainTile &gltile, const float r, const float g, const float b, const float a) NOTHROWS
---- a/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryRenderer3.cpp
-+++ b/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryRenderer3.cpp
-@@ -1422,14 +1422,17 @@
-         glUniform2f(lineShader.u_viewportSize, (float)viewport[2] / 2.0f, (float)viewport[3] / 2.0f);
-     }
- 
--    glEnableVertexAttribArray(lineShader.a_vertexCoord0);
--    glEnableVertexAttribArray(lineShader.a_vertexCoord1);
--    glEnableVertexAttribArray(lineShader.a_color);
--    glEnableVertexAttribArray(lineShader.a_normal);
--    glEnableVertexAttribArray(lineShader.a_halfStrokeWidth);
--    glEnableVertexAttribArray(lineShader.a_dir);
--    glEnableVertexAttribArray(lineShader.a_pattern);
--    glEnableVertexAttribArray(lineShader.a_factor);
-+    // macTAK (G1): a -1 attrib location (a compile/link failure, or an
-+    // attrib the GLSL compiler dropped) makes
-+    // glEnable/DisableVertexAttribArray raise GL_INVALID_VALUE for the frame.
-+    if(lineShader.a_vertexCoord0 >= 0) glEnableVertexAttribArray(lineShader.a_vertexCoord0);
-+    if(lineShader.a_vertexCoord1 >= 0) glEnableVertexAttribArray(lineShader.a_vertexCoord1);
-+    if(lineShader.a_color >= 0) glEnableVertexAttribArray(lineShader.a_color);
-+    if(lineShader.a_normal >= 0) glEnableVertexAttribArray(lineShader.a_normal);
-+    if(lineShader.a_halfStrokeWidth >= 0) glEnableVertexAttribArray(lineShader.a_halfStrokeWidth);
-+    if(lineShader.a_dir >= 0) glEnableVertexAttribArray(lineShader.a_dir);
-+    if(lineShader.a_pattern >= 0) glEnableVertexAttribArray(lineShader.a_pattern);
-+    if(lineShader.a_factor >= 0) glEnableVertexAttribArray(lineShader.a_factor);
- 
-     glEnable(GL_BLEND);
-     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-@@ -1448,14 +1451,14 @@
-     }
-     glDisable(GL_BLEND);
- 
--    glDisableVertexAttribArray(lineShader.a_vertexCoord0);
--    glDisableVertexAttribArray(lineShader.a_vertexCoord1);
--    glDisableVertexAttribArray(lineShader.a_color);
--    glDisableVertexAttribArray(lineShader.a_normal);
--    glDisableVertexAttribArray(lineShader.a_halfStrokeWidth);
--    glDisableVertexAttribArray(lineShader.a_dir);
--    glDisableVertexAttribArray(lineShader.a_pattern);
--    glDisableVertexAttribArray(lineShader.a_factor);
-+    if(lineShader.a_vertexCoord0 >= 0) glDisableVertexAttribArray(lineShader.a_vertexCoord0);
-+    if(lineShader.a_vertexCoord1 >= 0) glDisableVertexAttribArray(lineShader.a_vertexCoord1);
-+    if(lineShader.a_color >= 0) glDisableVertexAttribArray(lineShader.a_color);
-+    if(lineShader.a_normal >= 0) glDisableVertexAttribArray(lineShader.a_normal);
-+    if(lineShader.a_halfStrokeWidth >= 0) glDisableVertexAttribArray(lineShader.a_halfStrokeWidth);
-+    if(lineShader.a_dir >= 0) glDisableVertexAttribArray(lineShader.a_dir);
-+    if(lineShader.a_pattern >= 0) glDisableVertexAttribArray(lineShader.a_pattern);
-+    if(lineShader.a_factor >= 0) glDisableVertexAttribArray(lineShader.a_factor);
- 
-     glBindBuffer(GL_ARRAY_BUFFER, GL_NONE);
-     glUseProgram(GL_NONE);
-@@ -1616,8 +1619,10 @@
-         glUniform1f(pointShader.uTexSizeHandle, texSize);
-         glUniform1f(pointShader.uPointSizeHandle, pointSize);
- 
--        glEnableVertexAttribArray(pointShader.aVertexCoordsHandle);
--        glEnableVertexAttribArray(pointShader.aTextureCoordsHandle);
-+        // macTAK (G1): -1 attrib locations raise GL_INVALID_VALUE; see
-+        // the lines-draw guards above.
-+        if(pointShader.aVertexCoordsHandle >= 0) glEnableVertexAttribArray(pointShader.aVertexCoordsHandle);
-+        if(pointShader.aTextureCoordsHandle >= 0) glEnableVertexAttribArray(pointShader.aTextureCoordsHandle);
- 
-         for (auto &buf : pointsBuffers) {
-             // set the texture for this batch
-@@ -1644,8 +1649,8 @@
-             glDrawArrays(GL_POINTS, 0, buf.count);
-         }
- 
--        glDisableVertexAttribArray(pointShader.aVertexCoordsHandle);
--        glDisableVertexAttribArray(pointShader.aTextureCoordsHandle);
-+        if(pointShader.aVertexCoordsHandle >= 0) glDisableVertexAttribArray(pointShader.aVertexCoordsHandle);
-+        if(pointShader.aTextureCoordsHandle >= 0) glDisableVertexAttribArray(pointShader.aTextureCoordsHandle);
- 
-         glBindBuffer(GL_ARRAY_BUFFER, 0);
- 

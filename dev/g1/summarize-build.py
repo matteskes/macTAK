@@ -73,18 +73,18 @@ def main(argv):
             if failures and failures[-1][1] is None:
                 failures[-1][1] = text
 
-    print(f"[g55] build steps: {total}, failed: {len(failures)}")
+    print(f"[g1] build steps: {total}, failed: {len(failures)}")
     for target, first in failures:
         name = re.sub(r"^.*?CMakeFiles/[^/]+\.dir/", "", target)
         name = name.replace(prefix, "")
         print(f"  FAILED {name}")
         print(f"         {first or '(no error line found; see build.log)'}")
     if kinds:
-        print("[g55] errors by kind (count, message with names blanked):")
+        print("[g1] errors by kind (count, message with names blanked):")
         for message, count in kinds.most_common(40):
             print(f"  {count:4}  {message}")
     if undefined:
-        print(f"[g55] undefined symbols at link: {len(undefined)}")
+        print(f"[g1] undefined symbols at link: {len(undefined)}")
         for symbol, obj in sorted(undefined.items()):
             obj = re.sub(r"^.*?CMakeFiles/[^/]+\.dir/", "", obj)
             print(f"  {symbol}  <- {obj}")

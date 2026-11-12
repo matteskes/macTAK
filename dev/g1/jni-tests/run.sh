@@ -27,8 +27,6 @@ DEV="$(cd "$HERE/.." && pwd)"       # <repo>/dev/g1
 ROOT="$(cd "$DEV/../.." && pwd)"    # <repo>
 DIST="${1:-$DEV/native-dist}"
 DIST="$(cd "$DIST" && pwd)"
-VER="${TAKKERNEL_VER:-0.59.1}"
-M2="${HOME}/.m2/repository"
 
 BIN="$DIST/takengine-jni-tests"
 [[ -x "$BIN" ]] || { echo "FATAL: $BIN missing — run dev/g1/build-native.sh first" >&2; exit 1; }
@@ -44,26 +42,12 @@ export JAVA_HOME="$JDK"
 # kernel mode: where the fixture's System.load finds libtakenginejni.dylib
 export TAKJNI_TEST_LIBDIR="$DIST"
 
-# kernel-mode classpath, resolved like dev/g1/smoke/run.sh: mavenLocal
-# jars when present (local gradle builds), else the committed transplants
-# (what CI's native job uses — it has no mavenLocal). android-port lives
-# at its G0 home.
-jar() { # jar <mavenLocal-path> <committed-path> — prints the first that exists
-  if [[ -f "$1" ]]; then echo "$1"; else echo "$2"; fi
-}
-KERNEL_M2="$M2/gov/tak/kernel"
-TRANS="$DEV/transplants"
-CP="$(jar "$KERNEL_M2/takkernel-engine/$VER/takkernel-engine-$VER.jar" \
-        "$TRANS/takkernel-engine-$VER.jar")"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-port/$VER/takkernel-port-$VER.jar" \
-        "$TRANS/takkernel-port-$VER.jar")"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-annotation/$VER/takkernel-annotation-$VER.jar" \
-        "$TRANS/takkernel-annotation-$VER.jar")"
-CP="$CP:$(jar "$M2/gov/tak/support/android-port/3.1.0/android-port-3.1.0.jar" \
-        "$ROOT/dev/spike/g0/transplants/android-port-3.1.0.jar")"  # android.* stubs
-for j in $(echo "$CP" | tr ':' '\n'); do
-  [[ -f "$j" ]] || { echo "FATAL: missing jar: $j" >&2; exit 1; }
-done
+# kernel-mode classpath: the takkernel jars, kernel first and
+# android-port last (dev/g1/kernel/classpath.sh)
+# shellcheck source=SCRIPTDIR/../kernel/classpath.sh
+source "$DEV/kernel/classpath.sh"
+CP="$(mactak_kernel_classpath)" \
+  || { echo "FATAL: no takkernel jars in $MACTAK_KERNEL_DIST — run dev/g1/kernel/build-kernel-jars.sh" >&2; exit 1; }
 
 echo "[g1] jni-tests guards mode (empty classpath: class-init failures are the vector)"
 env -u TAKJNI_TEST_CLASSPATH TAKJNI_TEST_MODE=guards \
