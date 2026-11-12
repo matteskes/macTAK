@@ -48,6 +48,14 @@ Tracks/contacts list, map overlays (CoT markers, routes), chat (GeoChat), layer 
 
 **Open before G3 (2026-11-11):** which upstream version the app layer targets ([rebase-study-5.5.md](rebase-study-5.5.md)), and whether ATAK's app code is reused on the JVM behind more Android stand-ins or rewritten in Swift ([atak-feature-coverage.md](atak-feature-coverage.md) §The open decision).
 
+**2026-11-11 (#98): spike 1 of the rebase — the 5.5 engine builds.**
+takkernel 8.30.5 with macTAK's patch series ported to 5.5 (34 patches at
+`--fuzz=0`; three dropped as fixed upstream) compiles and links on
+`macos-26` without 3D Tiles, 471 of 471 build steps
+(`../dev/spike/g55/NOTES.md`). Remaining before the re-pin: JNI glue on
+5.5, the render gates on 5.5, spike 2 (commo and its QUIC backend), then
+the re-pin itself, roughly two to three weeks with 3D Tiles still out.
+
 ## G4 — Data & import parity rung 1 (2–4 mo)
 
 KML/KMZ, GPX, shapefile, GeoJSON import/export (GDAL-backed via the engine's `formats`/`db` layers); offline elevation (DTED/DEM via gdal/las stack); MRU/route tools. **Exit:** a workflow a WinTAK user performs daily works identically.

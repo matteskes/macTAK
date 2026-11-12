@@ -24,7 +24,7 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 | Path | Contents |
 |---|---|
 | `docs/` | Program documents: feasibility study, architecture evidence, roadmap, CI/QA plan, Pathway A baseline |
-| `dev/` | Development workspace: `dev/g1/` native engine build harness (recipe + patch set), `dev/spike/` gate-spike records (`dev/spike/g0/` = G0 build recipe, wrapper, patch catalog), `dev/reference/` test rig — CoT client tools (committed); WinTAK-derived captures (`.gitignore`d — GOTS artifacts never enter this repo) |
+| `dev/` | Development workspace: `dev/g1/` native engine build harness (recipe + patch set), `dev/spike/` gate-spike records (`dev/spike/g0/` = G0 build recipe, wrapper, patch catalog; `dev/spike/g55/` = the 5.5 rebase: ported patch series, build harness, record), `dev/reference/` test rig — CoT client tools (committed); WinTAK-derived captures (`.gitignore`d — GOTS artifacts never enter this repo) |
 | `src/` | Read-only pinned clone of upstream ATAK-CIV @ `889eee2` (v4.6.0.5) — evidence tree; changes to it are exported as patch files, never committed in place |
 
 ## Project documents
@@ -37,12 +37,14 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 | [`docs/roadmap.md`](docs/roadmap.md) | Gate-gated plan G0–G6 with exit criteria and fallback decision points |
 | [`docs/ci-qa.md`](docs/ci-qa.md) | CI/QA plan: inherited test corpus, CI tiers, golden fixtures, runner strategy |
 | [`docs/pathway-a.md`](docs/pathway-a.md) | WinTAK golden VM: build record, FreeTAKServer round-trip verification, gotchas |
+| [`docs/atak-feature-coverage.md`](docs/atak-feature-coverage.md) | ATAK-CIV's feature set mapped to what macTAK supports today, and the open reuse-or-rewrite decision for the app layer |
+| [`docs/rebase-study-5.5.md`](docs/rebase-study-5.5.md) | Measured cost of moving the upstream baseline from 4.6.0.5 to 5.5.1.10; the staged rebase plan |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: setup, the gate ladder, where changes land (patches/shadows/shim), CI contract, house style |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening |
 
 ## Local gates
 
-Run `make hooks` once per clone to install the git hooks (`core.hooksPath .githooks`). The pre-commit hook then checks every staged file: `shellcheck` + `bash -n` on `*.sh`, `markdownlint-cli2` on `*.md`, `actionlint` on `.github/workflows/*.yml`, and SHA256 verification of jars under `dev/g1/transplants/` and `dev/spike/g0/transplants/` against their `SHA256SUMS` manifests. Optional tools that are not installed are skipped with a visible message. `make lint` runs the same checks across the whole `dev/` tree, sweeping the repo's own docs but skipping the read-only `src/` pin — CI's docs job likewise lints only PR-changed `*.md`.
+Run `make hooks` once per clone to install the git hooks (`core.hooksPath .githooks`). The pre-commit hook then checks every staged file: `shellcheck` + `bash -n` on `*.sh`, `markdownlint-cli2` on `*.md`, `actionlint` on `.github/workflows/*.yml`, and SHA256 verification of jars under `dev/g1/transplants/`, `dev/spike/g0/transplants/` and `dev/spike/g55/transplants/` against their `SHA256SUMS` manifests. Optional tools that are not installed are skipped with a visible message. `make lint` runs the same checks across the whole `dev/` tree, sweeping the repo's own docs but skipping the read-only `src/` pin — CI's docs job likewise lints only PR-changed `*.md`.
 
 ## License
 

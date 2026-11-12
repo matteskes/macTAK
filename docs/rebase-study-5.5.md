@@ -73,32 +73,27 @@ commo patches. The 34 in `dev/g1/patches` touch 62 files: 50 changed in
 5.5, 11 did not, and one is gone
 (`renderer/feature/GLBatchGeometryRenderer3.cpp`).
 
-| Result on 5.5 | Count | Patches |
-|---|---|---|
-| Apply cleanly | 17 | — |
-| Apply only with fuzz (refresh needed) | 9 | `common-onload-classloader-guards`, `gdal-drift-GdalDatasetProjection`, `gdal-drift-OGR_Content2`, `gdal3-axis-order-cpp-default`, `gdal3-axis-order-traditional-gis`, `glbatchshaders-dead-store`, `glmapview2-srid-capability`, `managedrendercontext-guards`, `quadtilenode4-resolvetexture-program-bind` |
-| Fail | 11 | `attrib-location-guards`, `cpp17-legacy-headers`, `jni-class-init-guards`, `megatexture-release-erase-while-iterating`, `megatexture-sharetile-comma-operator`, `projection-math-interop-guards`, `projection-sweep-hygiene`, `terraintile-ecef-ge`, `terraintile-guard-missing-attribs`, `textformat2-class-init-consumer-guards`, `vsi-jfile-gdal3-api` |
+Measured by porting them (spike 1, [dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md)
+§The patch port, which names every patch):
 
-Upstream already carries two of these fixes:
+| Result on 5.5 | Count |
+|---|---|
+| Apply unchanged at `--fuzz=0` | 17 |
+| Refreshed by `refresh-patches.py` (context intact, indentation drift) | 1 |
+| Hand-ported, same hunks | 7 |
+| Hand-ported, reworked for 5.5's code | 9 |
+| Dropped, fixed upstream: `cpp17-legacy-headers`, `megatexture-sharetile-comma-operator`, `terraintile-ecef-ge` | 3 |
 
-- `glbatchshaders-dead-store` applies in reverse on 5.5, so it is already
-  in.
-- `megatexture-sharetile-comma-operator` fails because 5.5 fixed the same
-  bug: `GLMegaTexture.cpp` now reads `other.shareWith = this;`.
+The 5.5 series is 34 patches. The rework is mostly the JNI guard series,
+`vsi-jfile-gdal3-api` (5.5's `vsi_jfile.cpp` still targets GDAL 2's VSI
+interface) and `megatexture-release-erase-while-iterating`, whose
+upstream fix hangs once a tile is shared.
 
-That leaves nine failing patches as real rework, mostly the JNI guard
-series and `vsi-jfile-gdal3-api` (5.5's `vsi_jfile.cpp` still targets
-GDAL 2's VSI interface).
-
-**Corrected by spike 1 (2026-11-11).** The fuzzy and reverse dry-runs
-above ran at `--fuzz=3`, which lets a hunk match with no context at all,
-so two of these numbers are wrong. `glbatchshaders-dead-store` is not
-upstream: the dead store is still in 5.5 (`GLBatchGeometryShaders.cpp`
-line 447), and the reverse match was spurious. Three patches are
-upstream (`cpp17-legacy-headers`, `megatexture-sharetile-comma-operator`,
-`terraintile-ecef-ge`), and fuzz placed several hunks in the wrong place.
-The measured port is in
-[dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md).
+This study first reported 17 clean, 9 fuzz-only and 11 failing, with
+`glbatchshaders-dead-store` already upstream. Those dry-runs ran at
+`--fuzz=3`, which matches a hunk with no context: hunks landed in the
+wrong place and a reverse match was spurious (the dead store is still in
+5.5). Spike 1's traps 1–2 record both and the guard.
 
 commo:
 
@@ -131,8 +126,7 @@ never emits it. TAK servers accept CoT without it today; adding
 
 1. **Spike the 5.5 engine on macOS without 3D Tiles.** Leave the
    cesium-native and draco sources out, as G0 left out the drivers it
-   could not build; refresh the nine fuzzy patches and redo the nine
-   failing ones. This is the G0-style answer to whether 5.5 builds here.
+   could not build, and port the patch series. This is the G0-style answer to whether 5.5 builds here.
    **Done 2026-11-11: it builds** (471 of 471 steps, `libtakengine`
    links); the record, the remaining steps and a time estimate are in
    [dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md).

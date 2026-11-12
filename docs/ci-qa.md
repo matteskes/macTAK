@@ -89,6 +89,17 @@ How the plan above actually materialized once G1 closed:
   for `HeadlessCLI.java` (#29 — CI previously never type-checked the
   launcher).
 
+### As-landed, the 5.5 rebase (2026-11-11)
+
+- **`spike-55.yml`** builds the 5.5 engine without 3D Tiles on
+  `macos-26` (`dev/spike/g55/build-engine.sh`) and uploads the build log
+  and summary. It runs on pushes to `spike/g55-*` branches that touch
+  the spike, and on dispatch. It is not a required check: as with G0's
+  spike (§7), a red run is the spike's answer, not a regression. Later
+  rebase iterations add their gates to it as jobs; they move into
+  `ci.yml` at the re-pin.
+- **Lint** gained `dev/check-pipefail-grep.sh` (g55 trap 3).
+
 ## 5. Self-hosted pattern — VMPal golden VMs
 
 The dev Mac also hosts the CI jobs that licensing forces there. VMPal's CI model maps onto GitHub Actions directly:
