@@ -1390,3 +1390,39 @@ listener:
 /beacon.geojso1
 /gml-schema?SERVICE=WFS&REQUEST=DescribeFeatureType&TYPENAME=a
 ```
+
+## G1.15 — takkernel's `:shared` tests on 5.5 (2026-11-11, branch `g1/kernel-shared-tests`)
+
+At the re-pin `make test-kernel` ran `:port` only: `:shared` does not
+compile from public sources at 5.5 (`dev/spike/g55/NOTES.md` trap 11). Its
+desktop MIL-STD-2525 glue (`gov.tak.platform.symbology.milstd2525`, under
+`src/jre`) is written against a desktop `armyc2.c5isr` renderer that only
+the TAK artifactory serves; the public build resolves one whose types are
+Android `Bitmap`s, and `MilStd2525dInterop` / `RenderContextWrapper` fail
+to compile. With that package left out, `shared` compiles and runs 297
+tests, 43 failing. Every failure traces to the TAK-artifactory-only
+pieces; none is a defect in code macTAK runs:
+
+| Tests | Failures | Cause |
+|---|---|---|
+| `MilStd2525*Test` (7 classes, 67 tests) | 34 | They test the left-out package. Run without it, they resolve those classes from the android-port substitute's dex2jar'd Android ones (`Unknown Source` frames), whose symbol tables never initialize: `Cannot invoke "java.util.Map.size()" because "<local3>" is null` in `MilStd2525cSymbolTable.getAllSymbolDefs`, wrong defaults (`expected:<Point> but was:<LineString>`), one `UnsatisfiedLinkError` from GDAL's JNI |
+| `ToolbarItemTest` (10 tests) | 9 | `gov.tak.api.commons.graphics.Bitmap.<init>` → `RuntimeException: Stub!`, as `:port`'s `BitmapTest` |
+
+`dev/g1/kernel/kernel-tests.gradle` (was `port-tests.gradle`) leaves the
+2525 package out of `:shared`'s main source set and its tests out of the
+run, and excludes `ToolbarItemTest` by name, beside `:port`'s
+`JavaResourceManagerTest` and `BitmapTest(s)`. It is an init script, so
+upstream's build files stay untouched. `test-kernel.sh` runs
+`:port:test :shared:test` with `--continue`:
+
+```text
+[g1-kernel-tests] PASS: :port:test :shared:test (artifactory-only code and tests excluded: kernel-tests.gradle)
+port: 26 run, 0 failures, 0 errors, 0 skipped
+shared: 220 run, 0 failures, 0 errors, 1 skipped
+```
+
+297 − 77 excluded (67 + 10) = 220. The one skip is upstream's own
+`assumeTrue` in `Dt2FileTest.Dt2File_construction`. 4.6's `shared` needed
+G0's `gradle-shared-test-deps.patch` (commons-math3, and
+`ConfigMapMenuWidgetControllerTest` excluded); 5.5's needs neither, and
+`ConfigMapMenuWidgetControllerTest` passes.

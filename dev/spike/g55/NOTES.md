@@ -513,16 +513,18 @@ patches brings the series to 37.
     buffers. **Guard:** the canary excludes exactly those two by name
     (`STALE_UPSTREAM_TESTS`); the other 32 must pass.
 11. **takkernel's `:shared` does not compile from public sources at 5.5**
-    (open). Its desktop MIL-STD-2525 glue (`milstd2525/MilStd2525dInterop`,
+    (closed 2026-11-11, `dev/g1/NOTES.md` G1.15). Its desktop MIL-STD-2525 glue (`milstd2525/MilStd2525dInterop`,
     `RenderContextWrapper`) is written against a desktop `armyc2.c5isr`
     renderer the public build cannot resolve (it gets one whose types are
     Android `Bitmap`s). Left out, `shared` compiles and runs 297 tests,
     43 failing for mixed reasons. `:port` runs (26 tests) minus
     `JavaResourceManagerTest` and `BitmapTest(s)`, which need Android's
-    runtime (`dev/g1/kernel/port-tests.gradle`). **Guard: none yet** for
-    `shared`; closing it takes a Gradle init script leaving the 2525 glue
-    out and the 43 failures sorted (stand-in limits excluded by name, the
-    rest fixed), then `:shared:test` back in `make test-kernel`.
+    runtime (`dev/g1/kernel/port-tests.gradle`, now `kernel-tests.gradle`).
+    **Guard:** `kernel-tests.gradle` leaves the 2525 glue out of `:shared`'s
+    compile and its tests out of the run (they resolved the stand-in's
+    Android classes instead: 34 of the 43), and `ToolbarItemTest`
+    (`Bitmap` → `Stub!`: the other 9); `make test-kernel` runs
+    `:port:test :shared:test`, 26 + 220 tests, 0 failures.
 12. **`atak-headless` kept classes compiled against the old jars.** It
     recompiled only when a `.java` was newer than its class dir; a
     re-pin swaps the jars and leaves the sources, so classes built
@@ -576,7 +578,7 @@ passes the G1 comms gates. What remains before the re-pin (study step
    `atak-headless`'s overrides), and change the 14 files that name
    `889eee2`.
 
-Carried forward past the rebase: `:shared`'s tests (trap 11), commo's
+Carried forward past the rebase: ~~`:shared`'s tests (trap 11)~~ done (G1.15), commo's
 QUIC failure cause (trap 8), the `ManagedFeatureDefinition` consumer
 guards and guards-mode pins for the two new JNI patches, peer-to-peer
 QUIC after the interface-scanner bug, and 3D Tiles (cesium-native and
