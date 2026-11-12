@@ -3,7 +3,6 @@ package mactak.render;
 import com.atakmap.coremap.maps.coords.GeoPoint;
 import com.atakmap.map.Globe;
 import com.atakmap.map.layer.Layers;
-import com.atakmap.map.layer.feature.Adapters;
 import com.atakmap.map.layer.feature.FeatureLayer3;
 import com.atakmap.map.layer.feature.geometry.Envelope;
 import com.atakmap.map.layer.raster.DatasetDescriptor;
@@ -265,7 +264,7 @@ public final class WindowApp {
                 }
                 System.out.printf(TAG + ": %d feature(s), bounds lat [%.5f, %.5f] lon [%.5f, %.5f]%n",
                         store.featureCount(), b.minY, b.maxY, b.minX, b.maxX);
-                globe.addLayer(new FeatureLayer3("mactak-layer", Adapters.adapt(store.dataStore())));
+                globe.addLayer(new FeatureLayer3("mactak-layer", store.dataStore()));
                 frame = b;   // vector bounds win: that's what the fixture is about
             }
             if (frame != null) {

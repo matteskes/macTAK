@@ -32,12 +32,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 G1="$(cd "$HERE/.." && pwd)"
 ROOT="$(cd "$G1/../.." && pwd)"
 DIST="${MACTAK_NATIVE_DIST:-$G1/native-dist}"
-# MACTAK_HEADLESS_CLASSES / MACTAK_JAVAC_LINT: the class dir and javac's
-# -Xlint set, for runs against another comms build (dev/spike/g55/commo.sh:
-# 5.5's commo deprecates the addStreamingInterface overload used here).
-# Unset, nothing changes.
-OUT="${MACTAK_HEADLESS_CLASSES:-$HERE/build/classes}"
-JAVAC_LINT="${MACTAK_JAVAC_LINT:-all}"
+OUT="$HERE/build/classes"
 
 # shellcheck source=SCRIPTDIR/../../jdk.sh
 source "$ROOT/dev/jdk.sh"
@@ -63,12 +58,16 @@ CP="$DIST/jcommoncommo.jar:$KERNEL_CP:$G1/transplants/slf4j-simple-1.7.30.jar"
 GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/homebrew/opt/gdal/share/gdal)}"
 [[ -d "$GDAL_DATA_DIR" ]] || { echo "atak-headless: GDAL data dir not found: $GDAL_DATA_DIR (brew install gdal)" >&2; exit 1; }
 
-# Recompile when the class dir is missing or any source is newer than it. A
-# failed compile removes the dir so the next run retries instead of running
-# against a stale/partial class set.
-if [[ ! -d "$OUT" ]] || [[ -n "$(find "$HERE/src" -name '*.java' -newer "$OUT" -print -quit)" ]]; then
+# Recompile when the class dir is missing, or any source or any jar it was
+# compiled against is newer than it: a rebuilt kernel or commo jar (an
+# upstream re-pin) must not run against classes compiled for the old one.
+# A failed compile removes the dir so the next run retries instead of
+# running against a stale/partial class set.
+if [[ ! -d "$OUT" ]] \
+   || [[ -n "$(find "$HERE/src" -name '*.java' -newer "$OUT" -print -quit)" ]] \
+   || [[ -n "$(find "$MACTAK_KERNEL_DIST" "$DIST/jcommoncommo.jar" -name '*.jar' -newer "$OUT" -print -quit)" ]]; then
   rm -rf "$OUT"; mkdir -p "$OUT"
-  "$JDK/bin/javac" --release 21 -Xlint:"$JAVAC_LINT" -Werror -encoding UTF-8 \
+  "$JDK/bin/javac" --release 21 -Xlint:all -Werror -encoding UTF-8 \
     -classpath "$CP" -d "$OUT" "$HERE"/src/mactak/headless/*.java \
     || { rm -rf "$OUT"; exit 1; }
   touch "$OUT"
