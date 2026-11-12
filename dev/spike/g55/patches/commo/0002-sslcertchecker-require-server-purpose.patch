@@ -1,0 +1,29 @@
+diff --git a/core/impl/internalutils.cpp b/core/impl/internalutils.cpp
+--- a/core/impl/internalutils.cpp
++++ b/core/impl/internalutils.cpp
+@@ -2,6 +2,8 @@
+ #include "internalutils.h"
+ #include "openssl/evp.h"
+ #include "openssl/err.h"
++// macTAK (G1.14): X509_PURPOSE_SSL_SERVER (checkCert below)
++#include "openssl/x509v3.h"
+ 
+ #include <stdarg.h>
+ #include <stdio.h>
+@@ -493,6 +495,16 @@
+ bool SSLCertChecker::checkCert(X509 *cert)
+ {
+     X509_STORE_CTX_init(storeCtx, store, cert, NULL);
++    // macTAK (G1.14, security audit #1): require a cert fit for a TLS
++    // *server*. Without a purpose, X509_verify_cert accepts any cert that
++    // chains to the truststore CA, and TAK deployments issue client and
++    // server certs from one CA: any enrolled client's cert (or a leaked
++    // data package's) could impersonate the server. commo skips the
++    // hostname check on purpose (ATAK parity), so this is the one thing
++    // telling a server from a client. OpenSSL's SSL-server purpose accepts
++    // a leaf with no extendedKeyUsage, or with serverAuth; a
++    // clientAuth-only leaf now fails (X509_V_ERR_INVALID_PURPOSE, 26).
++    X509_STORE_CTX_set_purpose(storeCtx, X509_PURPOSE_SSL_SERVER);
+ 
+     int vResult = X509_verify_cert(storeCtx);
+     

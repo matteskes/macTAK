@@ -13,6 +13,17 @@ top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
 
+## State (commo — 2026-11-11): 5.5 commo and its QUIC pass the G1 comms gates
+
+5.5's commoncommo builds through `dev/g1/build-commo.sh` (opt-in
+`MACTAK_COMMO_*` overrides) with its mandatory QUIC on ngtcp2 1.26.0's
+`ossl` backend over Homebrew `openssl@3`, one OpenSSL runtime linked.
+`commo.sh`'s six checks are green: streaming QUIC against an aioquic
+stand-in (a clientAuth-only impostor refused, so security fix #1 holds
+on QUIC), `tls-purpose.sh` and the two-client CoT round-trip (#101).
+Five commo patches; trap 8 (commo hides a QUIC failure's cause) is
+open. Next: the move to JDK 21, then the re-pin (§Exit).
+
 ## State (render gates — 2026-11-11): the G2 render gates pass on 5.5 with ANGLE/Metal
 
 The nine steps of `ci.yml`'s `render-angle` job run green on the 5.5
@@ -178,6 +189,81 @@ Shipping files touched, both inert or equivalent on 4.6:
 `dev/g1/headless/test/layer.sh`, the headless launcher's canary,
 because it waits for the launcher's move off Java 8.
 
+## Commo
+
+Study step 2. **5.5 commo builds on macOS, speaks QUIC, and passes the G1
+TLS and round-trip gates**, with its QUIC on ngtcp2's `ossl` backend
+over the same Homebrew `openssl@3` (3.5.9) as the rest of commo.
+`commo.sh` runs six steps, all green, locally and on `macos-26` in CI
+(run [43062762143](https://github.com/Chicago-Offline/macTAK/actions/runs/43062762143),
+job "5.5 commo + QUIC"):
+
+```text
+[g55-commo] ok: one OpenSSL runtime (openssl@3), ngtcp2 + crypto_ossl inside libcommoncommo
+PASS: the server completed a takstream handshake and received the marker over QUIC
+PASS: the refusal is CONN_SSL_PEER_CERT_NOT_TRUSTED (got CONN_SSL_PEER_CERT_NOT_TRUSTED)
+[tls-test] PASS: server certs accepted, client-only impostors refused (OpenTAKServer profiles included)
+[g1-roundtrip] PASS — both ifaces up, B's presence+marker relayed to A, A's presence relayed to B, both persisted in the tracks DBs
+```
+
+**The QUIC backend decision.** 5.5 commo always compiles
+`quicconnection.cpp` and links `-lngtcp2 -lngtcp2_crypto_quictls`.
+Its use of the backend is narrow: two `configure_*_context` calls, and
+everything else is ngtcp2's generic `ngtcp2_crypto_*` callbacks.
+
+| Option | Verdict |
+|---|---|
+| Upstream's quictls: `openssl-3.0.14-quic1` + ngtcp2 1.6.0, from `takthirdparty/distfiles` | Rejected. OpenSSL 3.0 reached end of life on 2026-09-07, and it would be a second OpenSSL beside the `openssl@3` macTAK's TLS work stands on (security fix #1, the legacy-provider shim) |
+| Homebrew `libngtcp2` 1.26.0, whose `ngtcp2_crypto_ossl` links `openssl@4` | Rejected. `SSL*` objects from commo's `openssl@3` would cross into a second OpenSSL runtime; using it means moving commo's TLS to OpenSSL 4 |
+| **ngtcp2 1.26.0 built against `openssl@3`, `ossl` backend** (OpenSSL 3.5's own QUIC TLS API, `SSL_set_quic_tls_cbs`) | **Chosen.** One OpenSSL runtime, the one macTAK already supports; the same release Homebrew packages, sha256 cross-checked against its formula; static, so nothing more to stage. The cost is a commo patch |
+
+What 5.5 commo took (series in `patches/commo/`, `-p1`, fuzz 0):
+
+| Patch | Why |
+|---|---|
+| `0001-diag-socketRead-errno` | G1's five `[commo-diag]` probes, ported to 5.5's restructured transmit loop (`ctx->ioWrite`). Diagnostics only; nothing reads them |
+| `0002-sslcertchecker-require-server-purpose` | Security fix #1, unchanged (5.5 still lacks it) |
+| `0003-quic-ossl-backend` | The backend switch: one `ngtcp2_crypto_ossl_ctx` per connection as ngtcp2's native handle, `configure_*_session(ssl)` in place of quictls' `configure_*_context(ctx)`, the `SSL_CTX` still pinned to TLS 1.3 as quictls did, `ngtcp2_crypto_ossl_init()` once, and `SSL_set_app_data(ssl, NULL)` before `SSL_free` as the header asks |
+| `0004-platform-socket-cloexec-macos` | 5.5's `createSocket` passes Linux's `SOCK_CLOEXEC` to `socket()`; on macOS, `fcntl(FD_CLOEXEC)` instead |
+| `0005-udpsocket-connected-sendto-macos` | The QUIC client's UDP socket is `connect()`ed, and commo still `sendto`s with an address. Linux accepts that; BSD returns `EISCONN`, so no QUIC packet ever left (found with a throwaway `sendto` errno probe: `errno=56 (Socket is already connected)`). On macOS a connected socket now sends without an address |
+
+How it runs: `dev/g1/build-commo.sh` builds 5.5 commo itself, through
+opt-in overrides (`MACTAK_COMMO_SRC`, `_PATCHES`, `_WORK`,
+`MACTAK_NATIVE_DIST`, `MACTAK_NGTCP2_PREFIX`; unset, the script is
+unchanged), into `build/commo-dist` beside the 4.6 engine. The headless
+launcher loads both, and the 5.5 engine needs a JDK the launcher doesn't
+run on yet. The QUIC check is `commo/QuicStreamingTest.java` against
+`commo/fake-quic-server.py` (aioquic 1.7.2, pinned, in a venv): a
+`takstream` server, as a TAK server's QUIC endpoint is.
+
+Findings:
+
+- **commo has two QUIC protocols.** Streaming to a TAK server (ALPN
+  `takstream`, truststore, security fix #1 applies) and peer-to-peer
+  between clients (`takcot`/`takfdp`, no certificate verification, as
+  ATAK's mesh). The first test paired a streaming client with commo's
+  peer inbound; the TLS alert 120 (`no_application_protocol`) it got
+  was the correct answer.
+- **Peer-to-peer QUIC is untested here, and blocked on macOS by a
+  pre-existing bug.** Peers learn each other's QUIC endpoint from UDP
+  mesh presence, and commo's interface scanner reports `lo0` as
+  `127.51.68.120` on macOS, so a loopback UDP inbound hears nothing.
+  `hwifscanner.cpp` is identical in 4.6, and macTAK has never used the
+  mesh path (the headless app streams over TCP). Worth its own look
+  before mesh networking is on the roadmap.
+- **5.5 deprecates `Commo.addStreamingInterface` without a transport.**
+  `HeadlessCLI` calls it, and the launcher compiles with `-Werror`.
+  The re-pin moves it to the `StreamingTransport` overload, which 4.6
+  lacks. Until then, `atak-headless` takes `MACTAK_HEADLESS_CLASSES` and
+  `MACTAK_JAVAC_LINT` (unset: unchanged), and `commo.sh` sets
+  `all,-deprecation` with its own class directory.
+- **5.5 commo stamps `access="Undefined"`** on its own pings: the
+  MIL-STD-6090 change the rebase study noted for `CotXml`.
+
+4.6, verified after the shipping-script changes: `build-commo.sh` (all
+3 canaries), `make test-tls` (5 legs) and the `run.sh` round-trip
+against `fake-cot-server.py`, all green.
+
 ## Reproduce
 
 ```sh
@@ -192,14 +278,19 @@ G55_GLES=angle bash dev/spike/g55/build-engine.sh ../atak-civ
 bash dev/spike/g55/smoke.sh
 bash dev/spike/g55/jni-tests.sh
 bash dev/spike/g55/render.sh ../atak-civ
+# commo (adds commoncommo to the sparse checkout; needs dev/g1/native-dist
+# from build-native.sh, plus protobuf libmicrohttpd curl):
+git -C ../atak-civ sparse-checkout add commoncommo
+bash dev/spike/g55/commo.sh ../atak-civ
 # re-sort the 4.6 series against a 5.5 tree (writes clean + refreshed only):
 python3 dev/spike/g55/refresh-patches.py ../atak-civ/takkernel/engine/src/main /tmp/out
 ```
 
 CI: `.github/workflows/spike-55.yml` (dispatch, or a push to a
 `spike/g55-*` branch that touches this directory) runs the same scripts
-on `macos-26` and uploads the build and Gradle logs, `summary.txt`,
-the jni-tests XML and the render PNGs. It is not a required check; a red run is the spike's
+on `macos-26` in two jobs, engine and commo, and uploads the build and
+Gradle logs, `summary.txt`, the jni-tests XML, the render PNGs and the
+commo logs. It is not a required check; a red run is the spike's
 answer, as G0's was ([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
 
 ## What's here
@@ -217,6 +308,8 @@ answer, as G0's was ([docs/ci-qa.md](../../../docs/ci-qa.md) §7).
 | `runtime.sh` | Sourced: JDK lookup (`G55_JDK<v>_HOME`, else a version-checked `java_home`) and the kernel-first classpath |
 | `smoke.sh`, `jni-tests.sh` | The G1 load canary and the G1 jni-tests on the 5.5 build |
 | `render.sh`, `render-env.sh` | The G2 render gates on the 5.5 build: `render.sh` runs ci.yml's render steps; `render-env.sh` is what `dev/g2/render/env.sh` sources instead (`MACTAK_RENDER_ENV`) |
+| `patches/commo/` | The 5.5 commo series: 5 patches, `-p1` on `commoncommo`, fuzz 0 |
+| `commo.sh`, `commo/` | Spike 2: `fetch-ngtcp2.sh` (ngtcp2 against `openssl@3`), `QuicStreamingTest.java` and `fake-quic-server.py` (the QUIC canary); `commo.sh` builds and runs it all |
 
 ## The patch port
 
@@ -350,6 +443,15 @@ patches brings the series to 37.
 7. **A missing slf4j crashed `JNI_OnLoad`** (5.5's `ManagedLogger`,
    §JNI glue). **Guard:** `common-managedlogger-guards.patch`; the
    canaries take slf4j from the engine's own runtime classpath.
+8. **commo swallows the cause of a QUIC failure.** Any exception from
+   the handshake's `write`/`read` became "quic IO error during
+   handshake", `CONN_OTHER`, whatever it was (here `EISCONN` from
+   `sendto`). `QUIC_TEST_VERBOSE=1` prints commo's whole log, and a
+   throwaway errno probe on `sendto` found it. **Guard: none yet (open).**
+   Closing it takes a commo patch that carries the errno or exception
+   text into the QUIC failure's error message, pinned by a
+   `QuicStreamingTest` leg that forces a socket error and expects the
+   cause in the output.
 
 ## Exit
 
@@ -357,8 +459,9 @@ The question this spike asked, whether 5.5's engine builds on macOS
 without 3D Tiles, is answered yes, in one day of work, most of it the
 patch port. The JNI and render steps took about a day together: the 5.5
 glue loads in a JVM, passes G1's JNI tests and draws every G2 render
-gate on ANGLE/Metal. What remains before the re-pin (study step 4), in
-order, with estimates made from this spike's pace:
+gate on ANGLE/Metal. Spike 2 took half a day: 5.5 commo, QUIC included,
+passes the G1 comms gates. What remains before the re-pin (study step
+4), in order, with estimates made from this spike's pace:
 
 1. ~~**JNI glue on 5.5**~~ **Done** (§JNI glue). Carried forward: the
    `ManagedFeatureDefinition` consumer guards and guards-mode pins for
@@ -371,16 +474,25 @@ order, with estimates made from this spike's pace:
    forward: `LayerStore`, `RenderSmoke` and `WindowApp` off the
    deprecated `FeatureDataStore` APIs, and the headless `layer.sh`
    canary, which waits for the launcher's move off Java 8.
-3. **Spike 2, commo on 5.5** (study step 2; 3–5 days): the QUIC backend
-   decision.
-4. **The re-pin** (1–2 days): fold `build-engine.sh`'s wrapper changes into
+3. ~~**Spike 2, commo on 5.5**~~ **Done** (§Commo): ngtcp2's `ossl`
+   backend over `openssl@3`. Carried forward: `HeadlessCLI` onto the
+   `StreamingTransport` overload; peer-to-peer QUIC, after the
+   pre-existing interface-scanner bug; and whether ngtcp2 is built in CI
+   as here or committed.
+4. **The Java 8 → 21 move** (2–3 days; decided on #99's review: JDK 21,
+   its own PR after this stack): CI's Zulu 8 jobs, the headless
+   launcher (then `layer.sh` and the full 5.5 headless run), the render
+   harness, and JDK 21's `this-escape` lint.
+5. **The re-pin** (1–2 days): fold `build-engine.sh`'s wrapper changes into
    `build-native.sh`, move `dev/spike/g55/patches` to `dev/g1/patches`,
    `jni-include/` to `dev/g1/jni-include` (replacing `gen-jni-headers.sh`,
    whose javah bundles 5.5 no longer uses) and `jni-tests/` over G1's,
    point `dev/g2/render/env.sh` at the 5.5 build (dropping the
    `MACTAK_RENDER_ENV` hook and the committed engine shadows for
-   `render-env.sh`'s regenerated ones), and change the 14 files that
-   name `889eee2`.
+   `render-env.sh`'s regenerated ones), move `patches/commo` and
+   `fetch-ngtcp2.sh` into `dev/g1` (dropping `build-commo.sh`'s and
+   `atak-headless`'s overrides), and change the 14 files that name
+   `889eee2`.
 
-About a week and a half to a 5.5 baseline with today's gates green,
-3D Tiles still out: the commo spike, the Java 8 move and the re-pin.
+About a week to a 5.5 baseline with today's gates green, 3D Tiles
+still out: the Java 8 move and the re-pin.

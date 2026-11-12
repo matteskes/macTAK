@@ -26,14 +26,22 @@
 #
 # Everything lands under g1/build-commo (wiped each run). A clean build is
 # well under a minute at -j$(hw.ncpu).
+#
+# Overrides (dev/spike/g55/commo.sh builds 5.5's commo with this script;
+# unset, nothing changes): MACTAK_COMMO_SRC (commoncommo tree),
+# MACTAK_COMMO_PATCHES (its -p1 series), MACTAK_COMMO_WORK (build dir),
+# MACTAK_NATIVE_DIST (staging dir, as atak-headless reads it) and
+# MACTAK_NGTCP2_PREFIX (an ngtcp2 install linked into the shim; 5.5's QUIC).
 set -euo pipefail
 
 DEV="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # <repo>/dev — this script lives at dev/g1/
 ROOT="$(cd "$DEV/.." && pwd)"                             # <repo>
 G1="$DEV/g1"
-WORK="$G1/build-commo"
-OUT="$G1/native-dist"
-COMMOSRC="$ROOT/src/commoncommo"
+WORK="${MACTAK_COMMO_WORK:-$G1/build-commo}"
+OUT="${MACTAK_NATIVE_DIST:-$G1/native-dist}"
+COMMOSRC="${MACTAK_COMMO_SRC:-$ROOT/src/commoncommo}"
+COMMO_PATCHES="${MACTAK_COMMO_PATCHES:-$G1/patches/commo}"
+NGTCP2="${MACTAK_NGTCP2_PREFIX:-}"
 JOBS="$(sysctl -n hw.ncpu)"
 HB=/opt/homebrew
 
@@ -84,7 +92,7 @@ mkdir -p "$WORK/shim" "$WORK/canary" "$OUT"
 log "copying commoncommo tree → $WORK/commo"
 rsync -a --exclude .git "$COMMOSRC/" "$WORK/commo/"
 
-for p in "$G1"/patches/commo/*.patch; do
+for p in "$COMMO_PATCHES"/*.patch; do
   [[ -e "$p" ]] || continue
   patch --forward --silent --fuzz=0 -p1 -d "$WORK/commo" < "$p" || die "patch failed: $(basename "$p")"
   log "  applied $(basename "$p")"
@@ -102,6 +110,12 @@ ln -sf  "$HB/opt/openssl@3/lib/libssl.dylib"            "$WORK/shim/lib/"
 ln -sf  "$HB/opt/openssl@3/lib/libcrypto.dylib"         "$WORK/shim/lib/"
 ln -sf  "$HB/opt/libmicrohttpd/lib/libmicrohttpd.dylib" "$WORK/shim/lib/"
 ln -sf  "$HB/lib/libprotobuf-lite.dylib"                "$WORK/shim/lib/"
+if [[ -n "$NGTCP2" ]]; then
+  # static archives: the shim's lib dir is searched before $HB/lib, whose
+  # libngtcp2_crypto_ossl.dylib links openssl@4
+  ln -sfn "$NGTCP2/include/ngtcp2" "$WORK/shim/include/ngtcp2"
+  ln -sf  "$NGTCP2"/lib/libngtcp2*.a "$WORK/shim/lib/"
+fi
 
 # --- protobuf codegen + objects ------------------------------------------
 # New protoc emits code that no longer compiles as C++11; the 2016 core
@@ -172,9 +186,13 @@ JNI_CXXFLAGS="-g -O2 -fPIC -std=c++17 -Wall -Wno-unused \
  -I$WORK/shim/PGSC_Utils/include \
  -I$JDK/include -I$JDK/include/darwin -I$WORK/shim/include/libxml2 \
  -Wno-deprecated-declarations"
+# javaversion= : 5.5's Makefile asks ant for it and, where ant is
+# installed (GitHub's macOS image), expects javac -h headers instead of
+# javah's; the empty override keeps the javah path everywhere (4.6's
+# Makefile has no such variable)
 make -C "$WORK/commo/jni/native" -j"$JOBS" all TARGET=macos \
   JAVA_HOME="$JDK" TAKTHIRDPARTYDIR="$WORK/shim" CURL_CONF="$CURL_CONF" \
-  CXXFLAGS="$JNI_CXXFLAGS" LINK_FLAGS="-shared"
+  CXXFLAGS="$JNI_CXXFLAGS" LINK_FLAGS="-shared" javaversion=
 
 # --- Java jar --------------------------------------------------------------
 log "packing jcommoncommo.jar"
@@ -244,7 +262,7 @@ if ! "$JDK/bin/java" -cp "$OUT/jcommoncommo.jar:$WORK/canary" CommoLoadSmoke \
   die "JVM Commo canary failed"
 fi
 
-log "G1.2 comms stack OK — dylibs + jar staged in g1/native-dist/"
+log "G1.2 comms stack OK — dylibs + jar staged in $OUT"
 file "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib"
 otool -L "$OUT/libcommoncommojni.dylib" | sed 's/^/  /'
 ls -lh "$OUT"

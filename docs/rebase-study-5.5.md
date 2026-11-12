@@ -137,6 +137,12 @@ never emits it. TAK servers accept CoT without it today; adding
 2. **Spike 5.5 commo.** Decide the QUIC crypto backend: Homebrew's ngtcp2,
    a quictls build, or a patch onto OpenSSL 3.5's own QUIC support. Then
    rerun `make test-roundtrip` and `make test-tls`.
+   **Done 2026-11-11: OpenSSL 3.5's own QUIC support**, through ngtcp2's
+   `ossl` backend built against `openssl@3`. quictls is OpenSSL 3.0,
+   which reached end of life on 2026-09-07, and Homebrew's ngtcp2 links
+   `openssl@4`. 5.5 commo then passes the TLS and round-trip gates, and
+   QUIC to a `takstream` server works, purpose check included
+   ([dev/spike/g55/NOTES.md](../dev/spike/g55/NOTES.md) §Commo).
 3. **Add cesium-native and draco** only when 3D Tiles is needed on macOS.
 4. **Re-pin.** CI checks out `889eee2` in two workflows
    (`ci.yml`, `cot-roundtrip.yml`), and twelve more files name it: the

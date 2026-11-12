@@ -22,6 +22,8 @@ on:
       - 'dev/g1/jni-tests/**'
       - 'dev/g1/smoke/**'
       - 'dev/g2/render/**'
+      - 'dev/g1/build-commo.sh'
+      - 'dev/g1/headless/**'
       - '.github/workflows/spike-55.yml'
 
 permissions:
@@ -153,4 +155,78 @@ jobs:
             dev/spike/g55/build/dist/*.xml
             dev/spike/g55/build/render/*.png
           if-no-files-found: warn
+          retention-days: 30
+
+  commo:
+    # Spike 2 (dev/spike/g55/NOTES.md §Commo): 5.5 commo with its QUIC on
+    # ngtcp2's ossl backend over openssl@3. dev/spike/g55/commo.sh builds
+    # ngtcp2 and 5.5 commo (dev/g1/build-commo.sh with its MACTAK_COMMO_*
+    # overrides), then runs streaming QUIC against fake-quic-server.py and
+    # the G1 TLS and round-trip gates on the headless launcher, which loads
+    # the 4.6 engine: hence the 4.6 checkout and build-native.sh here.
+    name: 5.5 commo + QUIC (macOS arm64)
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - name: Check out macTAK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out upstream ATAK CIV at the pinned commit (4.6 engine for the launcher)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: deptofdefense/AndroidTacticalAssaultKit-CIV
+          ref: 889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc # keep in sync with local src/ (docs/ci-qa.md)
+          path: src
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 (commoncommo)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: TAK-Product-Center/atak-civ
+          ref: 9f6893dd657feacc35ec5de03dad721c2e44170e # 5.5.1.10, the commit the rebase study measured
+          path: upstream-55
+          fetch-depth: 1
+          sparse-checkout: |
+            commoncommo
+          persist-credentials: false
+
+      - name: Install engine + comms dependencies (Homebrew)
+        # cot-roundtrip.yml's list
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: >
+          brew install cmake rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
+          openssl@3 libxml2 protobuf libmicrohttpd curl
+
+      - name: Set up Zulu 8 (arm64) — javah, the launcher and the QUIC canary
+        id: jdk8
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: zulu
+          java-version: '8'
+          architecture: aarch64
+
+      - name: Build the 4.6 engine (dev/g1/build-native.sh, verbatim)
+        run: bash dev/g1/build-native.sh
+
+      - name: 5.5 commo, QUIC, TLS and round-trip (dev/spike/g55/commo.sh)
+        env:
+          G55_JDK8_HOME: ${{ steps.jdk8.outputs.path }}
+        run: bash dev/spike/g55/commo.sh upstream-55
+
+      - name: Upload commo logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-55-commo
+          path: |
+            dev/spike/g55/build/commo-test/*.log
+            dev/spike/g55/build/ngtcp2-src/*.log
+            dev/g1/headless/build/failed-runs/
+          if-no-files-found: ignore
           retention-days: 30

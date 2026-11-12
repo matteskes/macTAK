@@ -1,0 +1,83 @@
+diff --git a/core/impl/platform.cpp b/core/impl/platform.cpp
+--- a/core/impl/platform.cpp
++++ b/core/impl/platform.cpp
+@@ -398,6 +398,21 @@
+ #ifdef WIN32
+     ::closesocket(fd);
+ #else
++        {
++            struct sockaddr_storage cs;
++            socklen_t cl = sizeof(cs);
++            int cp = -1;
++            if (getsockname(fd, (struct sockaddr *)&cs, &cl) == 0 &&
++                cs.ss_family == AF_INET)
++                cp = (int)ntohs(((struct sockaddr_in *)&cs)->sin_port);
++            char cdiag[96];
++            int cdn = snprintf(cdiag, sizeof(cdiag),
++                    "[commo-diag] closeSocket fd=%d lport=%d", fd, cp);
++            if (cdn > 0 && cdn < (int)sizeof(cdiag)) {
++                cdiag[cdn++] = (char)10;
++                ::write(2, cdiag, (size_t)cdn);
++            }
++        }
+     ::close(fd);
+ #endif
+ }
+@@ -459,6 +474,22 @@
+     ssize_t n = ::read(fd, data, *len);
+     if (n <= 0) {
+         *len = 0;
++        {
++            struct sockaddr_storage ss;
++            socklen_t sl = sizeof(ss);
++            int lp = -1;
++            if (getsockname(fd, (struct sockaddr *)&ss, &sl) == 0 &&
++                ss.ss_family == AF_INET)
++                lp = (int)ntohs(((struct sockaddr_in *)&ss)->sin_port);
++            char diag[128];
++            int dn = snprintf(diag, sizeof(diag),
++                    "[commo-diag] socketRead fd=%d lport=%d n=%zd errno=%d",
++                    fd, lp, (ssize_t)n, n < 0 ? errno : 0);
++            if (dn > 0 && dn < (int)sizeof(diag)) {
++                diag[dn++] = (char)10;
++                ::write(2, diag, (size_t)dn);
++            }
++        }
+ 
+         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+             return IO_WOULD_BLOCK;
+diff --git a/core/impl/streamingsocketmanagement.cpp b/core/impl/streamingsocketmanagement.cpp
+--- a/core/impl/streamingsocketmanagement.cpp
++++ b/core/impl/streamingsocketmanagement.cpp
+@@ -504,6 +504,9 @@
+ 
+     ReadLock lock(contextMutex);
+     Lock upLock(upMutex);
++    InternalUtils::logprintf(logger, CommoLogger::LEVEL_WARNING,
++        "[commo-diag] sendBroadcast type=%d ups=%d",
++        (int)type, (int)upContexts.size());
+ 
+     ContextSet::iterator iter;
+     for (iter = upContexts.begin(); iter != upContexts.end(); ++iter) {
+@@ -906,6 +909,12 @@
+                 bool doTx;
+                 doTx = ctx->ioWriteReady(inTxSelection ? &selector : NULL);
+ 
++                if (!ctx->txQueue.empty()) {
++                    InternalUtils::logprintf(logger, CommoLogger::LEVEL_WARNING,
++                        "[commo-diag] io-tx q=%d blocked=%d doTx=%d",
++                        (int)ctx->txQueue.size(),
++                        (int)ctx->protoBlockedForResponse, (int)doTx);
++                }
+                 try {
+                     if (doTx) {
+                         // Tx might have room
+@@ -915,6 +924,8 @@
+                             size_t r = item.dataLen - item.bytesSent;
+                             while (r > 0) {
+                                 size_t w = ctx->ioWrite(item.data + item.bytesSent, r);
++                                InternalUtils::logprintf(logger, CommoLogger::LEVEL_WARNING,
++                                    "[commo-diag] io-tx write w=%d r=%d", (int)w, (int)r);
+                                 writeTried = true;
+                                 if (!w)
+                                     break;
