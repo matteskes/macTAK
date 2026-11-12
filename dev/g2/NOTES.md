@@ -1,5 +1,17 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (G2.6 — 2026-11-12): elevation, GeoTIFF DEM and DTED, drawn as terrain on ANGLE
+
+The engine reads a GeoTIFF DEM (`GdalElevationChunk`) and a DTED tree
+(`DtedElevationSource`), reports the right heights (DTED converted from sea
+level with the geoid, -32 m at San Francisco), and the terrain renderer
+draws them on ANGLE with no GL error: ray casts from the tilted camera hit
+the terrain mesh within 1.7 m of the data. New gate
+`render/test/elevation.sh` (`make test-render`, CI) on a tilted-plane
+fixture of known heights; off-frame and misregistered elevation fail.
+Section "G2.6" at the end; traps #71–#73. G2 now owes the exit run, which
+also gives the live window `--elevation` (detaching it at teardown, #73).
+
 ## State (G2.4 b.1 — 2026-11-12): GeoTIFF imagery draws through GDAL, georeferenced
 
 A GeoTIFF now renders through the engine's GDAL path (`GdalLayerInfo` →
@@ -64,7 +76,7 @@ georeferenced images to the addressable `[0, w-1]` pixels:
 `GdalProjectionSmoke` accepts exactly 4.6's and 5.5's conventions
 (`(63,63)`/`(31.5,31.5)` now), and the basemap frame covers 262 036 px
 where 4.6 covered 262 144. Details: `dev/spike/g55/NOTES.md`. New G2
-traps continue this file's numbering (#57 next; #62 since M3.3; #67 since M3.4; #71 since G2.4 b.1).
+traps continue this file's numbering (#57 next; #62 since M3.3; #67 since M3.4; #71 since G2.4 b.1; #74 since G2.6).
 
 ## State (M3.2 — 2026-11-07): the Swift/AppKit shell boots the JVM in-process and hosts the window; `make test-shell` is green
 
@@ -1452,7 +1464,7 @@ starts. The M3 architecture above ("M3 design") is unchanged.
 | M3.3 (**done**) | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7); the shell's JVM runs generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) from here on | resize during a pan without glitches; frame times logged; `make test-shell` green |
 | M3.4 (**done**) | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
 | G2.4 b.1 (**done 2026-11-12**) | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
-| G2.6 | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
+| G2.6 (**done 2026-11-12**) | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
 | Exit | the full stack (imagery + vector + elevation) under the scripted gesture run | the 60 fps gate below; G2 closes |
 
 R4 is G2's branch-point risk, so it is answered before the data work; the
@@ -1839,3 +1851,84 @@ world file.
 - **Hand checks (M3.4):** on 2026-11-12 the owner checked, on real hardware
   with a mouse, drag, wheel (direction fine), ⌥-drag and double-click: all
   as expected. Pinch, rotate and two-finger scroll wait for a trackpad.
+
+## G2.6 — elevation, drawn as terrain (2026-11-12, branch `g2/elevation`)
+
+### What changed
+
+- **`ElevationSources`** (`render/src/mactak/render`): attaches elevation to
+  the engine's `ElevationSourceManager`, which feeds both height queries
+  and the terrain renderer. A directory is a DTED tree
+  (`DtedElevationSource.create`); a file is a GDAL raster
+  (`GdalElevationChunk.create(..., autoDetectMsl = true)`), wrapped so each
+  reader gets its own chunk reference (trap #71).
+- **`ElevationChecks`**: `--expect-height LAT,LON,M[,msl]` compares
+  `ElevationManager.getElevation` (above the ellipsoid) with the expected
+  height, adding the engine's geoid height for `msl`; with any
+  `--elevation` the smoke also requires ray casts from three screen points
+  to hit the terrain mesh at the engine's height there (±5 m: the mesh is a
+  level-of-detail approximation).
+- **`RenderSmoke`**: `--elevation PATH` (repeatable), `--tilt DEG`,
+  `--expect-height`; `--at` with `--res` now frames the camera on their
+  own; attached elevation counts as content the render waits for (G2
+  trap #72).
+- **Fixtures** (`fixtures/make-dem.sh`, `MakeDem.java`): one tilted plane,
+  h = 50 + 4000·(lat − 37.72) + 2000·(lon + 122.56) m (about 50–1,090 m over
+  the landmarks area), which bilinear interpolation reproduces exactly, as
+  a GeoTIFF DEM (Float32, NAD83 like 3DEP, 1/3 arc-second, tiled, 4
+  overviews, 540 KB) and a DTED level 1 cell (`dted/w123/n37.dt1`,
+  1201×1201 posts, 2.8 MB). Optional bounds and a georeference shift build
+  the off-frame and misregistered canaries.
+
+### The gate — `render/test/elevation.sh`, quoted
+
+```text
+geotiff:   height (37.79000, -122.45000) = 550.009 m, want 550.000 m (ellipsoid): ok   (x3)
+           terrain at pixel (256, 256): TerrainMesh, (37.78432, -122.45000) at 526.96 m, ground 527.31 m: ok   (x3)
+dted:      height (37.79000, -122.45000) = 517.733 m, want 517.733 m (MSL + geoid): ok   (x3)
+           terrain at pixel (256, 256): TerrainMesh, (37.78466, -122.45000) at 495.06 m, ground 496.52 m: ok   (x3)
+off-frame: height ... = NaN m: FAIL; terrain ... ground NaN m: FAIL
+shifted:   height (37.79000, -122.45000) = 540.013 m, want 550.000 m: FAIL   (x3; the terrain is drawn, misplaced)
+```
+
+Every render `glErrors=0`. The shifted leg shows why the two checks are
+separate: there the terrain mesh is drawn correctly from the data it has,
+and only the heights at known points reveal the misregistration.
+
+### Datums, for the exit run
+
+- **DTED** is above mean sea level; the engine reports ellipsoid heights,
+  adding its geoid height (−32.27 m at 37.79, −122.45) even though it logs
+  `EGM96 file is not configured`.
+- **A GeoTIFF that declares no vertical datum** reads as ellipsoid heights.
+  With `autoDetectMsl`, one that declares a sea-level datum is corrected
+  like DTED; USGS 3DEP declares NAVD88, so the exit run's real elevation
+  must be checked to read as sea level (expect the geoid offset).
+
+### Traps found on the way (#71–#73)
+
+- **#71 — an elevation chunk is disposed by whoever reads it.** Each
+  reader of an `ElevationSource` query disposes the chunk it got, and
+  `ElevationSourceBuilder.build` hands every query the same chunk: the
+  first height query worked, the second read a closed GDAL dataset
+  (`NullPointerException` in `ReadRaster_Direct`), and the terrain workers
+  hit the same. Lend each reader its own `ElevationChunk.Factory.makeShared`
+  reference, as upstream's `SrtmElevationSource` does. A/B: without the
+  lending source the GeoTIFF leg fails with those NPEs.
+- **#72 — the render smoke waited only for pixels.** With elevation and no
+  imagery or vector layer, it stopped after its 5 frames, before the
+  terrain tiles arrived, and the ray casts found a flat mesh at 0 m.
+  Attached elevation now counts as content, and the poll waits until the
+  terrain is under the rays (up to the same cap).
+
+- **#73 — a Java elevation source attached at exit crashes the process.**
+  The engine's source set is a C++ static; at exit its teardown destroys
+  the native wrapper of a Java-backed source (the GeoTIFF's
+  `ManagedElevationSource`) after the JVM is gone, and the destructor
+  crashes (`__cxa_finalize` → `~ManagedElevationSource`). Detach first.
+  A/B: `RenderSmoke` without its detach exits 134 with an `hs_err` file;
+  with it, 0 and none. The live window must detach at teardown too (exit
+  run).
+
+`ElevationData`, home of `MODEL_TERRAIN`, is deprecated in 5.5; the flag
+bit is defined locally so the compile stays `-Werror`.

@@ -38,6 +38,10 @@ expect_usage 'bad --at'               --at 37.8
 expect_usage '--expect needs a value' --expect
 expect_usage 'bad --expect'           --expect 37.8,-122.4
 expect_usage 'bad --expect'           --expect 37.8,-122.4,green
+expect_usage '--elevation needs a value' --elevation
+expect_usage 'bad --tilt'             --tilt steep
+expect_usage 'bad --expect-height'    --expect-height 37.8,-122.4
+expect_usage 'bad --expect-height'    --expect-height 37.8,-122.4,500,agl
 
 if [[ "$rc_all" -eq 0 ]]; then
   echo "[render-args] PASS: bad arguments end in usage, exit 2"
