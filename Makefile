@@ -23,7 +23,7 @@ help:
 	@echo "  check-transplants - fail if a committed transplant jar is unlisted in, or differs from, its SHA256SUMS (CI gate)"
 	@echo "  check-ots-profiles - fail if OpenTAKServer's upstream cert profiles differ from the copy test-tls pins (needs network; nightly CI)"
 	@echo "  test           - run smoke tests (dev/g1/smoke/run.sh)"
-	@echo "  test-kernel    - takkernel's own :port unit tests on Gradle 8.13 (dev/g1/kernel/test-kernel.sh; after kernel-jars)"
+	@echo "  test-kernel    - takkernel's own :port and :shared unit tests on Gradle 8.13 (dev/g1/kernel/test-kernel.sh; after kernel-jars)"
 	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"

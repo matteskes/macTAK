@@ -522,10 +522,10 @@ jobs:
           fi
 
       - name: Kernel unit tests (make test-kernel)
-        # takkernel's :port tests on Gradle 8.13, minus the classes that need
-        # Android's runtime (dev/g1/kernel/port-tests.gradle). :shared does
-        # not compile from public sources at 5.5 (dev/spike/g55/NOTES.md
-        # trap 11).
+        # takkernel's :port and :shared tests on Gradle 8.13, minus what
+        # needs the TAK artifactory: Android-runtime classes and :shared's
+        # desktop MIL-STD-2525 glue with its tests
+        # (dev/g1/kernel/kernel-tests.gradle; dev/g1/NOTES.md G1.15).
         if: needs.changes.outputs.changed == 'true'
         run: make test-kernel
 
@@ -537,6 +537,8 @@ jobs:
           path: |
             dev/g1/kernel/build/takkernel/port/build/java/reports/tests/
             dev/g1/kernel/build/takkernel/port/build/java/test-results/test/
+            dev/g1/kernel/build/takkernel/shared/build/java/reports/tests/
+            dev/g1/kernel/build/takkernel/shared/build/java/test-results/test/
           if-no-files-found: warn
 
       - name: Data-package importer canary

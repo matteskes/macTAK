@@ -192,6 +192,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `make test-kernel` runs takkernel's `:shared` tests again, beside
+  `:port` (`dev/g1/NOTES.md` G1.15; closes `dev/spike/g55/NOTES.md`
+  trap 11): 26 + 220 tests, 0 failures. `dev/g1/kernel/kernel-tests.gradle`
+  (was `port-tests.gradle`) leaves `:shared`'s desktop MIL-STD-2525 glue,
+  which needs the TAK-artifactory renderer, out of the compile and its 67
+  tests out of the run, and excludes `ToolbarItemTest` (`Bitmap` →
+  `Stub!` on the compile-only android-port substitute).
 - **The re-pin: macTAK's upstream baseline is ATAK-CIV 5.5.1.10**
   (`TAK-Product-Center/atak-civ` @ `9f6893d`, takkernel 8.30.5), replacing
   4.6.0.5 (`889eee2`); 3D Tiles stays out. `dev/spike/g55/NOTES.md` is the

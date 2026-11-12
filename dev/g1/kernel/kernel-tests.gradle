@@ -1,0 +1,32 @@
+// Gradle init script (dev/g1/kernel/test-kernel.sh): takkernel's :port and
+// :shared unit tests from public sources, minus what needs the TAK
+// artifactory. The android-port substitute is compile-time only
+// (dev/spike/g0/NOTES.md §3: its android.* members throw "Stub!" or return
+// null at runtime), and these need the real android-port to run:
+//   :port   JavaResourceManagerTest  android.content.res.Resources (12)
+//           BitmapTest, BitmapTests  android.graphics.Bitmap (5)
+//   :shared ToolbarItemTest          gov.tak.api.commons.graphics.Bitmap → Stub! (9)
+// :shared's desktop MIL-STD-2525 glue (gov.tak.platform.symbology.milstd2525,
+// src/jre) is written against a desktop armyc2.c5isr renderer that only the
+// artifactory serves, so it is left out of the compile, and its tests with
+// it: run without it, they resolve those classes from the substitute's
+// Android ones, whose symbol tables never initialize (34 failures, all
+// NullPointerException on the tables or wrong defaults). G1.15 in
+// dev/g1/NOTES.md; it closes dev/spike/g55/NOTES.md trap 11.
+allprojects {
+    afterEvaluate { project ->
+        if (project.path == ':port') {
+            project.tasks.withType(Test).configureEach {
+                exclude '**/JavaResourceManagerTest*'
+                exclude '**/BitmapTest.class', '**/BitmapTests.class'
+            }
+        }
+        if (project.path == ':shared') {
+            project.sourceSets.main.java.exclude '**/symbology/milstd2525/**'
+            project.tasks.withType(Test).configureEach {
+                exclude '**/symbology/milstd2525/**'
+                exclude '**/ToolbarItemTest*'
+            }
+        }
+    }
+}
