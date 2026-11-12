@@ -1461,3 +1461,57 @@ PASS: commo logs the handshake failure's cause: Error trying to make network con
 
 The accept and refuse legs, `make test-tls` and the hermetic CoT
 round-trip stay green with the patch.
+
+## G1.17 — `ManagedFeatureDefinition` consumer guards and pins for the 5.5 JNI patches (2026-11-12, branch `g1/managed-feature-definition-guards`)
+
+Carried forward from `dev/spike/g55/NOTES.md` §JNI glue: the 5.5 guard
+patches `jni-class-inits-new-in-55` and `common-managedlogger-guards`
+had no test, and `ManagedFeatureDefinition`'s consumers still called
+through the method IDs a failed `FeatureDefinition2_class_init` left
+NULL, as `ManagedTextFormat2`'s did before
+`textformat2-class-init-consumer-guards`.
+
+`patches/managedfeaturedefinition-consumer-guards.patch` (the series is
+now 39): `getRawGeometry`, `getName`, `getRawStyle` and `getAttributes`
+return `TE_Err` when a method ID they call is NULL; `getGeomCoding` and
+`getStyleCoding` return upstream's own fallbacks (`GeomGeometry`,
+`StyleStyle`). The version-gated consumers (`getTimestamp`,
+`getAltitudeMode`, `getExtrude`, `getTraits`) need nothing: the
+constructor returns before the `IsInstanceOf` checks on a failed init,
+so `version` stays 1.
+
+The pins, in `make test-jni`:
+
+- **Guards mode**, `featuredefinition_guards_test.cpp` (4 tests): a
+  `ManagedFeatureDefinition` around a live Java `String` on the empty
+  classpath. The constructor returns; every Java-backed consumer bails;
+  `get()` fails at `Feature_create`'s raw-geometry read; the
+  version-gated consumers return their defaults; the JNIEnv stays clean.
+- **noslf4j mode**, a new third `run.sh` leg (`managedlogger_noslf4j_test.cpp`,
+  2 tests): `JniTestsMain` under the java launcher with the kernel
+  classpath minus `slf4j-api`, so `com.atakmap.coremap.log.Log`'s class
+  init fails. One test checks that this is the case (slf4j and `Log`
+  missing, `Pointer` present), so the leg can't pass by accident; the
+  other logs at every level and checks the JNIEnv is clean. Reaching the
+  tests at all means `System.load` survived `JNI_OnLoad`.
+
+A/B on the dev Mac, each patch taken out alone:
+
+| Without | Result |
+|---|---|
+| `managedfeaturedefinition-consumer-guards` | guards mode SIGSEGV in `jni_CallIntMethodV` from `ManagedFeatureDefinition::getRawGeometry` (`JavaBackedConsumersBailOut`) |
+| the constructor hunk of `jni-class-inits-new-in-55` | guards mode SIGSEGV in `jni_IsInstanceOf` from the `ManagedFeatureDefinition` constructor (`ConstructorSurvivesFailedInit`) |
+| `common-managedlogger-guards` | noslf4j leg fails: `System.load` throws `NoClassDefFoundError: Could not initialize class com.atakmap.coremap.log.Log` and the glue never loads |
+
+The last differs from the spike's record (a SIGSEGV and an `hs_err`
+file, through the smoke): under JDK 21 and `JniTestsMain` the pending
+error escapes `JNI_OnLoad` instead. Either way the glue does not load
+without the patch.
+
+Not pinned: the `HeightmapStrategy`/`HeightmapParams` hunk of
+`jni-class-inits-new-in-55`. Its lookups follow
+`NativeElevationSource`'s in the same init, which fails first on any
+classpath without the kernel, and all three classes ship in
+`takkernel-engine`, so no real classpath reaches the new lookups with
+them missing. The elevation consumers already go through `checkInit`
+upstream, so they need no consumer guards.

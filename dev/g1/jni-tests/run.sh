@@ -9,12 +9,17 @@
 #                  fails, so the wave-5/6 class-init guards must surface
 #                  as neutral bailouts and JNI_OnLoad must fail cleanly
 #                  (JNI_ERR) instead of dying on a pending exception.
-#   kernel mode  — the takkernel jars (mavenLocal first, committed
-#                  transplants else — the smoke's rule): the Java-backed
-#                  IOProviderFactory proxy is installed as the engine's
-#                  global Filesystem and must behave on real files (the
-#                  getFileCount isDirectory fix) and bail TE_Err with a
-#                  clean JNIEnv on real Java failures.
+#   kernel mode  — the takkernel jars (dev/g1/kernel/classpath.sh): the
+#                  Java-backed IOProviderFactory proxy is installed as
+#                  the engine's global Filesystem and must behave on
+#                  real files (the getFileCount isDirectory fix) and
+#                  bail TE_Err with a clean JNIEnv on real Java failures.
+#
+# and a third time under the launcher:
+#
+#   noslf4j mode — the kernel jars minus slf4j-api: JNI_OnLoad's
+#                  ManagedLogger finds no Log class, and native logging
+#                  must go quiet instead of crashing the JVM (G1.17).
 #
 # Skips (exit 0) when no JDK 21 is present — the native build itself needs
 # none; CI's native job installs JDK 21 before build-native.sh.
@@ -64,4 +69,14 @@ TAKJNI_TEST_MODE=kernel TAKJNI_TEST_CLASSPATH="$CP" \
   --gtest_filter='JniKernel*' \
   --gtest_output="xml:$DIST/takengine-jni-kernel.xml"
 
-echo "[g1] jni-tests OK — guards + kernel pins green"
+echo "[g1] jni-tests noslf4j mode (kernel jars minus slf4j-api: the ManagedLogger's Log class cannot load)"
+CP_NO_SLF4J="$(tr ':' '\n' <<<"$CP" | grep -v '/slf4j-api-[^/]*\.jar$' | paste -sd: -)"
+[[ "$CP_NO_SLF4J" != "$CP" ]] || { echo "FATAL: no slf4j-api jar on the kernel classpath to leave out" >&2; exit 1; }
+TAKJNI_TEST_MODE=noslf4j \
+  "$JDK/bin/java" \
+  -classpath "$CP_NO_SLF4J:$CLASSES" \
+  JniTestsMain \
+  --gtest_filter='JniNoSlf4j*' \
+  --gtest_output="xml:$DIST/takengine-jni-noslf4j.xml"
+
+echo "[g1] jni-tests OK — guards, kernel and noslf4j pins green"

@@ -1,0 +1,60 @@
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDefinition.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDefinition.cpp
+@@ -121,6 +121,12 @@
+ }
+ TAKErr ManagedFeatureDefinition::getRawGeometry(RawData *value) NOTHROWS
+ {
++    // macTAK: when FeatureDefinition2_class_init failed, the method IDs the
++    // consumers call through are NULL; each consumer bails before the call
++    // (TE_Err, or upstream's default encoding). The version-gated ones are
++    // safe already: the constructor leaves version at 1 on a failed init.
++    if(!FeatureDefinition_class.getGeomCoding || !FeatureDefinition_class.getRawGeom)
++        return TE_Err;
+     if(!rawGeom.valid) {
+         LocalJNIEnv env;
+         if(env->ExceptionCheck())
+@@ -177,6 +183,8 @@
+ }
+ FeatureDefinition2::GeometryEncoding ManagedFeatureDefinition::getGeomCoding() NOTHROWS
+ {
++    if(!FeatureDefinition_class.getGeomCoding)
++        return FeatureDefinition2::GeomGeometry;
+     LocalJNIEnv env;
+     jint geomCoding = env->CallIntMethod(impl, FeatureDefinition_class.getGeomCoding);
+     if(geomCoding == com_atakmap_map_layer_feature_FeatureDefinition_GEOM_WKT) {
+@@ -193,6 +201,8 @@
+ }
+ TAKErr ManagedFeatureDefinition::getName(const char **value) NOTHROWS
+ {
++    if(!FeatureDefinition_class.getName)
++        return TE_Err;
+     if(!name.valid) {
+         LocalJNIEnv env;
+         Java::JNILocalRef result(*env, (jstring)env->CallObjectMethod(impl, FeatureDefinition_class.getName));
+@@ -246,6 +256,8 @@
+ 
+ FeatureDefinition2::StyleEncoding ManagedFeatureDefinition::getStyleCoding() NOTHROWS
+ {
++    if(!FeatureDefinition_class.getStyleCoding)
++        return FeatureDefinition2::StyleStyle;
+     LocalJNIEnv env;
+     jint geomCoding = env->CallIntMethod(impl, FeatureDefinition_class.getStyleCoding);
+     if(geomCoding == com_atakmap_map_layer_feature_FeatureDefinition_STYLE_OGR) {
+@@ -258,6 +270,8 @@
+ }
+ TAKErr ManagedFeatureDefinition::getRawStyle(RawData *value) NOTHROWS
+ {
++    if(!FeatureDefinition_class.getStyleCoding || !FeatureDefinition_class.getRawStyle)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     if(!rawStyle.valid) {
+         LocalJNIEnv env;
+@@ -294,6 +308,8 @@
+ }
+ TAKErr ManagedFeatureDefinition::getAttributes(const atakmap::util::AttributeSet **value) NOTHROWS
+ {
++    if(!FeatureDefinition_class.getAttributes)
++        return TE_Err;
+     LocalJNIEnv env;
+     if(env->ExceptionCheck())
+         return TE_Err;
