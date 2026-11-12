@@ -71,6 +71,11 @@ public final class RenderSmoke {
       + "  --layer-db    feature store dir (default: temp)\n"
       + "  --res M       camera resolution, metres/pixel (default: fit layer bounds)\n"
       + "  --at LAT,LON  camera centre (default: layer bounds centre)\n"
+      + "  --elevation P  elevation: a GeoTIFF DEM file, or a DTED directory (w123/n37.dt1);\n"
+      + "                the terrain renderer must draw it (ray casts hit the terrain mesh)\n"
+      + "  --tilt DEG    camera tilt from straight down (default 0)\n"
+      + "  --expect-height LAT,LON,M[,msl]  the engine's height there must be M metres\n"
+      + "                (+/-" + ElevationChecks.HEIGHT_TOLERANCE_M + "; msl: M is above sea level, as DTED; repeatable): G2.6\n"
       + "  --expect LAT,LON,RRGGBB  the final frame's pixel over that ground point must be\n"
       + "                that colour (per channel +/-" + PixelExpectation.TOLERANCE + "; repeatable): georeferencing, G2.4 b.1\n"
       + "  --settle MS   min wall time to keep rendering while layers load (default 3000);\n"
@@ -95,6 +100,9 @@ public final class RenderSmoke {
         double res = Double.NaN;
         double atLat = Double.NaN, atLon = Double.NaN;
         final java.util.List<PixelExpectation> expectations = new java.util.ArrayList<>();
+        final java.util.List<File> elevations = new java.util.ArrayList<>();
+        final java.util.List<ElevationChecks.Height> heights = new java.util.ArrayList<>();
+        double tilt = 0d;
         // opt and its index outlive the loop so the catch can tell a missing
         // value (nothing follows the option) from a malformed one.
         int argIndex = 0;
@@ -120,6 +128,9 @@ public final class RenderSmoke {
                     }
                     case "--settle": settleMs = Long.parseLong(args[++i]); break;
                     case "--expect": expectations.add(PixelExpectation.parse(args[++i])); break;
+                    case "--elevation": elevations.add(new File(args[++i])); break;
+                    case "--tilt": tilt = Double.parseDouble(args[++i]); break;
+                    case "--expect-height": heights.add(ElevationChecks.Height.parse(args[++i])); break;
                     case "--size": {
                         String[] wh = args[++i].split("x");
                         w = Integer.parseInt(wh[0]); h = Integer.parseInt(wh[1]);
@@ -215,6 +226,16 @@ public final class RenderSmoke {
         Layers.registerAll();
         // G2.4 b.1: GDAL imagery through GdalLayerInfo -> GdalTileReader (GdalImagery)
         GdalImagery.enable("render-smoke");
+        // G2.6: elevation for the height queries and the terrain renderer
+        final java.util.List<com.atakmap.map.elevation.ElevationSource> attached = new java.util.ArrayList<>();
+        for (File e : elevations) {
+            if (!e.exists()) {
+                System.err.println("render-smoke: no such elevation: " + e);
+                System.exit(2);
+            }
+            attached.add(ElevationSources.attach(e));
+            System.out.println("render-smoke: elevation " + e.getName() + " attached");
+        }
         Globe globe = new Globe();
         GLMapView view = new GLMapView(ctx, globe, 0, 0, w, h);
         ctx.setGLMapView(view);
@@ -263,6 +284,8 @@ public final class RenderSmoke {
             globe.addLayer(new FeatureLayer3("mactak-layer", store.dataStore()));
             frame = b;   // vector bounds win: that's what the fixture is about
         }
+        if (frame == null && !Double.isNaN(atLat) && !Double.isNaN(res))   // --at and --res frame on their own
+            frame = new Envelope(atLon, atLat, 0, atLon, atLat, 0);
         if (frame != null) {
             Envelope b = frame;
             double clat = Double.isNaN(atLat) ? (b.minY + b.maxY) / 2 : atLat;
@@ -273,8 +296,8 @@ public final class RenderSmoke {
                 double spanM = Math.max((b.maxY - b.minY) * mPerDegLat, (b.maxX - b.minX) * mPerDegLon) * 1.2;
                 res = Math.max(spanM / Math.min(w, h), 0.5);
             }
-            view.lookAt(new GeoPoint(clat, clon), res, 0d, 0d, false);
-            System.out.printf("render-smoke: camera (%.5f, %.5f) @ %.2f m/px%n", clat, clon, res);
+            view.lookAt(new GeoPoint(clat, clon), res, 0d, tilt, false);
+            System.out.printf("render-smoke: camera (%.5f, %.5f) @ %.2f m/px, tilt %.0f deg%n", clat, clon, res, tilt);
         }
 
         int glErrors = 0;
@@ -287,7 +310,8 @@ public final class RenderSmoke {
         // commit had passed 25 minutes earlier), so with content attached the
         // readback is polled as frames run and rendering continues — up to a
         // generous cap — until content pixels have actually appeared.
-        boolean hasContent = !layers.isEmpty() || !basemaps.isEmpty();
+        // elevation is content too: the terrain renderer loads its tiles asynchronously
+        boolean hasContent = !layers.isEmpty() || !basemaps.isEmpty() || !attached.isEmpty();
         long deadline = System.currentTimeMillis() + (hasContent ? settleMs : 0);
         long cap = System.currentTimeMillis() + (hasContent ? Math.max(settleMs * 5, 15000) : 0);
         boolean contentSeen = !hasContent;
@@ -335,7 +359,8 @@ public final class RenderSmoke {
             if (hasContent) {
                 if (rendered % 4 == 0)      // poll: has the async content landed?
                     contentSeen = NativeEgl.readPixels(px) && countNonClear(px, w, h)
-                            >= ContentGate.requiredPixels(w, h, !layers.isEmpty(), !basemaps.isEmpty());
+                            >= ContentGate.requiredPixels(w, h, !layers.isEmpty(), !basemaps.isEmpty())
+                            && (attached.isEmpty() || ElevationChecks.terrainUnderRays(view, w, h));
                 try { Thread.sleep(16); } catch (InterruptedException e) { break; }
             }
             if (windowMode) {
@@ -364,6 +389,10 @@ public final class RenderSmoke {
         boolean expectationsHold = true;
         for (PixelExpectation e : expectations)
             expectationsHold &= e.check(view, px, w, h);
+        boolean heightsHold = true;
+        for (ElevationChecks.Height e : heights)
+            heightsHold &= e.check();
+        final boolean terrainHolds = attached.isEmpty() || ElevationChecks.terrainDrawn(view, w, h);
 
         if (out != null) {
             try {
@@ -375,6 +404,8 @@ public final class RenderSmoke {
         view.stop();
         view.release();
         globe.dispose();
+        // before exit, or C++ static teardown crashes (ElevationSources.detach, G2 trap #73)
+        for (com.atakmap.map.elevation.ElevationSource e : attached) ElevationSources.detach(e);
         if (store != null) store.close();
         if (rasterStore != null) rasterStore.dispose();
         NativeEgl.release();
@@ -392,11 +423,15 @@ public final class RenderSmoke {
             System.err.println("render-smoke: FAIL: " + swapFails + " of " + (presented + swapFails) + " presents failed");
         final long required = ContentGate.requiredPixels(w, h, !layers.isEmpty(), !basemaps.isEmpty());
         boolean pass = readOk && glErrors == 0 && sentinel == 0 && resizeSeen
-                && content >= required && windowOk && expectationsHold;
+                && content >= required && windowOk && expectationsHold && heightsHold && terrainHolds;
         if (content < required)
             System.err.println("render-smoke: FAIL: " + ContentGate.failure(content, required, w, h, !basemaps.isEmpty()));
         if (!expectationsHold)
             System.err.println("render-smoke: FAIL: a pixel over a known ground point has the wrong colour (--expect)");
+        if (!heightsHold)
+            System.err.println("render-smoke: FAIL: a height at a known point is wrong (--expect-height)");
+        if (!terrainHolds)
+            System.err.println("render-smoke: FAIL: the terrain renderer did not draw the elevation (ray casts missed the terrain mesh)");
         System.out.println(pass ? "render-smoke: PASS" : "render-smoke: FAIL");
         System.exit(pass ? 0 : 1);
     }

@@ -340,6 +340,13 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/geotiff.sh
 
+      - name: Elevation, GeoTIFF DEM and DTED, drawn as terrain (G2.6)
+        # a tilted-plane DEM of known heights: the engine's heights match it
+        # (DTED with the geoid), ray casts hit the terrain mesh; off-frame and
+        # misregistered elevation must fail (render/test/elevation.sh)
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/elevation.sh
+
       - name: Dynamic-size render smoke (--resize mid-run, M3.1)
         # pbuffer rebuild via NativeEgl.resize; PASS requires the surface's
         # OnSizeChangedListeners to fire and content pixels at the new size
@@ -387,6 +394,7 @@ jobs:
             dev/g2/build/render-layer.png
             dev/g2/build/render-basemap.png
             dev/g2/build/render-geotiff.png
+            dev/g2/build/render-elevation.png
             dev/g2/build/render-resize.png
             dev/g2/build/render-resize-layer.png
             dev/g2/build/render-window.png

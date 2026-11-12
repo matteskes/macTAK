@@ -9,6 +9,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G2.6, elevation (`dev/g2/NOTES.md` §G2.6): GeoTIFF DEMs and DTED attach
+  to the engine's elevation manager (`ElevationSources`); heights read back
+  right (DTED with the geoid) and the terrain renderer draws them on ANGLE.
+  `RenderSmoke` gains `--elevation`, `--tilt` and `--expect-height`, and
+  checks that ray casts hit the terrain mesh. New fixtures
+  `fixtures/make-dem.sh` (a tilted plane of known heights, as a GeoTIFF DEM
+  and a DTED cell) and gate `render/test/elevation.sh` (make test-render,
+  CI): heights at known points, terrain under the rays; off-frame and
+  misregistered elevation fail.
 - G2.4 b.1, GeoTIFF imagery (`dev/g2/NOTES.md` §G2.4 b.1): GeoTIFFs (and
   other GDAL rasters) render through the engine's GDAL path in the render
   smoke and the live window. The render path draws GDAL datasets with
