@@ -1,5 +1,5 @@
-# Evidence clone: nested upstream git repo (deptofdefense/AndroidTacticalAssaultKit-CIV @ 889eee2),
-# ~1.8 GB. Kept as a sibling checkout for citation; never committed here.
+# Upstream clone: nested git repo (TAK-Product-Center/atak-civ @ 9f6893d, sparse,
+# CONTRIBUTING.md §Setup). Read-only; never committed here.
 /src/
 
 # GOTS WinTAK installers (~344 MB, public-release but never committed here)
@@ -13,6 +13,8 @@
 
 # G1.2 comms stack: throwaway build tree (wiped/rebuilt by dev/g1/build-commo.sh)
 /dev/g1/build-commo/
+# ngtcp2 for commo's QUIC (dev/g1/fetch-ngtcp2.sh; cached across commo builds)
+/dev/g1/build-ngtcp2/
 
 # G1 probe/build logs (diagnostics, not evidence)
 /dev/g1/*.log

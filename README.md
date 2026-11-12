@@ -25,7 +25,7 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 |---|---|
 | `docs/` | Program documents: feasibility study, architecture evidence, roadmap, CI/QA plan, Pathway A baseline |
 | `dev/` | Development workspace: `dev/g1/` native engine build harness (recipe + patch set), `dev/spike/` gate-spike records (`dev/spike/g0/` = G0 build recipe, wrapper, patch catalog; `dev/spike/g55/` = the 5.5 rebase: ported patch series, build harness, record), `dev/reference/` test rig — CoT client tools (committed); WinTAK-derived captures (`.gitignore`d — GOTS artifacts never enter this repo) |
-| `src/` | Read-only pinned clone of upstream ATAK-CIV @ `889eee2` (v4.6.0.5) — evidence tree; changes to it are exported as patch files, never committed in place |
+| `src/` | Read-only pinned sparse clone of upstream ATAK-CIV, `TAK-Product-Center/atak-civ` @ `9f6893d` (5.5.1.10; 4.6.0.5 @ `889eee2` until the 2026-11-11 re-pin) — changes to it are exported as patch files, never committed in place |
 
 ## Project documents
 
@@ -44,7 +44,7 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 
 ## Local gates
 
-Run `make hooks` once per clone to install the git hooks (`core.hooksPath .githooks`). The pre-commit hook then checks every staged file: `shellcheck` + `bash -n` on `*.sh`, `markdownlint-cli2` on `*.md`, `actionlint` on `.github/workflows/*.yml`, and SHA256 verification of jars under `dev/g1/transplants/`, `dev/spike/g0/transplants/` and `dev/spike/g55/transplants/` against their `SHA256SUMS` manifests. Optional tools that are not installed are skipped with a visible message. `make lint` runs the same checks across the whole `dev/` tree, sweeping the repo's own docs but skipping the read-only `src/` pin — CI's docs job likewise lints only PR-changed `*.md`.
+Run `make hooks` once per clone to install the git hooks (`core.hooksPath .githooks`). The pre-commit hook then checks every staged file: `shellcheck` + `bash -n` on `*.sh`, `markdownlint-cli2` on `*.md`, `actionlint` on `.github/workflows/*.yml`, and SHA256 verification of jars under `dev/g1/transplants/` and `dev/spike/g0/transplants/` against their `SHA256SUMS` manifests. Optional tools that are not installed are skipped with a visible message. `make lint` runs the same checks across the whole `dev/` tree, sweeping the repo's own docs but skipping the read-only `src/` pin — CI's docs job likewise lints only PR-changed `*.md`.
 
 ## License
 

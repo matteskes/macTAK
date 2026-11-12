@@ -32,14 +32,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 G1="$(cd "$HERE/.." && pwd)"
 ROOT="$(cd "$G1/../.." && pwd)"
 DIST="${MACTAK_NATIVE_DIST:-$G1/native-dist}"
-# MACTAK_HEADLESS_CLASSES / MACTAK_JAVAC_LINT: the class dir and javac's
-# -Xlint set, for runs against another comms build (dev/spike/g55/commo.sh:
-# 5.5's commo deprecates the addStreamingInterface overload used here).
-# Unset, nothing changes.
-OUT="${MACTAK_HEADLESS_CLASSES:-$HERE/build/classes}"
-JAVAC_LINT="${MACTAK_JAVAC_LINT:-all}"
-VER="${TAKKERNEL_VER:-0.59.1}"
-M2="${HOME}/.m2/repository"
+OUT="$HERE/build/classes"
 
 # shellcheck source=SCRIPTDIR/../../jdk.sh
 source "$ROOT/dev/jdk.sh"
@@ -51,33 +44,30 @@ JDK="$(mactak_jdk_home 21 || true)"
 [[ -f "$DIST/libcommoncommo.dylib" && -f "$DIST/libcommoncommojni.dylib" && -f "$DIST/jcommoncommo.jar" ]] \
   || { echo "atak-headless: comms stack not staged in $DIST — run $G1/build-commo.sh" >&2; exit 1; }
 
-# mavenLocal first, else the committed transplants — same contract as dev/g1/smoke/run.sh.
-jar() { if [[ -f "$1" ]]; then echo "$1"; else echo "$2"; fi; }
-KERNEL_M2="$M2/gov/tak/kernel"
-TRANS="$G1/transplants"
-CP="$DIST/jcommoncommo.jar"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-engine/$VER/takkernel-engine-$VER.jar" "$TRANS/takkernel-engine-$VER.jar")"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-port/$VER/takkernel-port-$VER.jar" "$TRANS/takkernel-port-$VER.jar")"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-annotation/$VER/takkernel-annotation-$VER.jar" "$TRANS/takkernel-annotation-$VER.jar")"
-CP="$CP:$(jar "$M2/gov/tak/support/android-port/3.1.0/android-port-3.1.0.jar" \
-            "$ROOT/dev/spike/g0/transplants/android-port-3.1.0.jar")"
-# com.atakmap.coremap.log.Log (java target) logs through slf4j; 1.7.30 is upstream's pin.
-CP="$CP:$(jar "$M2/org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar" "$TRANS/slf4j-api-1.7.30.jar")"
-CP="$CP:$(jar "$M2/org/slf4j/slf4j-simple/1.7.30/slf4j-simple-1.7.30.jar" "$TRANS/slf4j-simple-1.7.30.jar")"
-for j in ${CP//:/ }; do
-  [[ -f "$j" ]] || { echo "atak-headless: missing jar: $j" >&2; exit 1; }
-done
+# The takkernel jars and their runtime classpath (dev/g1/kernel/classpath.sh:
+# kernel first, android-port last). com.atakmap.coremap.log.Log logs through
+# slf4j: the runtime classpath brings slf4j-api 1.7.30 but no binding, so the
+# slf4j-simple transplant is that binding (its log level is set below).
+# shellcheck source=SCRIPTDIR/../kernel/classpath.sh
+source "$G1/kernel/classpath.sh"
+KERNEL_CP="$(mactak_kernel_classpath)" \
+  || { echo "atak-headless: no takkernel jars in $MACTAK_KERNEL_DIST — run $G1/kernel/build-kernel-jars.sh" >&2; exit 1; }
+CP="$DIST/jcommoncommo.jar:$KERNEL_CP:$G1/transplants/slf4j-simple-1.7.30.jar"
 
 # GDAL_DATA for the engine's GdalLibrary::init (Homebrew gdal; override with GDAL_DATA).
 GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/homebrew/opt/gdal/share/gdal)}"
 [[ -d "$GDAL_DATA_DIR" ]] || { echo "atak-headless: GDAL data dir not found: $GDAL_DATA_DIR (brew install gdal)" >&2; exit 1; }
 
-# Recompile when the class dir is missing or any source is newer than it. A
-# failed compile removes the dir so the next run retries instead of running
-# against a stale/partial class set.
-if [[ ! -d "$OUT" ]] || [[ -n "$(find "$HERE/src" -name '*.java' -newer "$OUT" -print -quit)" ]]; then
+# Recompile when the class dir is missing, or any source or any jar it was
+# compiled against is newer than it: a rebuilt kernel or commo jar (an
+# upstream re-pin) must not run against classes compiled for the old one.
+# A failed compile removes the dir so the next run retries instead of
+# running against a stale/partial class set.
+if [[ ! -d "$OUT" ]] \
+   || [[ -n "$(find "$HERE/src" -name '*.java' -newer "$OUT" -print -quit)" ]] \
+   || [[ -n "$(find "$MACTAK_KERNEL_DIST" "$DIST/jcommoncommo.jar" -name '*.jar' -newer "$OUT" -print -quit)" ]]; then
   rm -rf "$OUT"; mkdir -p "$OUT"
-  "$JDK/bin/javac" --release 21 -Xlint:"$JAVAC_LINT" -Werror -encoding UTF-8 \
+  "$JDK/bin/javac" --release 21 -Xlint:all -Werror -encoding UTF-8 \
     -classpath "$CP" -d "$OUT" "$HERE"/src/mactak/headless/*.java \
     || { rm -rf "$OUT"; exit 1; }
   touch "$OUT"

@@ -192,6 +192,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The re-pin: macTAK's upstream baseline is ATAK-CIV 5.5.1.10**
+  (`TAK-Product-Center/atak-civ` @ `9f6893d`, takkernel 8.30.5), replacing
+  4.6.0.5 (`889eee2`); 3D Tiles stays out. `dev/spike/g55/NOTES.md` is the
+  record (State: re-pin, traps 10–13).
+  - Engine: `build-native.sh` builds 5.5 (tinygltf from upstream's LFS
+    tarball, assimp/mdbtools/glib/curl, Ninja `-k 0` with
+    `summarize-build.py`); `dev/g1/patches` is the 38-patch 5.5 series;
+    `dev/g1/jni-include` the 116 `javac -h` headers (`gen-jni-headers.sh`
+    goes). Two stale upstream tessellation tests are excluded by name
+    (trap 10).
+  - Kernel jars build from `src/` (`dev/g1/kernel/build-kernel-jars.sh`,
+    `make kernel-jars`) into `dev/g1/kernel-dist`, ordered by
+    `dev/g1/kernel/classpath.sh`; the 0.59.1 transplants and `slf4j-api`
+    go. `make test-kernel` runs takkernel's `:port` tests; `:shared` does
+    not compile from public sources at 5.5 and is open (trap 11).
+  - Commo: the 5-patch 5.5 series, QUIC on ngtcp2's `ossl` backend
+    (`dev/g1/fetch-ngtcp2.sh`), JNI headers from `javac -h`;
+    `make test-quic` with aioquic `--require-hashes`.
+  - Java: `LayerStore` on `PersistentDataSourceFeatureDataStore3`,
+    `FeatureLayer3` over `FeatureDataStore4`, `HeadlessCLI` on the
+    `StreamingTransport` overload; `-Xlint:all -Werror`, no relaxations.
+    `atak-headless` recompiles when a jar changes (trap 12).
+  - Render: `dev/g2/render/env.sh` regenerates the engine shadows from
+    `src/`; `engine-shadows/` and `make check-engine-shadows` go.
+  - JDK 21 only (`dev/jdk.sh`); CI checks out the 5.5 tree sparse, builds
+    the kernel jars, and renames the JVM job "JVM tests (macOS arm64)";
+    `spike-55.yml` goes. `.markdownlint-cli2.jsonc` honours `.gitignore`
+    (trap 13).
 - atak-headless's outgoing CoT carries `access='Undefined'` on both its
   events, presence and marker (`CotXml.java`). MIL-STD-6090 requires the
   attribute, and 5.5's `takproto/cotevent.proto` asks new clients to

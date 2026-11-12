@@ -1,6 +1,6 @@
 --- a/tmp/takeng-src/cpp/raster/gdal/GdalLibrary.cpp
 +++ b/tmp/takeng-src/cpp/raster/gdal/GdalLibrary.cpp
-@@ -23,6 +23,17 @@
+@@ -23,6 +23,17 @@ namespace atakmap {
              namespace {
                  bool initImpl(const char *gdalDir)
                  {
@@ -15,6 +15,6 @@
 +                    // (GDAL >= 3.5 reads this at OGRSpatialReference construction).
 +                    // Set first: nothing below may build an SRS before it.
 +                    CPLSetConfigOption("OSR_DEFAULT_AXIS_MAPPING_STRATEGY", "TRADITIONAL_GIS_ORDER");
-                     // NOTE: AllRegister automatically loads the shared libraries
-                     GDALAllRegister();
-                     CPLSetConfigOption("GDAL_DATA", util::getFileAsAbsolute(gdalDir).c_str());
+                     if (gdalDir) {
+                         // NOTE: AllRegister automatically loads the shared libraries
+                         GDALAllRegister();

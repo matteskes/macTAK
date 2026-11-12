@@ -1,17 +1,17 @@
 --- a/tmp/takeng-src/java/com/atakmap/map/gdal/GdalLibrary.java
 +++ b/tmp/takeng-src/java/com/atakmap/map/gdal/GdalLibrary.java
-@@ -118,6 +118,7 @@
-         try {
+@@ -132,6 +132,7 @@ public class GdalLibrary
+         {
              EPSG_4326 = new SpatialReference();
              EPSG_4326.ImportFromEPSG(4326);
 +            traditionalGisOrder(EPSG_4326);
-         } catch(Exception e) {
+         } catch (Exception e)
+         {
              Log.d("GdalLibrary", "XXX: Failed to init GDAL_DATA");
-         }
-@@ -333,4 +334,21 @@
-     }
+@@ -448,4 +449,21 @@ public class GdalLibrary
  
      public static native void registerProjectionSpi();
+     static native void setThreadLocalConfigOption(String key, String value);
 +
 +    /**
 +     * macTAK (G2.4b, trap #48): GDAL &gt;= 3 honours the authority's axis
@@ -32,10 +32,10 @@
  }
 --- a/tmp/takeng-src/java/com/atakmap/map/layer/raster/gdal/GdalDatasetProjection2.java
 +++ b/tmp/takeng-src/java/com/atakmap/map/layer/raster/gdal/GdalDatasetProjection2.java
-@@ -36,7 +36,9 @@
-     protected final int nativeSpatialReferenceID;
+@@ -41,7 +41,9 @@ public abstract class GdalDatasetProjection2 implements DatasetProjection2
  
-     protected GdalDatasetProjection2(SpatialReference datasetSpatialReference) {
+     protected GdalDatasetProjection2(SpatialReference datasetSpatialReference)
+     {
 -        this.datasetSpatialReference = datasetSpatialReference;
 +        // macTAK (G2.4b, trap #48): both transforms below are driven as
 +        // lon,lat / x,y; on GDAL 3 the dataset SRS must say so explicitly

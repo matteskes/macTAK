@@ -23,7 +23,7 @@ assumes them:
 | [docs/ci-qa.md](docs/ci-qa.md) | CI tiers, runner strategy, as-landed state |
 | [docs/atak-feature-coverage.md](docs/atak-feature-coverage.md) | ATAK's feature set mapped to what macTAK supports today |
 | [docs/rebase-study-5.5.md](docs/rebase-study-5.5.md) | Measured cost of moving the upstream baseline from 4.6 to 5.5 |
-| [dev/spike/g55/NOTES.md](dev/spike/g55/NOTES.md) | The 5.5 rebase as it runs: the patch port, each iteration's state, traps |
+| [dev/spike/g55/NOTES.md](dev/spike/g55/NOTES.md) | How the baseline moved from 4.6 to 5.5: the patch port, each step, traps, and where every piece now lives |
 | [dev/g1/NOTES.md](dev/g1/NOTES.md) · [dev/g2/NOTES.md](dev/g2/NOTES.md) | Engineering notes: how each milestone actually went — traps, gate logs, guards |
 
 ## Setup
@@ -37,25 +37,31 @@ make hooks                       # install the pre-commit gate (core.hooksPath .
 
 - **JDK 21 (arm64)** for all JVM work: every JVM macTAK starts (canaries,
   `atak-headless`, the render harness, `jni-tests`, the shell's in-process
-  `JNI_CreateJavaVM`) and the `javac` for macTAK's own Java
-  (`--release 21`). `brew install --cask zulu@21`; any JDK 21 arm64 works.
-- **JDK 8 (arm64)** beside it, as a 4.6 build tool only until the 5.5
-  re-pin: upstream's Gradle 6.9.1 runs on JDK 16 at most, and 4.6 commo's
-  JNI Makefile calls `javah`, which JDK 10 removed. `brew install --cask
-  zulu@8`. `dev/jdk.sh` finds both and checks each one's version; set
-  `MACTAK_JDK21_HOME` or `MACTAK_JDK8_HOME` to pick a specific one. CI
-  installs both with `setup-java`.
-- **`src/` is populated by you, never committed** (gitignored): the read-only
-  upstream pin is `deptofdefense/AndroidTacticalAssaultKit-CIV` @
-  `889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc` (v4.6.0.5, recursive submodules).
-  Clone it, check out that commit, `submodule update --init --recursive` into
-  `./src` — this mirrors CI's checkout step exactly. CI's ref and this pin
-  are kept in sync via `docs/ci-qa.md`.
+  `JNI_CreateJavaVM`), the `javac` for macTAK's own Java (`--release 21`)
+  and the takkernel Gradle build (8.13). `brew install --cask zulu@21`;
+  any JDK 21 arm64 works. `dev/jdk.sh` finds it and checks its version;
+  `MACTAK_JDK21_HOME` picks a specific one.
+- **`src/` is populated by you, never committed** (gitignored): the
+  read-only upstream pin is `TAK-Product-Center/atak-civ` @
+  `9f6893dd657feacc35ec5de03dad721c2e44170e` (5.5.1.10), a sparse checkout
+  plus one Git LFS file — the same paths CI's engine jobs check out:
 
-First build is the long one (~460 translation units): `make build` (engine +
-comms), then `make angle` (stages the SHA256-pinned ANGLE pair, writes
-`PROVENANCE.txt`, runs the pbuffer smoke) and `make build-angle` (rebuilds
-with `MACTAK_GLES=angle`).
+  ```bash
+  git clone --filter=blob:none --no-checkout https://github.com/TAK-Product-Center/atak-civ src
+  git -C src sparse-checkout set takkernel commoncommo takcot takproto khronos \
+      takengine/thirdparty/tinygltfloader depends
+  GIT_LFS_SKIP_SMUDGE=1 git -C src checkout 9f6893dd657feacc35ec5de03dad721c2e44170e
+  git -C src lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
+  ```
+
+  CI's ref and this pin are kept in sync (`ci.yml`, `cot-roundtrip.yml`).
+  The 4.6 baseline (`deptofdefense/AndroidTacticalAssaultKit-CIV` @
+  `889eee2`) ended at the re-pin; `dev/spike/g55/NOTES.md` records the move.
+
+First build is the long one (~470 translation units): `make build` (kernel
+jars from `src/`, engine, comms), then `make angle` (stages the SHA256-pinned
+ANGLE pair, writes `PROVENANCE.txt`, runs the pbuffer smoke) and
+`make build-angle` (rebuilds with `MACTAK_GLES=angle`).
 
 ## The gate ladder
 
@@ -66,13 +72,14 @@ gate passes, the artifact was really produced this run.
 
 | Target | What it proves | Runs where |
 |---|---|---|
-| `make build` | engine + comms compile and link | CI + local |
+| `make build` | the kernel jars build from `src/`; engine + comms compile and link; the engine C++ tests, JNI tests and load canaries pass | CI + local |
+| `make test-kernel` | takkernel's own `:port` unit tests on Gradle 8.13 (Android-runtime classes excluded, `dev/g1/kernel/port-tests.gradle`) | CI (JVM job) + local |
 | `make test-roundtrip` | CoT in/out, hermetically: two headless clients vs `dev/g1/headless/fake-cot-server.py` (no external TAK server) | CI (on `dev/g1/**` changes) + local |
-| `make test-jni` | the wave-5/6 JNI guards and the Java-backed `IOProviderFactory` proxy on a real desktop JVM: guards 7 pins (neutral bailouts, clean `JNI_OnLoad` failure) + kernel 6 pins (real files through the proxy) | CI (native job, Zulu 8) + local; skips (exit 0) when no JDK 8 is installed |
+| `make test-jni` | the wave-5/6 JNI guards and the Java-backed `IOProviderFactory` proxy on a real desktop JVM: guards 7 pins (neutral bailouts, clean `JNI_OnLoad` failure) + kernel 6 pins (real files through the proxy) | CI (native job) + local; skips (exit 0) when no JDK 21 is installed |
+| `make test-quic` | commo streams over QUIC (ngtcp2's `ossl` backend) to a hash-pinned aioquic stand-in, and refuses a clientAuth-only impostor certificate | CI (comms job) + local |
 | `make test-render` | a GeoJSON layer over MBTiles renders through the engine into an EGL pbuffer, zero GL errors, PNG artifact | CI + local |
 | `make test-render-resize` / `test-render-window` | the window surface survives mid-run `drawableSize` changes | CI + local |
 | `make check-gen-gles-shim` | committed GLES shim matches its generator's output | CI + local |
-| `make check-engine-shadows` | every Java shadow equals upstream + its patch, byte for byte | CI + local (needs `src/`) |
 | `make build-shell` | the Swift/C shell compiles | CI + local |
 | `make smoke-window` / `make test-shell` | a real window opens and presents frames | **dev Mac only** — needs a GUI session; CI runners have no WindowServer, so CI compiles the shell but the last mile of every window milestone is a local gate |
 
@@ -80,8 +87,9 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 
 ## Non-negotiables
 
-- **License:** the repo inherits GPL-3.0 from upstream
-  `deptofdefense/AndroidTacticalAssaultKit-CIV`; contributions are licensed
+- **License:** the repo inherits GPL-3.0 from upstream ATAK-CIV
+  (`TAK-Product-Center/atak-civ`, formerly
+  `deptofdefense/AndroidTacticalAssaultKit-CIV`); contributions are licensed
   GPL-3.0. macTAK is an independent open-source project — not an official TAK
   product and not affiliated with the US Government.
 - **`src/` is read-only, always.** Engine changes are exported as patch files
@@ -93,16 +101,20 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 - **Binaries carry proof.** Jars are committed only under `transplants/` with
   a `SHA256SUMS` manifest that lists every jar; `dev/check-transplants.sh`
   verifies them (pre-commit hook, `make check-transplants`, and CI's lint
-  job on every PR), and an unlisted jar fails it. External
-  downloads (ANGLE) are SHA256-pinned in `dev/g2/fetch-angle.sh`, which
-  writes `PROVENANCE.txt`.
+  job on every PR), and an unlisted jar fails it. The takkernel jars are
+  not committed: CI and `make build` build them from the pinned `src/`.
+  External downloads are SHA256-pinned: ANGLE (`dev/g2/fetch-angle.sh`,
+  which writes `PROVENANCE.txt`), ngtcp2 (`dev/g1/fetch-ngtcp2.sh`) and
+  aioquic with its dependencies (`--require-hashes`,
+  `dev/g1/headless/test/requirements-quic.txt`).
 
 ## Where changes land
 
 | You're changing | It goes in | Enforced by |
 |---|---|---|
-| Engine C++ behavior | `dev/g1/patches/*.patch` — one focused patch per fix, with the why in comments at the patch site | patches are the only path; `check-engine-shadows` re-applies them |
-| Engine Java classes (render path) | `dev/g2/render/engine-shadows/<class>` + its `.patch` twin under `dev/g1/patches/` | `check-engine-shadows`: shadow must equal upstream + patch, byte for byte |
+| Engine C++ behavior | `dev/g1/patches/*.patch` — one focused patch per fix, with the why in comments at the patch site | patches are the only path; `build-native.sh` applies them at `--fuzz=0` and fails on any hunk that does not |
+| Engine Java classes (render path) | a Java hunk in `dev/g1/patches/*.patch`, nothing else: `dev/g2/render/env.sh` regenerates the shadowed class from `src/` + the hunk on each compile | the hunk must apply at `--fuzz=0` or the render build fails; there is no committed copy to drift |
+| A newer upstream baseline | the record `dev/spike/g55/NOTES.md` describes; `dev/spike/g55/refresh-patches.py` sorts `dev/g1/patches` against the new tree | the full gate ladder on the new tree |
 | The GLES shim (`android.opengl.GLES20/30` + JNI forwarder) | the generator `dev/g2/gen-gles-shim.py`, then `make gen-gles-shim` and commit the output | `check-gen-gles-shim` fails on hand-edited output ("a miss is loud, not silent") |
 | Native host (Swift/C), render harness, headless tools | `dev/g2/shell/`, `dev/g2/render/`, `dev/g1/headless/` | `shellcheck -x` + `bash -n` via hook and `make lint` |
 | Docs | the doc itself + `CHANGELOG.md` under **Unreleased** | `docs.yml` (markdownlint + link check) |
@@ -129,12 +141,11 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 
 | Workflow | Triggers | Jobs |
 |---|---|---|
-| `ci.yml` | push / pull_request on `main` | the gate ladder above — native engine, ANGLE render + drift gates, shell compile, comms stack, JVM tests, lint |
+| `ci.yml` | push / pull_request on `main` | the gate ladder above — native engine, ANGLE render + GLES-shim drift gate, shell compile, comms stack + QUIC, JVM tests (kernel jars, JNI-header drift, `test-kernel`, canaries), lint |
 | `cot-roundtrip.yml` | PRs / pushes touching `dev/g1/**` | hermetic CoT round-trip gate |
 | `docs.yml` | **every PR targeting `main`** (unconditionally, so the required check always reports) | markdownlint + lychee link check on changed `*.md` |
 | `supply-chain.yml` | Brewfile or any workflow changes | the Brewfile equals every workflow's brew installs; `brew bundle check` against the committed `Brewfile.lock.json`; osv-scanner |
 | `ots-profile-drift.yml` | nightly; PRs touching the checker or its fixture | the pinned OpenTAKServer cert profiles still match upstream (not a PR gate) |
-| `spike-55.yml` | pushes to `spike/g55-*` touching `dev/spike/g55/`; dispatch | the 5.5 rebase's build and gates on `macos-26` — evidence, not a required check |
 
 Two consequences worth knowing before your first PR:
 
@@ -146,41 +157,19 @@ Two consequences worth knowing before your first PR:
 - The link check resolves relative links between docs — keep them working
   when you move files.
 
-## Rebase work (4.6 → 5.5), until the re-pin
+## Moving the upstream baseline
 
-The upstream baseline is moving from `889eee2` to
-`TAK-Product-Center/atak-civ` 5.5.1.10 in stages
-([docs/rebase-study-5.5.md](docs/rebase-study-5.5.md)). Until the re-pin,
-5.5 work runs beside the 4.6 build without touching it:
-
-- **Where it lands.** The 5.5 patch series lives in
-  `dev/spike/g55/patches/`, each patch under the same filename as its
-  `dev/g1/patches/` twin. A fix to a 4.6 patch lands in both series in
-  the same PR, or the PR says why it does not apply to 5.5. Harness
-  changes go in `dev/spike/g55/`; `src/`, `dev/g1/build-native.sh` and
-  the `889eee2` pin stay as they are until the re-pin.
-- **Reusing the 4.6 gates.** A 5.5 run reuses a G1/G2 script through an
-  opt-in `MACTAK_*` override rather than a copy, so both versions run
-  one copy of each gate. Unset, the override changes nothing about the
-  4.6 behaviour, and the script's header documents it. At the re-pin the
-  defaults move to 5.5 and the wrappers in `dev/spike/g55/` go.
-- **Binaries.** 5.5 jars may be built in CI from the pinned upstream
-  commit (the 5.5 engine and android-port jars are), so no binary enters
-  the repo. A 5.5 jar that is committed goes in
-  `dev/spike/g55/transplants/` with a `SHA256SUMS` that lists every one;
-  `dev/check-transplants.sh` and the pre-commit hook already cover that
-  directory.
-- **Shadows.** No 5.5 engine shadow lands without a drift gate that does
-  for it what `check-engine-shadows` does for 4.6.
-- **Branches, commits, CI.** Branches are `spike/g55-<topic>` (what
-  `spike-55.yml` triggers on); commits use the `spike:` area. Each
-  iteration's gate (JNI canary, render smoke) joins `spike-55.yml` as a
-  job: evidence, not a required check. The gates move into `ci.yml` at the
-  re-pin.
-- **Records.** Each iteration adds a dated State section to
-  [dev/spike/g55/NOTES.md](dev/spike/g55/NOTES.md); its traps continue
-  that file's numbering, and CHANGELOG entries cite g55 trap numbers and
-  patch filenames.
+The baseline moved from 4.6 (`889eee2`) to 5.5.1.10 (`9f6893d`) on
+2026-11-11, in stages, through a spike under `dev/spike/g55/` that ran
+beside the 4.6 build until the re-pin
+([docs/rebase-study-5.5.md](docs/rebase-study-5.5.md),
+[dev/spike/g55/NOTES.md](dev/spike/g55/NOTES.md)). A later bump follows
+that pattern: `refresh-patches.py` sorts `dev/g1/patches` against the new
+tree, the work runs beside the shipping build until a re-pin, a G1/G2
+script is reused through an opt-in `MACTAK_*` override rather than a copy
+(unset, nothing changes; documented in the script's header), jars build
+in CI from the pinned commit, and the spike keeps its own NOTES and trap
+lineage until the re-pin.
 
 ## House style — NOTES, traps, CHANGELOG
 

@@ -1,50 +1,6 @@
---- a/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
-+++ b/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
-@@ -53,10 +53,20 @@
-     LocalJNIEnv env;
- 
-     jobject mgeo = Interop_create(env, geo);
-+    if(env->ExceptionCheck()) {
-+        env->ExceptionDescribe();
-+        env->ExceptionClear();
-+        return TE_Err;
-+    }
-     if(!mgeo)
-         return TE_Err;
-     jobject mproj = env->CallObjectMethod(impl, Projection_class.forward, mgeo, NULL);
-     env->DeleteLocalRef(mgeo);
-+    if(env->ExceptionCheck()) {
-+        env->ExceptionDescribe();
-+        env->ExceptionClear();
-+        return TE_Err;
-+    }
-     if(!mproj)
-         return TE_Err;
- 
-@@ -73,10 +83,20 @@
-     LocalJNIEnv env;
- 
-     jobject mproj = env->NewObject(pointDClass, pointD_ctor__DDD, proj.x, proj.y, proj.z);
-+    if(env->ExceptionCheck()) {
-+        env->ExceptionDescribe();
-+        env->ExceptionClear();
-+        return TE_Err;
-+    }
-     if(!mproj)
-         return TE_Err;
-     jobject mgeo = env->CallObjectMethod(impl, Projection_class.inverse, mproj, NULL);
-     env->DeleteLocalRef(mproj);
-+    if(env->ExceptionCheck()) {
-+        env->ExceptionDescribe();
-+        env->ExceptionClear();
-+        return TE_Err;
-+    }
-     if(!mgeo)
-         return TE_Err;
-     code = Interop_copy(geo, env, mgeo);
 --- a/tmp/takeng-src/jni/interop/core/Interop.cpp
 +++ b/tmp/takeng-src/jni/interop/core/Interop.cpp
-@@ -176,7 +176,12 @@
+@@ -176,7 +176,12 @@ jobject TAKEngineJNI::Interop::Core::Interop_create(JNIEnv *env, const GeoPoint2
              return NULL;
      }
  
@@ -58,10 +14,10 @@
  }
  
  jobject TAKEngineJNI::Interop::Core::Interop_wrap(JNIEnv *env, TAK::Engine::Core::Projection2Ptr &&cproj) NOTHROWS
-@@ -208,6 +213,11 @@
+@@ -208,6 +213,11 @@ TAKErr TAKEngineJNI::Interop::Core::Interop_marshal(Java::JNILocalRef &value, JN
      MapSceneModel2Ptr retval(new MapSceneModel2(cmodel), Memory_deleter_const<MapSceneModel2>);
      Java::JNILocalRef mpointer(env, NewPointer(&env, std::move(retval)));
-     value = Java::JNILocalRef(env, env.NewObject(MapSceneModel_class.id, MapSceneModel_class.ctor, mpointer.release(), NULL));
+     value = Java::JNILocalRef(env, env.NewObject(MapSceneModel_class.id, MapSceneModel_class.ctor, mpointer.get(), NULL));
 +    if(env.ExceptionCheck()) {
 +        env.ExceptionDescribe();
 +        env.ExceptionClear();
@@ -70,7 +26,7 @@
      return TE_Ok;
  }
  TAKErr TAKEngineJNI::Interop::Core::Interop_marshal(jobject value, JNIEnv &env, const MapSceneModel2 &cmodel) NOTHROWS
-@@ -224,6 +234,11 @@
+@@ -224,6 +234,11 @@ TAKErr TAKEngineJNI::Interop::Core::Interop_marshal(jobject value, JNIEnv &env,
          return TE_IllegalState;
      *cref = cmodel;
      env.CallVoidMethod(value, MapSceneModel_class.init);
@@ -82,12 +38,54 @@
      return TE_Ok;
  }
  TAKErr TAKEngineJNI::Interop::Core::Interop_marshal(std::shared_ptr<TAK::Engine::Core::MapSceneModel2> &value, JNIEnv &env, jobject mmodel) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
+@@ -53,9 +53,19 @@ TAKErr ManagedProjection::forward(Point2<double> *proj, const GeoPoint2 &geo) co
+     LocalJNIEnv env;
+ 
+     Java::JNILocalRef mgeo(*env, Interop_create(env, geo));
++    if(env->ExceptionCheck()) {
++        env->ExceptionDescribe();
++        env->ExceptionClear();
++        return TE_Err;
++    }
+     if(!mgeo)
+         return TE_Err;
+     Java::JNILocalRef mproj(*env, env->CallObjectMethod(impl, Projection_class.forward, mgeo.get(), NULL));
++    if(env->ExceptionCheck()) {
++        env->ExceptionDescribe();
++        env->ExceptionClear();
++        return TE_Err;
++    }
+     if(!mproj)
+         return TE_Err;
+ 
+@@ -71,9 +81,19 @@ TAKErr ManagedProjection::inverse(GeoPoint2 *geo, const Point2<double> &proj) co
+     LocalJNIEnv env;
+ 
+     Java::JNILocalRef mproj(*env, env->NewObject(pointDClass, pointD_ctor__DDD, proj.x, proj.y, proj.z));
++    if(env->ExceptionCheck()) {
++        env->ExceptionDescribe();
++        env->ExceptionClear();
++        return TE_Err;
++    }
+     if(!mproj)
+         return TE_Err;
+     Java::JNILocalRef mgeo(*env, env->CallObjectMethod(impl, Projection_class.inverse, mproj.get(), NULL));
++    if(env->ExceptionCheck()) {
++        env->ExceptionDescribe();
++        env->ExceptionClear();
++        return TE_Err;
++    }
+     if(!mgeo)
+         return TE_Err;
+     code = Interop_copy(geo, env, mgeo);
 --- a/tmp/takeng-src/jni/interop/math/Interop.cpp
 +++ b/tmp/takeng-src/jni/interop/math/Interop.cpp
-@@ -62,12 +62,19 @@
- 
+@@ -63,12 +63,19 @@ TAKErr TAKEngineJNI::Interop::Math::Interop_marshal(JNILocalRef &value, JNIEnv &
      Matrix2Ptr retval(new Matrix2(cmatrix), Memory_deleter_const<Matrix2>);
-     value = JNILocalRef(env, env.NewObject(Matrix_class.id, Matrix_class.ctor, NewPointer(&env, std::move(retval)), NULL));
+     Java::JNILocalRef mmatrixPtr(env, NewPointer(&env, std::move(retval)));
+     value = JNILocalRef(env, env.NewObject(Matrix_class.id, Matrix_class.ctor, mmatrixPtr.get(), NULL));
 +    if(env.ExceptionCheck()) {
 +        env.ExceptionDescribe();
 +        env.ExceptionClear();
@@ -104,7 +102,7 @@
  
      JNILocalRef mpointer(env, env.GetObjectField(value, Matrix_class.pointer));
      Matrix2 *impl = Pointer_get<Matrix2>(env, mpointer);
-@@ -80,6 +87,10 @@
+@@ -81,6 +88,10 @@ TAKErr TAKEngineJNI::Interop::Math::Interop_marshal(TAK::Engine::Math::Rectangle
  {
      if(!checkInit(env))
          return TE_IllegalState;
@@ -115,7 +113,7 @@
      value->x = env.GetDoubleField(mrect, Rectangle_class.X);
      value->y = env.GetDoubleField(mrect, Rectangle_class.Y);
      value->width = env.GetDoubleField(mrect, Rectangle_class.Width);
-@@ -91,12 +102,19 @@
+@@ -92,12 +103,19 @@ TAKErr TAKEngineJNI::Interop::Math::Interop_marshal(Java::JNILocalRef &value, JN
      if(!checkInit(env))
          return TE_IllegalState;
      value = Java::JNILocalRef(env, env.NewObject(Rectangle_class.id, Rectangle_class.ctor, crect.x, crect.y, crect.width, crect.height));
@@ -137,7 +135,7 @@
      env.SetDoubleField(value, Rectangle_class.Width, crect.width);
 --- a/tmp/takeng-src/jni/interop/model/Interop.cpp
 +++ b/tmp/takeng-src/jni/interop/model/Interop.cpp
-@@ -272,6 +272,10 @@
+@@ -286,6 +286,10 @@ TAKErr TAKEngineJNI::Interop::Model::Interop_marshal(JNILocalRef &resourceMap, J
      TAKErr code(TE_Ok);
  
      resourceMap = JNILocalRef(*env, env->NewObject(HashMap_class.id, HashMap_class.ctor));
@@ -148,7 +146,7 @@
  
      // XXX - const cast....
      auto &resourceAliasesNonConst = const_cast<TAK::Engine::Port::Collection<ResourceAlias> &>(*resourceAliases);
-@@ -288,6 +292,10 @@
+@@ -302,6 +306,10 @@ TAKErr TAKEngineJNI::Interop::Model::Interop_marshal(JNILocalRef &resourceMap, J
          JNILocalRef jTargetPath(*env, env->NewStringUTF(targetPath));
  
          JNILocalRef jretval(*env, env->CallObjectMethod(resourceMap, Map_class.put, jResourceRef.get(), jTargetPath.get()));
@@ -159,7 +157,7 @@
          code = iter->next();
          TE_CHECKBREAK_CODE(code);
      } while (true);
-@@ -313,6 +321,10 @@
+@@ -327,6 +335,10 @@ TAKErr TAKEngineJNI::Interop::Model::Interop_marshal(ResourceAliasCollectionPtr
              new TAK::Engine::Port::STLVectorAdapter<ResourceAlias>());
  
      JNILocalRef keySet(*env, env->CallObjectMethod(resourceMap, Map_class.keySet));
@@ -170,7 +168,7 @@
  
      TAKErr code(TE_Ok);
      JNILocalRef iterator(*env, nullptr);
-@@ -330,6 +342,10 @@
+@@ -344,6 +356,10 @@ TAKErr TAKEngineJNI::Interop::Model::Interop_marshal(ResourceAliasCollectionPtr
          TE_CHECKRETURN_CODE(code);
  
          JNILocalRef value(*env, env->CallObjectMethod(resourceMap, Map_class.get, key.get()));

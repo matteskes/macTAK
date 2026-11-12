@@ -2,15 +2,21 @@
 #
 # G1.0 — deterministic native build of the takkernel C++ engine (macOS arm64).
 #
-# Reproduces the G0 spike result (dev/spike/g0/NOTES.md) without touching the
+# The 5.5 baseline (TAK-Product-Center/atak-civ @ 9f6893d, takkernel 8.30.5;
+# re-pinned from 4.6 — dev/spike/g55/NOTES.md), without touching the
 # evidence tree or /tmp:
 #   src/takkernel/engine/src/main  →  dev/g1/build/engine (throwaway copy)
-#   + dev/spike/g0/patches/gdal-drift-*.patch (3-file GDAL API-drift set)
-#   + GLES stub (dev/spike/g0/gles-stub) as the libGLESv2 slot, or ANGLE on
-#     Metal (MACTAK_GLES=angle; staged by dev/g2/fetch-angle.sh) — G2
-#   + nlohmann-json stand-in for tinygltf
+#   + dev/g1/patches/*.patch (gdal-drift-* first, then the rest, sorted;
+#     --fuzz=0)
+#   + GLES stub as the libGLESv2 slot, or ANGLE on Metal (MACTAK_GLES=angle;
+#     staged by dev/g2/fetch-angle.sh) — G2
+#   + third-party headers 5.5 compiles on every platform: tinygltf (upstream's
+#     depends/tinygltf-2.4.1-mod.tar.gz, Git LFS), tinygltfloader (in-tree),
+#     assimp (Homebrew)
+#   - formats/c3dt and the glue's c3dt/ (3D Tiles: cesium-native + draco,
+#     which upstream's macOS build does not wire) and LAS (dead upstream)
 #   → libtakengine.dylib staged in dev/g1/native-dist/
-#   → canary: dlopen + Catch2 subset of engine/src/test/cpp
+#   → canary: dlopen + GTest subset of engine/src/test/cpp
 #
 # G1.1 addition: also builds the JNI glue (engine/src/main/jni) into
 # libtakenginejni.dylib so the engine loads IN-PROCESS from a real JVM
@@ -19,7 +25,8 @@
 # stack and read back 42.
 #
 # Everything lands under g1/build (wiped each run) for reproducibility.
-# A clean build is ~4–5 min at -j$(hw.ncpu).
+# A clean build is ~4–5 min at -j$(hw.ncpu). Ninja runs with -k 0, so a
+# failed build lists every failing source (dev/g1/build/summary.txt).
 set -euo pipefail
 
 DEV="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # <repo>/dev — this script lives at dev/g1/
@@ -29,6 +36,9 @@ WORK="$G1/build"
 OUT="$G1/native-dist"
 ENGINE_MAIN="$ROOT/src/takkernel/engine/src/main"
 TESTS_DIR="$ROOT/src/takkernel/engine/src/test/cpp"
+KHRONOS="$ROOT/src/khronos"
+TINYGLTF_TGZ="$ROOT/src/depends/tinygltf-2.4.1-mod.tar.gz"
+TINYGLTFLOADER="$ROOT/src/takengine/thirdparty/tinygltfloader"
 JOBS="$(sysctl -n hw.ncpu)"
 
 log() { printf '\n[g1] %s\n' "$*"; }
@@ -55,17 +65,27 @@ trap '_rc=$?; if (( _rc != 0 )); then
 # --- preflight -----------------------------------------------------------
 [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] \
   || die "requires macOS arm64 (got $(uname -s) $(uname -m))"
-for t in cmake rsync clang patch python3 brew; do
+for t in cmake ninja rsync clang patch python3 brew; do
   command -v "$t" >/dev/null 2>&1 || die "missing tool: $t"
 done
 [[ -d "$ENGINE_MAIN/cpp" ]] \
-  || die "engine tree missing — run: (cd $ROOT/src && git submodule update --init --recursive)"
+  || die "engine tree missing at $ENGINE_MAIN — populate src/ per CONTRIBUTING.md (Setup)"
 [[ -d "$TESTS_DIR" ]] || die "engine C++ tests missing at $TESTS_DIR"
-for f in proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2; do
+[[ -f "$KHRONOS/OpenGL/api/GLES3/gl3.h" ]] || die "no khronos headers at $KHRONOS"
+[[ -f "$TINYGLTFLOADER/tiny_gltf_loader.h" ]] || die "no tinygltfloader at $TINYGLTFLOADER"
+gzip -t "$TINYGLTF_TGZ" 2>/dev/null \
+  || die "$TINYGLTF_TGZ is missing or an LFS pointer — (cd src && git lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz)"
+compgen -G "$G1/jni-include/*.h" >/dev/null \
+  || die "no JNI headers in $G1/jni-include — run dev/g1/kernel/build-kernel-jars.sh"
+# 5.5 adds mdbtools + glib (formats/msaccess; mdbtools.h includes glib.h),
+# assimp (the ASSIMP scene SPI) and openssl@3 (the glue's libcurl client)
+for f in proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2 mdbtools glib assimp openssl@3; do
   brew list --versions "$f" >/dev/null 2>&1 \
     || die "brew formula missing: $f
-       → brew install proj geos gdal libspatialite laszip minizip nlohmann-json googletest libxml2"
+       → brew install proj geos gdal libspatialite laszip minizip nlohmann-json googletest libxml2 mdbtools glib assimp openssl@3 ninja"
 done
+GLIB="$(brew --prefix glib)"
+OPENSSL="$(brew --prefix openssl@3)"
 
 # GLES slot: the G0 no-op stub (default; CI has no ANGLE) or the ANGLE
 # runtime staged in dev/g2/angle-dist (install name @rpath/libGLESv2.dylib,
@@ -89,23 +109,42 @@ mkdir -p "$WORK/gles-stub" "$WORK/overlay" "$OUT"
 log "copying engine tree → $WORK/engine"
 rsync -a --exclude .git "$ENGINE_MAIN/" "$WORK/engine/"
 
-log "applying GDAL-drift patches (-p3 → cpp/...)"
-for p in "$DEV"/spike/g0/patches/gdal-drift-*.patch "$G1"/patches/*.patch; do
-  # --fuzz=0: a hunk whose context no longer matches must fail loudly, not
-  # land "close enough" (megatexture-sharetile applied with fuzz 1 for weeks)
-  patch --forward --silent --fuzz=0 -p3 -d "$WORK/engine" < "$p" || die "patch failed: $(basename "$p")"
-  log "  applied $(basename "$p")"
+log "applying the patch series (-p3 → cpp/..., java/..., jni/...)"
+# gdal-drift-* first, then the rest sorted: the order the 5.5 series was
+# ported and verified in (dev/spike/g55/NOTES.md §The patch port)
+shopt -s nullglob
+series=("$G1"/patches/gdal-drift-*.patch)
+for p in "$G1"/patches/*.patch; do
+  [[ "$(basename "$p")" == gdal-drift-* ]] || series+=("$p")
 done
+shopt -u nullglob
+(( ${#series[@]} > 0 )) || die "no patches in $G1/patches"
+for p in "${series[@]}"; do
+  # --fuzz=0: a hunk whose context no longer matches must fail loudly, not
+  # land "close enough" (megatexture-sharetile applied with fuzz 1 for weeks;
+  # g55 traps 1–2: fuzz 3 placed hunks in the wrong method)
+  patch --forward --silent --no-backup-if-mismatch --fuzz=0 -p3 -d "$WORK/engine" < "$p" \
+    || die "patch failed: $(basename "$p")"
+done
+log "  applied ${#series[@]} patches"
 
 log "building GLES stub (no-op libGLESv2 covering all of gl3.h; ANGLE replaces it)"
 clang -arch arm64 -dynamiclib -O2 \
-  -I"$ROOT/src/khronos/OpenGL/api" -I"$ROOT/src/khronos/EGL/api" \
+  -I"$KHRONOS/OpenGL/api" -I"$KHRONOS/EGL/api" \
   -o "$WORK/gles-stub/libGLESv2.dylib" "$DEV/g2/jni-extra/mactak_gles_stub.c"
 
-log "tinygltf overlay (nlohmann-json stand-in)"
-mkdir -p "$WORK/overlay/tinygltf"
-cp "$(brew --prefix nlohmann-json)/include/nlohmann/json.hpp" \
-   "$WORK/overlay/tinygltf/json.hpp"
+log "third-party headers: tinygltf (upstream tarball), tinygltfloader (in-tree)"
+mkdir -p "$WORK/overlay/tinygltf" "$WORK/overlay/tinygltfloader" "$WORK/tinygltf-src"
+tar xzf "$TINYGLTF_TGZ" -C "$WORK/tinygltf-src"
+tiny_gltf_h="$(find "$WORK/tinygltf-src" -name tiny_gltf.h -print -quit)"
+[[ -n "$tiny_gltf_h" ]] || die "no tiny_gltf.h in $(basename "$TINYGLTF_TGZ")"
+cp "$(dirname "$tiny_gltf_h")"/*.h "$WORK/overlay/tinygltf/"
+# the engine includes <tinygltf/json.hpp>; tinygltf's own copy if it ships
+# one, else nlohmann-json (G0's stand-in)
+json_hpp="$(find "$WORK/tinygltf-src" -name json.hpp -print -quit)"
+cp "${json_hpp:-$(brew --prefix nlohmann-json)/include/nlohmann/json.hpp}" "$WORK/overlay/tinygltf/json.hpp"
+# tiny_gltf_loader.h includes "./json.hpp": its own copy, beside it (g55 run 2)
+cp "$TINYGLTFLOADER"/*.h "$TINYGLTFLOADER"/json.hpp "$WORK/overlay/tinygltfloader/"
 
 log "generating wrapper CMakeLists"
 cat > "$WORK/wrapper-CMakeLists.txt.in" <<'CMAKE'
@@ -130,13 +169,15 @@ if(TARGET takengine)
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api   # GLES3/gl3.h (GLES-stub slot)
         ${SRC}/src/khronos/EGL/api      # EGL + KHR/khrplatform.h
-        ${SRC}/src/stl-soft/include     # platformstl/* (util/IO*.cpp)
-        ${WORK}/overlay                 # tinygltf/json.hpp stand-in
+        ${WORK}/overlay                 # tinygltf/, tinygltfloader/
+        @GLIB@/include/glib-2.0         # mdbtools.h includes glib.h
+        @GLIB@/lib/glib-2.0/include     # glibconfig.h
     )
     target_link_directories(takengine PRIVATE /opt/homebrew/lib)
 
-    # libkml's renamed minizip -> Homebrew minizip (same signatures)
-    target_compile_definitions(takengine PRIVATE
+    # libkml's renamed minizip -> Homebrew minizip (same signatures); the
+    # JNI glue below needs the same renames
+    set(_minizip_renames
         libkml_unzClose=unzClose
         libkml_unzOpen=unzOpen
         libkml_unzOpenCurrentFile=unzOpenCurrentFile
@@ -147,14 +188,18 @@ if(TARGET takengine)
         libkml_unzGoToNextFile=unzGoToNextFile
         libkml_unzLocateFile=unzLocateFile
         libkml_unzGetCurrentFileInfo=unzGetCurrentFileInfo
+        libkml_unzStringFileNameCompare=unzStringFileNameCompare   # util/ZipFile.cpp (5.5)
     )
+    target_compile_definitions(takengine PRIVATE ${_minizip_renames})
     target_link_libraries(takengine PRIVATE minizip)
 
     # libLAS is dead upstream — exclude the LAS TUs (self-contained SPI).
+    # formats/c3dt (3D Tiles) needs cesium-native + draco, which upstream's
+    # macOS build does not wire; left out until 3D Tiles is needed.
     get_target_property(_srcs takengine SOURCES)
     set(_kept)
     foreach(_s IN LISTS _srcs)
-        if(NOT _s MATCHES "LASScene|las/LAS\\.cpp")
+        if(NOT _s MATCHES "LASScene|las/LAS\\.cpp|/formats/c3dt/")
             list(APPEND _kept ${_s})
         endif()
     endforeach()
@@ -172,6 +217,11 @@ if(TARGET takengine)
     # the same runtime libgdal already loads. The G0 stub used to no-op
     # these 11 symbols silently (found when ANGLE replaced the stub).
     list(APPEND _libs /opt/homebrew/opt/libxml2/lib/libxml2.dylib)
+    list(APPEND _libs
+        assimp                          # model/ASSIMPSceneSpi.cpp (5.5)
+        curl                            # util/URIOfflineCache.cpp (5.5)
+        @GLIB@/lib/libglib-2.0.dylib    # mdbtools.h's inline g_malloc/g_free
+    )
     set_target_properties(takengine PROPERTIES LINK_LIBRARIES "${_libs}")
     set_target_properties(takengine PROPERTIES
         BUILD_RPATH "@loader_path;@GLES_RPATH@"
@@ -203,8 +253,9 @@ if(TARGET takengine)
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api
         ${SRC}/src/khronos/EGL/api
-        ${SRC}/src/stl-soft/include
         ${WORK}/overlay
+        @GLIB@/include/glib-2.0
+        @GLIB@/lib/glib-2.0/include
         ${SRC}/src/takkernel/engine/src/main/cpp
         ${SRC}/src/takkernel/engine/src/test/cpp
     )
@@ -221,11 +272,11 @@ if(TARGET takengine)
     # Named Java_* exports let the JVM load the engine in-process
     # (System.load; JNI_OnLoad in the glue's common.cpp wires globals).
     # Sources come from upstream's jni/cmake/{Common,MacOS}Sources.cmake;
-    # c3dt/ GLTF TUs are dropped with the 3D-tiles rung. The javah
-    # headers are a pinned committed artifact (dev/g1/jni-include,
-    # regenerate with dev/g1/gen-jni-headers.sh at engine version
-    # bumps) and dev/g1/jdk-include pins jni.h/jni_md.h so this native
-    # build needs no JDK installed.
+    # c3dt/ and interop/formats/c3dt/ are dropped with the 3D-tiles rung.
+    # The javac -h headers are a committed artifact (dev/g1/jni-include,
+    # written by dev/g1/kernel/build-kernel-jars.sh, drift-checked in CI)
+    # and dev/g1/jdk-include pins jni.h/jni_md.h so this native build
+    # needs no JDK installed.
     # ---------------------------------------------------------------
     set(JNI_DIR ${WORK}/engine/jni)   # rsync flattens src/main/ into build/engine/
     set(SRC_DIR ${JNI_DIR})   # variable name upstream CommonSources.cmake expects
@@ -259,28 +310,18 @@ if(TARGET takengine)
     list(APPEND _jni_kept ${SRC}/dev/g2/jni-extra/mactak_gles.c)
 
     add_library(takenginejni SHARED ${_jni_kept})
-    target_compile_definitions(takenginejni PRIVATE ${takenginejni_DEFS}
-        # libkml's renamed minizip -> Homebrew minizip (same as core)
-        libkml_unzClose=unzClose
-        libkml_unzOpen=unzOpen
-        libkml_unzOpenCurrentFile=unzOpenCurrentFile
-        libkml_unzReadCurrentFile=unzReadCurrentFile
-        libkml_unzGetGlobalInfo=unzGetGlobalInfo
-        libkml_unzGetGlobalComment=unzGetGlobalComment
-        libkml_unzGoToFirstFile=unzGoToFirstFile
-        libkml_unzGoToNextFile=unzGoToNextFile
-        libkml_unzLocateFile=unzLocateFile
-        libkml_unzGetCurrentFileInfo=unzGetCurrentFileInfo
-    )
+    target_compile_definitions(takenginejni PRIVATE ${takenginejni_DEFS} ${_minizip_renames})
+    target_compile_options(takenginejni PRIVATE ${takenginejni_MACOS_OPTS})
     target_include_directories(takenginejni PRIVATE
         ${JNI_DIR}
         ${WORK}/engine/cpp
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api   # GLES3/gl3.h (GLES-stub slot)
         ${SRC}/src/khronos/EGL/api      # EGL + KHR/khrplatform.h
-        ${SRC}/src/stl-soft/include     # platformstl/*
-        ${WORK}/overlay                 # tinygltf/json.hpp stand-in
-        ${SRC}/dev/g1/jni-include       # pinned javah output
+        ${WORK}/overlay                 # tinygltf/, tinygltfloader/
+        @GLIB@/include/glib-2.0
+        @GLIB@/lib/glib-2.0/include
+        ${SRC}/dev/g1/jni-include       # javac -h output (kernel/build-kernel-jars.sh)
         ${SRC}/dev/g1/jdk-include       # pinned jni.h + jni_md.h
     )
     target_link_directories(takenginejni PRIVATE /opt/homebrew/lib)
@@ -289,8 +330,12 @@ if(TARGET takengine)
         /opt/homebrew/opt/sqlite/lib/libsqlite3.dylib
         gdal
         minizip
+        curl                            # jlibcurlhttpclientbuilder.cpp (5.5)
+        @OPENSSL@/lib/libssl.dylib      # ... which also calls OPENSSL_init_ssl
     )
     set_target_properties(takenginejni PROPERTIES
+        CXX_STANDARD 17                 # as upstream's jni/CMakeLists.txt: util/Tasking.h
+        CXX_STANDARD_REQUIRED ON        # overloads on noexcept function types
         BUILD_RPATH "@loader_path;${CMAKE_BINARY_DIR}/engine-cpp;@GLES_RPATH@"
     )
 endif()
@@ -322,9 +367,10 @@ endif()
     target_include_directories(takengine-jni-tests PRIVATE
         ${_jniincs}
         /opt/homebrew/include
+        ${SRC}/dev/g1/jni-tests
     )
     target_compile_definitions(takengine-jni-tests PRIVATE
-        ${_takdefs}
+        ${takenginejni_DEFS}
     )
     target_link_directories(takengine-jni-tests PRIVATE /opt/homebrew/lib)
     target_link_libraries(takengine-jni-tests PRIVATE takenginejni takengine GTest::gtest_main)
@@ -360,9 +406,10 @@ endif()
     target_include_directories(takengine-jni-tests-module PRIVATE
         ${_jniincs}
         /opt/homebrew/include
+        ${SRC}/dev/g1/jni-tests
     )
     target_compile_definitions(takengine-jni-tests-module PRIVATE
-        ${_takdefs}
+        ${takenginejni_DEFS}
     )
     target_link_directories(takengine-jni-tests-module PRIVATE /opt/homebrew/lib)
     target_link_libraries(takengine-jni-tests-module PRIVATE takenginejni takengine GTest::gtest)
@@ -374,18 +421,27 @@ endif()
 CMAKE
 sed -e "s|@ROOT@|$ROOT|g" -e "s|@WORK@|$WORK|g" \
     -e "s|@GLES_LIB@|$GLES_LIB|g" -e "s|@GLES_RPATH@|$GLES_RPATH|g" \
+    -e "s|@GLIB@|$GLIB|g" -e "s|@OPENSSL@|$OPENSSL|g" \
     "$WORK/wrapper-CMakeLists.txt.in" > "$WORK/CMakeLists.txt"
 rm "$WORK/wrapper-CMakeLists.txt.in"
 
 # --- configure + build ---------------------------------------------------
-log "configuring (RelWithDebInfo, arm64, Makefiles)"
-cmake -S "$WORK" -B "$WORK/cmake" \
+log "configuring (RelWithDebInfo, arm64, Ninja)"
+cmake -S "$WORK" -B "$WORK/cmake" -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_RULE_MESSAGES=OFF
+  -DCMAKE_OSX_ARCHITECTURES=arm64
 
-log "building libtakengine.dylib + test canary (-j$JOBS, ~4–5 min clean)"
-cmake --build "$WORK/cmake" -- -j"$JOBS"
+log "building libtakengine.dylib + test canary (ninja -k 0, -j$JOBS, ~4–5 min clean)"
+# -k 0: one run lists every failing source, not just the first
+# (dev/g1/summarize-build.py: first error per source, undefined symbols)
+set +e
+ninja -C "$WORK/cmake" -k 0 -j "$JOBS" >"$WORK/build.log" 2>&1
+build_rc=$?
+set -e
+if (( build_rc != 0 )); then
+  python3 "$G1/summarize-build.py" "$WORK/build.log" "$WORK/engine" | tee "$WORK/summary.txt" >&2
+  die "ninja exit $build_rc (full log: $WORK/build.log)"
+fi
 
 # --- canary --------------------------------------------------------------
 log "canary 1/4: dlopen"
@@ -396,7 +452,15 @@ print("[g1] dlopen OK:", sys.argv[1])
 PY
 
 log "canary 2/4: engine C++ tests (GTest)"
-"$WORK/cmake/takengine-tests" --gtest_output=xml:"$OUT/takengine-tests.xml"
+# Two upstream tests are stale at 5.5, excluded by name so any other
+# failure still fails here: 5.5 rewrote Tessellate_polygon's ring path and
+# dropped 4.6's `counts[i] < 3u → TE_InvalidArg` check, so fewer than 3
+# points, or a stride that makes the ring degenerate, now tessellate to
+# nothing and return TE_Ok; the tests still expect an error (every read
+# stays inside the test's buffer). dev/spike/g55/NOTES.md trap 10.
+STALE_UPSTREAM_TESTS="TessellationTests.tessellate_polygon_InvalidPointCount:TessellationTests.tessellate_polygon_InvalidSrcStride"
+"$WORK/cmake/takengine-tests" --gtest_filter="-$STALE_UPSTREAM_TESTS" \
+  --gtest_output=xml:"$OUT/takengine-tests.xml"
 
 # --- stage ---------------------------------------------------------------
 log "staging → $OUT"

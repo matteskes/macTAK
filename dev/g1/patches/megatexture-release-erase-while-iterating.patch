@@ -1,14 +1,20 @@
 --- a/tmp/takeng-src/cpp/renderer/GLMegaTexture.cpp
 +++ b/tmp/takeng-src/cpp/renderer/GLMegaTexture.cpp
-@@ -135,14 +135,24 @@
+@@ -159,18 +159,30 @@ void GLMegaTexture::clear() NOTHROWS
      if (pool.capacity() < tiles.size())
          pool.reserve(tiles.size());
      const std::size_t limit = tiles.size();
-+    // releaseTile erases from `tiles`; iterate a snapshot of the keys
+-    while(!tiles.empty()) {
+-        const auto it = tiles.begin();
+-        releaseTile(it->first, (pool.size() < limit));
+-    }
++    // macTAK (G2 trap #10): releaseTile erases from `tiles`; iterate a
++    // snapshot of the keys. Draining with while(!tiles.empty()) never ends
++    // once a tile is shared: releaseTile then drops a share and returns
++    // without erasing it.
 +    std::vector<TileIndex> keys;
 +    keys.reserve(tiles.size());
-     for (auto it = tiles.begin(); it != tiles.end(); it++)
--        releaseTile(it->first, (pool.size() < limit));
++    for (auto it = tiles.begin(); it != tiles.end(); it++)
 +        keys.push_back(it->first);
 +    for (auto it = keys.begin(); it != keys.end(); it++)
 +        releaseTile(*it, (pool.size() < limit));
@@ -16,11 +22,17 @@
  }
  void GLMegaTexture::release() NOTHROWS
  {
-+    // releaseTile erases from `tiles`; iterate a snapshot of the keys
+-    while(!tiles.empty()) {
+-        const auto it = tiles.begin();
+-        releaseTile(it->first, false);
+-    }
++    // macTAK (G2 trap #10): releaseTile erases from `tiles`; iterate a
++    // snapshot of the keys. Draining with while(!tiles.empty()) never ends
++    // once a tile is shared: releaseTile then drops a share and returns
++    // without erasing it.
 +    std::vector<TileIndex> keys;
 +    keys.reserve(tiles.size());
-     for (auto it = tiles.begin(); it != tiles.end(); it++)
--        releaseTile(it->first, false);
++    for (auto it = tiles.begin(); it != tiles.end(); it++)
 +        keys.push_back(it->first);
 +    for (auto it = keys.begin(); it != keys.end(); it++)
 +        releaseTile(*it, false);

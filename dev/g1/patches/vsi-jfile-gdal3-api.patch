@@ -1,6 +1,6 @@
 --- a/tmp/takeng-src/jni/vsi_jfile.cpp
 +++ b/tmp/takeng-src/jni/vsi_jfile.cpp
-@@ -81,9 +81,16 @@
+@@ -82,9 +82,16 @@ public:
      VSIJFileFilesystemHandler(JNIEnv &env, jobject instance);
      virtual                  ~VSIJFileFilesystemHandler();
  
@@ -20,7 +20,7 @@
      virtual int               Stat( const char *pszFilename,
                                      VSIStatBufL *pStatBuf,
                                      int nFlags) override;
-@@ -104,12 +111,12 @@
+@@ -105,12 +112,12 @@ public:
                              int nWhence) override;
      virtual vsi_l_offset Tell() override;
      virtual size_t    Read( void *pBuffer,
@@ -37,7 +37,7 @@
      virtual int       Close() override;
  
      /**
-@@ -120,9 +127,13 @@
+@@ -121,9 +128,13 @@ public:
  private:
      virtual size_t size();
  
@@ -52,7 +52,7 @@
  {
      static bool clinit = Handle_Managed_class_init(env);
      m_instance = env.NewGlobalRef(instance);
-@@ -186,11 +197,11 @@
+@@ -187,11 +198,11 @@ vsi_l_offset VSIJFileHandle::Tell()
      return n;
  }
  
@@ -66,7 +66,7 @@
      if(!length)
          return 0u;
  
-@@ -198,6 +209,7 @@
+@@ -199,6 +210,7 @@ size_t VSIJFileHandle::Read(void * pBuffer, size_t nSize, size_t nCount)
  
      if (env->ExceptionCheck()) {
          env->ExceptionClear();
@@ -74,7 +74,7 @@
          return 0;
      }
  
-@@ -205,21 +217,21 @@
+@@ -206,21 +218,21 @@ size_t VSIJFileHandle::Read(void * pBuffer, size_t nSize, size_t nCount)
      if (env->ExceptionCheck())
      {
          env->ExceptionClear();
@@ -89,9 +89,9 @@
  }
  
  size_t VSIJFileHandle::Write(
-     const void * pBuffer,
--    size_t nSize,
--    size_t nCount)
+         const void * pBuffer,
+-        size_t nSize,
+-        size_t nCount)
 +    size_t nBytes)
  {
      LocalJNIEnv env;
@@ -101,7 +101,7 @@
      if(!length)
          return 0u;
  
-@@ -227,6 +239,7 @@
+@@ -228,6 +240,7 @@ size_t VSIJFileHandle::Write(
  
      if (env->ExceptionCheck()) {
          env->ExceptionClear();
@@ -109,7 +109,7 @@
          return 0;
      }
  
-@@ -234,13 +247,24 @@
+@@ -235,11 +248,22 @@ size_t VSIJFileHandle::Write(
      if(env->ExceptionCheck())
      {
          env->ExceptionClear();
@@ -121,8 +121,8 @@
 -    return n > 0 ? static_cast<size_t>(n/nSize) : 0u;
 +    // return number of bytes written
 +    return n > 0 ? static_cast<size_t>(n) : 0u;
- }
- 
++}
++
 +void VSIJFileHandle::ClearErr()
 +{
 +    m_error = false;
@@ -131,27 +131,25 @@
 +int VSIJFileHandle::Error()
 +{
 +    return m_error ? TRUE : FALSE;
-+}
-+
+ }
+ 
  int VSIJFileHandle::Eof()
- {
-     LocalJNIEnv env;
-@@ -293,11 +317,12 @@
+@@ -294,11 +318,12 @@ VSIJFileFilesystemHandler::~VSIJFileFilesystemHandler()
      env->DeleteGlobalRef(m_instance);
  }
  
 -VSIVirtualHandle *
 +VSIVirtualHandleUniquePtr
  VSIJFileFilesystemHandler::Open(
-     const char *pszFilename,
-     const char *pszAccess,
--    bool bSetError)
+         const char *pszFilename,
+         const char *pszAccess,
+-        bool bSetError)
 +    bool bSetError,
 +    CSLConstList papszOptions)
  {
      LocalJNIEnv env;
  
-@@ -312,12 +337,12 @@
+@@ -313,12 +338,12 @@ VSIJFileFilesystemHandler::Open(
  
      if(handle)
      {
@@ -166,9 +164,9 @@
  
  }
  
-@@ -381,7 +406,8 @@
-                                                                                  jstring prefix,
-                                                                                  jobject handler) {
+@@ -382,7 +407,8 @@ Java_com_atakmap_map_gdal_VSIJFileFilesystemHandler_installFilesystemHandler(JNI
+                                                                              jstring prefix,
+                                                                              jobject handler) {
      JNIStringUTF nativePrefix(*env, prefix);
 -    VSIFileManager::InstallHandler(nativePrefix.get(), new VSIJFileFilesystemHandler(*env, handler));
 +    // GDAL 3 deprecates the raw-pointer InstallHandler in favour of shared_ptr

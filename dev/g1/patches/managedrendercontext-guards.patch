@@ -1,6 +1,7 @@
+deleted file mode 100644
 --- a/tmp/takeng-src/jni/interop/core/ManagedRenderContext.cpp
 +++ b/tmp/takeng-src/jni/interop/core/ManagedRenderContext.cpp
-@@ -56,6 +56,10 @@
+@@ -56,6 +56,10 @@ ManagedRenderContext::~ManagedRenderContext() NOTHROWS
          // if a child context, need to have parent invoke destroy
          if(parent) {
              env->CallVoidMethod(parent, RenderContext_class.destroyChildContext, impl);
@@ -11,7 +12,7 @@
  
              env->DeleteGlobalRef(parent);
              parent = NULL;
-@@ -67,7 +71,13 @@
+@@ -67,7 +71,13 @@ ManagedRenderContext::~ManagedRenderContext() NOTHROWS
  bool ManagedRenderContext::isRenderThread() const NOTHROWS
  {
      LocalJNIEnv env;
@@ -26,10 +27,10 @@
  }
  TAKErr ManagedRenderContext::queueEvent(void(*runnable)(void *) NOTHROWS, std::unique_ptr<void, void(*)(const void *)> &&opaque) NOTHROWS
  {
-@@ -78,45 +88,92 @@
+@@ -78,45 +88,92 @@ TAKErr ManagedRenderContext::queueEvent(void(*runnable)(void *) NOTHROWS, std::u
      TE_CHECKRETURN_CODE(code);
  
-     env->CallVoidMethod(impl, RenderContext_class.queueEvent, mrunnable.release());
+     env->CallVoidMethod(impl, RenderContext_class.queueEvent, mrunnable.get());
 +    if(env->ExceptionCheck()) {
 +        env->ExceptionDescribe();
 +        env->ExceptionClear();
@@ -123,7 +124,7 @@
      if(!mchild)
          return TE_Err;
      value = RenderContextPtr(new ManagedRenderContext(*env, mchild, impl), Memory_deleter_const<RenderContext, ManagedRenderContext>);
-@@ -125,22 +182,46 @@
+@@ -125,22 +182,46 @@ TAKErr ManagedRenderContext::createChildContext(RenderContextPtr &value) NOTHROW
  bool ManagedRenderContext::isAttached() const NOTHROWS
  {
      LocalJNIEnv env;
@@ -174,7 +175,7 @@
  }
  RenderSurface *ManagedRenderContext::getRenderSurface() const NOTHROWS
  {
-@@ -176,6 +257,11 @@
+@@ -176,6 +257,11 @@ namespace
      jobject RenderContext_getRenderSurface(JNIEnv &env, jobject mcontext) NOTHROWS
      {
          static bool clinit = RenderContext_class_init(env);
@@ -187,3 +188,4 @@
 +        return msurface;
      }
  }
+deleted file mode 100644

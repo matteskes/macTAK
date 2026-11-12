@@ -1,9 +1,9 @@
 --- a/tmp/takeng-src/cpp/renderer/core/GLMapView2.cpp
 +++ b/tmp/takeng-src/cpp/renderer/core/GLMapView2.cpp
-@@ -3247,7 +3247,13 @@
+@@ -3278,7 +3278,13 @@
          matrix.set(mvp);
-         for(std::size_t i = numLocal; i >= 1; i--)
-             matrix.concatenate(local[i-1u]);
+             for(std::size_t i = numLocal; i >= 1; i--)
+                 matrix.concatenate(local[i-1u]);
 -        if(tile.data_proj.srid == state.drawSrid)
 +        // macTAK (G1): pick the terrain local frame from the active shader
 +        // family, as GLGlobe does — the ECEF shaders consume the re-projected

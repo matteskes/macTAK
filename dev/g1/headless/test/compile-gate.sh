@@ -3,8 +3,8 @@
 # Compile-only gate for the headless launcher src (#29). atak-headless
 # javacs dev/g1/headless/src at launch, so nothing in CI ever type-checked
 # HeadlessCLI.java; this compiles the launcher's exact file set with its
-# exact contract (--release 21, -Xlint:all -Werror, same classpath:
-# mavenLocal first, committed transplants as fallback) into a throwaway
+# exact contract (--release 21, -Xlint:all -Werror, same classpath: the
+# takkernel jars from dev/g1/kernel-dist, kernel first) into a throwaway
 # dir. The commo API classes come in as $1 — a jar or a classes dir:
 # native-dist/jcommoncommo.jar locally, a plain javac over the checkout's
 # commoncommo/jni/com/atakmap/commoncommo sources in CI (the same set
@@ -21,25 +21,13 @@ ROOT="$(cd "$G1/../.." && pwd)"
   || { echo "compile-gate: usage: $0 <commo-api-jar-or-classes-dir>" >&2; exit 1; }
 COMMO_CP="$1"
 
-# Same classpath resolution as the launcher (atak-headless): mavenLocal
-# first, else the committed transplants.
-jar() { if [[ -f "$1" ]]; then echo "$1"; else echo "$2"; fi; }
-VER="${TAKKERNEL_VER:-0.59.1}"
-M2="${HOME}/.m2/repository"
-KERNEL_M2="$M2/gov/tak/kernel"
-TRANS="$G1/transplants"
-CP="$COMMO_CP"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-engine/$VER/takkernel-engine-$VER.jar" "$TRANS/takkernel-engine-$VER.jar")"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-port/$VER/takkernel-port-$VER.jar" "$TRANS/takkernel-port-$VER.jar")"
-CP="$CP:$(jar "$KERNEL_M2/takkernel-annotation/$VER/takkernel-annotation-$VER.jar" "$TRANS/takkernel-annotation-$VER.jar")"
-CP="$CP:$(jar "$M2/gov/tak/support/android-port/3.1.0/android-port-3.1.0.jar" \
-            "$ROOT/dev/spike/g0/transplants/android-port-3.1.0.jar")"
-# com.atakmap.coremap.log.Log (java target) logs through slf4j; 1.7.30 is upstream's pin.
-CP="$CP:$(jar "$M2/org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar" "$TRANS/slf4j-api-1.7.30.jar")"
-CP="$CP:$(jar "$M2/org/slf4j/slf4j-simple/1.7.30/slf4j-simple-1.7.30.jar" "$TRANS/slf4j-simple-1.7.30.jar")"
-for j in ${CP//:/ }; do
-  [[ -e "$j" ]] || { echo "compile-gate: missing classpath entry: $j" >&2; exit 1; }
-done
+# Same classpath as the launcher (atak-headless): the takkernel jars
+# (dev/g1/kernel/classpath.sh) and the slf4j-simple binding.
+# shellcheck source=SCRIPTDIR/../../kernel/classpath.sh
+source "$G1/kernel/classpath.sh"
+KERNEL_CP="$(mactak_kernel_classpath)" \
+  || { echo "compile-gate: no takkernel jars in $MACTAK_KERNEL_DIST — run $G1/kernel/build-kernel-jars.sh" >&2; exit 1; }
+CP="$COMMO_CP:$KERNEL_CP:$G1/transplants/slf4j-simple-1.7.30.jar"
 
 # shellcheck source=SCRIPTDIR/../../../jdk.sh
 source "$ROOT/dev/jdk.sh"

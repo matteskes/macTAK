@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Sort macTAK's engine patches against the 5.5 upstream tree (spike 1).
+"""Sort macTAK's engine patch series against a newer upstream tree.
 
-Applies the 4.6 patch series to a copy of the 5.5 engine in the order
-dev/g1/build-native.sh uses (dev/spike/g0/patches/gdal-drift-*.patch, then
-dev/g1/patches/*.patch), stacked, and sorts each patch:
+Written for spike 1 (4.6 → 5.5); kept for the next upstream bump. Applies
+dev/g1/patches to a copy of the new engine in the order
+dev/g1/build-native.sh uses (gdal-drift-*.patch first, then the rest,
+sorted), stacked, and sorts each patch:
 
   clean      applies at --fuzz=0; copied unchanged to OUT_DIR
   refreshed  applies with fuzz and/or --ignore-whitespace, and every hunk,
@@ -12,7 +13,7 @@ dev/g1/patches/*.patch), stacked, and sorts each patch:
              (build-native.sh's rule)
   review     applies with fuzz but some hunk's context changed, so patch(1)
              may have put it in the wrong place; rolled back, nothing written
-  upstream   applies in reverse at --fuzz=0: the change is already in 5.5
+  upstream   applies in reverse at --fuzz=0: the change is already upstream
   failed     does not apply; nothing written
 
 `review` and `failed` patches are ported by hand into OUT_DIR. Why the
@@ -24,8 +25,8 @@ Fuzz is safe only when the regenerated hunk shows the original context.
 The regenerated diffs keep the a/tmp/takeng-src/... prefix, so they apply
 with the same `patch -p3 -d <engine>` line.
 
-usage: refresh-patches.py ENGINE_55_MAIN OUT_DIR
-       ENGINE_55_MAIN  takkernel/engine/src/main of the 5.5 checkout
+usage: refresh-patches.py ENGINE_MAIN OUT_DIR
+       ENGINE_MAIN     takkernel/engine/src/main of the new checkout
        OUT_DIR         where clean and refreshed patches are written
 exit:  0 when the run completes (review and failed are results, not
        errors); 2 on usage errors
@@ -38,9 +39,10 @@ import sys
 import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
-SERIES = (sorted((REPO / "dev/spike/g0/patches").glob("gdal-drift-*.patch"))
-          + sorted((REPO / "dev/g1/patches").glob("*.patch")))
-PREFIX = "tmp/takeng-src/"          # a/<PREFIX>cpp/... in the 4.6 patches
+_PATCHES = sorted((REPO / "dev/g1/patches").glob("*.patch"))
+SERIES = ([p for p in _PATCHES if p.name.startswith("gdal-drift-")]
+          + [p for p in _PATCHES if not p.name.startswith("gdal-drift-")])
+PREFIX = "tmp/takeng-src/"          # a/<PREFIX>cpp/... in the series
 MAX_FUZZ = 3                        # placement is checked, not trusted
 STATUSES = ("clean", "refreshed", "review", "upstream", "failed")
 

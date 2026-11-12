@@ -1,5 +1,17 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (re-pin — 2026-11-11): the render gates run on the 5.5 engine; shadows regenerate from src/
+
+Every G2 gate passes on the 5.5 build (`make build-angle`), `make
+test-shell` included, with `glErrors=0`. `render/env.sh` regenerates the
+engine shadows from `src/` + `dev/g1/patches` on each compile, so
+`engine-shadows/` and `make check-engine-shadows` are gone. 5.5 maps
+georeferenced images to the addressable `[0, w-1]` pixels:
+`GdalProjectionSmoke` accepts exactly 4.6's and 5.5's conventions
+(`(63,63)`/`(31.5,31.5)` now), and the basemap frame covers 262 036 px
+where 4.6 covered 262 144. Details: `dev/spike/g55/NOTES.md`. New G2
+traps continue this file's numbering (#57 next).
+
 ## State (M3.2 — 2026-11-07): the Swift/AppKit shell boots the JVM in-process and hosts the window; `make test-shell` is green
 
 `shell/main.swift` is the host now: it dlopens `libjli`

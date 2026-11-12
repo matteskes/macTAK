@@ -8,6 +8,7 @@ import com.atakmap.commoncommo.Contact;
 import com.atakmap.commoncommo.ContactPresenceListener;
 import com.atakmap.commoncommo.NetInterface;
 import com.atakmap.commoncommo.InterfaceStatusListener;
+import com.atakmap.commoncommo.StreamingTransport;
 
 import java.io.File;
 import java.io.IOException;
@@ -328,7 +329,11 @@ public final class HeadlessCLI {
             final byte[] caCert = caPath == null ? null : readFile(caPath);
             if (clientCert != null && !NativeSsl.loadLegacyProvider())
                 System.err.println("headless: OpenSSL legacy provider unavailable; RC2-40 PKCS#12 will fail");
-            commo.addStreamingInterface(host, port,
+            // The transport, as 5.5's deprecated overload picked it: SSL when a
+            // client cert is given, else TCP (QUIC is commo's third option).
+            final StreamingTransport transport =
+                    clientCert == null ? StreamingTransport.TCP : StreamingTransport.SSL;
+            commo.addStreamingInterface(transport, host, port,
                     new CoTMessageType[] { CoTMessageType.SITUATIONAL_AWARENESS },
                     clientCert, caCert,
                     clientCert == null ? null : certPass,

@@ -1,4 +1,4 @@
-.PHONY: help hooks build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-engine-shadows check-transplants check-ots-profiles test test-jni test-roundtrip test-tls test-render test-render-resize build-window-host test-render-window smoke-window lint clean
+.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window lint clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -9,35 +9,25 @@ GLES_SHIM_GL3H  := src/khronos/OpenGL/api/GLES3/gl3.h
 GLES_SHIM_OUT   := dev/g2/render/src/android/opengl/GLES20.java dev/g2/render/src/android/opengl/GLES30.java \
                    dev/g2/jni-extra/mactak_gles.c dev/g2/jni-extra/mactak_gles_stub.c
 
-# Engine Java classes the render host shadows ahead of the transplant jar
-# because a dev/g1/patches/*.patch hunk touches them: each shadow must be
-# byte-identical to upstream src/ with the named patch applied (the patch is
-# the single source of the change; the shadow is how CI's jar-only JVM sees
-# it). Pairs of <engine-java-relative-path>=<patch file>; one patch may span
-# several files (list each file with the same patch).
-ENGINE_SHADOW_SRC := src/takkernel/engine/src/main/java
-ENGINE_SHADOW_DST := dev/g2/render/engine-shadows
-ENGINE_SHADOWS    := com/atakmap/map/layer/raster/tilereader/opengl/GLQuadTileNode4.java=dev/g1/patches/quadtilenode4-resolvetexture-program-bind.patch \
-                     com/atakmap/map/gdal/GdalLibrary.java=dev/g1/patches/gdal3-axis-order-traditional-gis.patch \
-                     com/atakmap/map/layer/raster/gdal/GdalDatasetProjection2.java=dev/g1/patches/gdal3-axis-order-traditional-gis.patch
-
 help:
 	@echo "Targets:"
 	@echo "  hooks          - install git hooks (git config core.hooksPath .githooks)"
-	@echo "  build          - build native + commo (dev/g1/build-native.sh, dev/g1/build-commo.sh)"
+	@echo "  kernel-jars    - build the takkernel jars + JNI headers from src/ (dev/g1/kernel/build-kernel-jars.sh → dev/g1/kernel-dist)"
+	@echo "  build          - kernel jars + native + commo (build-kernel-jars.sh, build-native.sh, build-commo.sh)"
 	@echo "  angle          - stage ANGLE (EGL/GLES on Metal) into dev/g2/angle-dist (dev/g2/fetch-angle.sh)"
-	@echo "  build-angle    - build native with ANGLE in the GLES slot (MACTAK_GLES=angle) + commo"
+	@echo "  build-angle    - kernel jars + native with ANGLE in the GLES slot (MACTAK_GLES=angle) + commo"
 	@echo "  gdal-java      - G2.4b: build the GDAL SWIG Java bindings (org.gdal) against Homebrew libgdal into dev/g2/gdal-java-dist + smoke (dev/g2/fetch-gdal-java.sh)"
 	@echo "  test-gdal-projection - G2.4 b.2: the engine's GdalLibrary.init + GdalDatasetProjection2 on GDAL 3 with the axis-order patch (needs build-angle + gdal-java)"
 	@echo "  gen-gles-shim  - regenerate the android.opengl GLES shim (Java + JNI + stub) from the transplant jar x gl3.h"
 	@echo "  check-gen-gles-shim - regenerate and fail if the committed shim files differ (CI drift gate)"
-	@echo "  check-engine-shadows - fail if a shadowed engine Java class differs from upstream src/ + its dev/g1/patches hunk (CI drift gate)"
 	@echo "  check-transplants - fail if a committed transplant jar is unlisted in, or differs from, its SHA256SUMS (CI gate)"
 	@echo "  check-ots-profiles - fail if OpenTAKServer's upstream cert profiles differ from the copy test-tls pins (needs network; nightly CI)"
 	@echo "  test           - run smoke tests (dev/g1/smoke/run.sh)"
+	@echo "  test-kernel    - takkernel's own :port unit tests on Gradle 8.13 (dev/g1/kernel/test-kernel.sh; after kernel-jars)"
 	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"
+	@echo "  test-quic      - QUIC canary: commo streams over QUIC (ngtcp2 ossl backend) and refuses a client-only impostor"
 	@echo "  test-render    - G2 render smoke: engine GLGlobe into an EGL pbuffer on ANGLE, bare + GeoJSON layer + MBTiles basemap (dev/g2/render/run.sh)"
 	@echo "  test-render-resize - M3.1 dynamic-size exercise: --resize mid-run, bare + GeoJSON layer (surface OnSizeChangedListeners must fire)"
 	@echo "  build-window-host - compile the M3.1 window-harness host dylib (WindowHost.m -> build/window-host.dylib)"
@@ -49,13 +39,16 @@ help:
 hooks:
 	git config core.hooksPath .githooks
 
-build:
+kernel-jars:
+	bash dev/g1/kernel/build-kernel-jars.sh
+
+build: kernel-jars
 	bash dev/g1/build-native.sh && bash dev/g1/build-commo.sh
 
 angle:
 	bash dev/g2/fetch-angle.sh && bash dev/g2/smoke/run.sh
 
-build-angle: angle
+build-angle: angle kernel-jars
 	MACTAK_GLES=angle bash dev/g1/build-native.sh && bash dev/g1/build-commo.sh
 
 gdal-java:
@@ -86,27 +79,11 @@ check-transplants:
 check-ots-profiles:
 	@python3 dev/check-ots-profiles.py
 
-check-engine-shadows:
-	@[ -d $(ENGINE_SHADOW_SRC) ] || { echo "[check-engine-shadows] SKIP: $(ENGINE_SHADOW_SRC) not present (upstream src/ not checked out)"; exit 0; }; \
-	tmp=$$(mktemp -d) && ok=1; \
-	for pair in $(ENGINE_SHADOWS); do \
-		rel=$${pair%%=*}; \
-		mkdir -p "$$tmp/java/$$(dirname $$rel)" && cp "$(ENGINE_SHADOW_SRC)/$$rel" "$$tmp/java/$$rel"; \
-	done; \
-	for p in $$(for pair in $(ENGINE_SHADOWS); do echo "$${pair#*=}"; done | sort -u); do \
-		patch --forward --silent -p3 -d "$$tmp" < "$$p" || { echo "[check-engine-shadows] $$p does not apply to upstream"; ok=0; }; \
-	done; \
-	for pair in $(ENGINE_SHADOWS); do \
-		rel=$${pair%%=*}; p=$${pair#*=}; \
-		cmp -s "$$tmp/java/$$rel" "$(ENGINE_SHADOW_DST)/$$rel" \
-			|| { echo "[check-engine-shadows] DRIFT: $(ENGINE_SHADOW_DST)/$$rel != upstream + $$p"; ok=0; }; \
-	done; \
-	rm -rf "$$tmp"; \
-	[ $$ok = 1 ] && echo "[check-engine-shadows] OK: shadows match upstream + patches" \
-		|| { echo "[check-engine-shadows] regenerate: cp upstream file into place and apply the patch (-p3)"; exit 1; }
-
 test:
 	bash dev/g1/smoke/run.sh
+
+test-kernel:
+	bash dev/g1/kernel/test-kernel.sh
 
 # G1.9: the JNI guard/behavior canary built by `make build`, run against
 # the staged dylibs. Boots the desktop JVM twice — guards mode (empty
@@ -121,6 +98,9 @@ test-roundtrip:
 
 test-tls:
 	@bash dev/g1/headless/test/tls-purpose.sh
+
+test-quic:
+	@bash dev/g1/headless/test/quic.sh
 
 test-render:
 	bash dev/g2/render/test/gles-shim.sh
@@ -200,4 +180,4 @@ lint:
 	fi
 
 clean:
-	rm -rf dev/g1/native-dist dev/g1/build-commo dev/g1/headless/build dev/g2/angle-dist dev/g2/build
+	rm -rf dev/g1/native-dist dev/g1/build-commo dev/g1/build-ngtcp2 dev/g1/kernel-dist dev/g1/kernel/build dev/g1/headless/build dev/g2/angle-dist dev/g2/build
