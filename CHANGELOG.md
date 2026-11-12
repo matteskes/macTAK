@@ -19,7 +19,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ATAK's app layer will be rewritten in Swift, package by package with the
   Java as the specification (`docs/atak-feature-coverage.md` §The
   app-layer decision; roadmap "Open before G3"). The engine and commo stay
-  as ported; the Android stand-ins stay scoped to the render path.
+  as ported; the Android stand-ins stay scoped to the render path. Swift
+  calls commo's C++ API directly, falling back to the existing JNI
+  boundary if that proves challenging.
 - `make test-quic` gains a `peer` leg (`QuicPeerTest`): two commo
   instances with no server; B finds A from A's SA multicast on `lo0` and
   delivers a marker to A's QUIC inbound (`dev/g1/NOTES.md` G1.18). The

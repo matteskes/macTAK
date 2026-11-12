@@ -103,9 +103,12 @@ above is not needed. What follows from it:
 - The Android stand-ins stay scoped to the engine's render path
   (`dev/g2/render/src/android`); they do not grow to host app code.
 - The engine and commo stay as ported (`takkernel` on the in-process JVM,
-  `commoncommo`); the Swift app layer reaches them across the shell's
-  boundary. How each is reached (the existing JNI boundary, or commo's
-  C++ API from Swift directly) is the first G3 design question.
+  `commoncommo`).
+- **commo: the Swift app layer calls commo's C++ API directly** (decided
+  2026-11-12), not through its Java binding. Fallback: if that proves
+  challenging, it reverts to the existing JNI boundary, which the G1
+  comms gates already exercise. How the Swift layer reaches the engine
+  is still open, and is G3's first design question.
 - Porting cost is paid per package, so G3's feature list
   ([roadmap.md](roadmap.md) G3) is also its porting order.
 
