@@ -483,11 +483,12 @@ patches brings the series to 37.
    the handshake's `write`/`read` became "quic IO error during
    handshake", `CONN_OTHER`, whatever it was (here `EISCONN` from
    `sendto`). `QUIC_TEST_VERBOSE=1` prints commo's whole log, and a
-   throwaway errno probe on `sendto` found it. **Guard: none yet (open).**
-   Closing it takes a commo patch that carries the errno or exception
-   text into the QUIC failure's error message, pinned by a
-   `QuicStreamingTest` leg that forces a socket error and expects the
-   cause in the output.
+   throwaway errno probe on `sendto` found it. (Closed 2026-11-11,
+   `dev/g1/NOTES.md` G1.16.) **Guard:**
+   `patches/commo/0006-quic-socket-error-cause.patch` gives `UdpSocket`'s
+   `sendto`/`recvfrom` failures their errno and keeps it through the
+   handshake's rethrow; `make test-quic`'s cause leg (nothing listens,
+   `ECONNREFUSED`) requires it in commo's log.
 9. **The Swift shell boots whatever JDK `JAVA_HOME` names.**
    `jni_boot.c` loads `$JAVA_HOME`'s `libjli` and `shell/run.sh` never
    set it, so an inherited JDK 8 booted under classes `env.sh` had
@@ -578,8 +579,8 @@ passes the G1 comms gates. What remains before the re-pin (study step
    `atak-headless`'s overrides), and change the 14 files that name
    `889eee2`.
 
-Carried forward past the rebase: ~~`:shared`'s tests (trap 11)~~ done (G1.15), commo's
-QUIC failure cause (trap 8), the `ManagedFeatureDefinition` consumer
+Carried forward past the rebase: ~~`:shared`'s tests (trap 11)~~ done (G1.15), ~~commo's
+QUIC failure cause (trap 8)~~ done (G1.16), the `ManagedFeatureDefinition` consumer
 guards and guards-mode pins for the two new JNI patches, peer-to-peer
 QUIC after the interface-scanner bug, and 3D Tiles (cesium-native and
 draco) when it is needed.

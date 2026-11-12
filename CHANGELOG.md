@@ -264,6 +264,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- commo names a failed QUIC handshake's cause in its log, e.g. `quic IO
+  error during handshake: recvfrom failed: Connection refused (errno 61)`
+  instead of the bare first half (`dev/g1/NOTES.md` G1.16; closes
+  `dev/spike/g55/NOTES.md` trap 8). New
+  `patches/commo/0006-quic-socket-error-cause.patch`: `UdpSocket`'s
+  `sendto`/`recvfrom` failures carry their errno, and the QUIC handshake's
+  rethrow keeps it. `make test-quic` gains a `cause` leg (a closed loopback
+  port) that fails without the patch.
 - The Brewfile lists the spike's Homebrew packages (`ninja`, `mdbtools`,
   `glib`, `assimp`, from `spike-55.yml`), so they are in the lock and
   the OSV scan; `supply-chain.yml` now runs on any workflow change,

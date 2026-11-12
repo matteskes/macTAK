@@ -1426,3 +1426,38 @@ shared: 220 run, 0 failures, 0 errors, 1 skipped
 G0's `gradle-shared-test-deps.patch` (commons-math3, and
 `ConfigMapMenuWidgetControllerTest` excluded); 5.5's needs neither, and
 `ConfigMapMenuWidgetControllerTest` passes.
+
+## G1.16 — commo names a QUIC failure's cause (2026-11-11, branch `g1/commo-quic-error-cause`)
+
+`dev/spike/g55/NOTES.md` trap 8: a failed QUIC handshake reached commo's
+log as `quic IO error during handshake` and nothing more. Two layers lost
+the cause. `UdpSocket::sendto` and `recvfrom` threw a bare
+`SocketException()` ("An unknown error occurred") on any error other than
+would-block, so the errno was gone at the socket; and
+`StreamingSocketManagement::QuicConnectionContext::connectionDoPost`
+caught that exception and rethrew a fixed message, so even the bare text
+was dropped. Spike 2 found `EISCONN` only with a throwaway errno probe.
+
+`patches/commo/0006-quic-socket-error-cause.patch`:
+
+- `netsocket.cpp`: a `socketErrorWhat(call)` helper reads `errno` right
+  after the failed call (`WSAGetLastError()` on Windows, which upstream
+  builds too) and both throws carry it, e.g. `recvfrom failed: Connection
+  refused (errno 61)`. The error code stays `ERR_OTHER`.
+- `streamingsocketmanagement.cpp`: the handshake's rethrow keeps
+  `ERR_CONN_OTHER` and appends the caught message.
+
+The guard is a third `make test-quic` leg, `cause`: a QUIC connection to a
+loopback port with no listener. commo's socket is a connected UDP socket,
+so the port-unreachable reply makes the next read fail with
+`ECONNREFUSED`. `QuicStreamingTest` records every commo log line and
+requires the interface error `CONN_OTHER` and the cause in the logged
+failure. Same leg, before and after the patch:
+
+```text
+FAIL: commo logs the handshake failure's cause: Error trying to make network connection for quic:127.0.0.1:18192 - will retry (quic IO error during handshake)
+PASS: commo logs the handshake failure's cause: Error trying to make network connection for quic:127.0.0.1:18192 - will retry (quic IO error during handshake: recvfrom failed: Connection refused (errno 61))
+```
+
+The accept and refuse legs, `make test-tls` and the hermetic CoT
+round-trip stay green with the patch.

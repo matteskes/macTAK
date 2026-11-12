@@ -76,7 +76,7 @@ gate passes, the artifact was really produced this run.
 | `make test-kernel` | takkernel's own `:port` and `:shared` unit tests on Gradle 8.13, minus what needs the TAK artifactory (`dev/g1/kernel/kernel-tests.gradle`) | CI (JVM job) + local |
 | `make test-roundtrip` | CoT in/out, hermetically: two headless clients vs `dev/g1/headless/fake-cot-server.py` (no external TAK server) | CI (on `dev/g1/**` changes) + local |
 | `make test-jni` | the wave-5/6 JNI guards and the Java-backed `IOProviderFactory` proxy on a real desktop JVM: guards 7 pins (neutral bailouts, clean `JNI_OnLoad` failure) + kernel 6 pins (real files through the proxy) | CI (native job) + local; skips (exit 0) when no JDK 21 is installed |
-| `make test-quic` | commo streams over QUIC (ngtcp2's `ossl` backend) to a hash-pinned aioquic stand-in, and refuses a clientAuth-only impostor certificate | CI (comms job) + local |
+| `make test-quic` | commo streams over QUIC (ngtcp2's `ossl` backend) to a hash-pinned aioquic stand-in, refuses a clientAuth-only impostor certificate, and logs a failed handshake's cause (`ECONNREFUSED` from a closed port) | CI (comms job) + local |
 | `make test-render` | a GeoJSON layer over MBTiles renders through the engine into an EGL pbuffer, zero GL errors, PNG artifact | CI + local |
 | `make test-render-resize` / `test-render-window` | the window surface survives mid-run `drawableSize` changes | CI + local |
 | `make check-gen-gles-shim` | committed GLES shim matches its generator's output | CI + local |

@@ -9,6 +9,8 @@ import com.atakmap.commoncommo.StreamingTransport;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Instant;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -26,8 +28,12 @@ import java.util.concurrent.atomic.AtomicReference;
  *           security finding #1: the interface reports
  *           CONN_SSL_PEER_CERT_NOT_TRUSTED and never comes up
  *           (0002-sslcertchecker-require-server-purpose, on the QUIC path)
+ *   cause   nothing listens on PORT: the connected UDP socket's next read
+ *           fails with ECONNREFUSED, and commo's log must name that cause,
+ *           not only "quic IO error during handshake" (g55 trap 8;
+ *           0006-quic-socket-error-cause)
  *
- * usage: QuicStreamingTest CORE_LIB JNI_LIB CLIENT_P12 TRUST_P12 PORT accept|refuse
+ * usage: QuicStreamingTest CORE_LIB JNI_LIB CLIENT_P12 TRUST_P12 PORT accept|refuse|cause
  * env:   QUIC_TEST_VERBOSE=1 prints commo's log at every level
  * Exit 0 = every check passed.
  */
@@ -50,11 +56,22 @@ public final class QuicStreamingTest {
         if (!ok) failures++;
     }
 
+    private static final long CAUSE_WINDOW_MS = 8_000L;
+    private static final String HANDSHAKE_IO_ERROR = "quic IO error during handshake";
+
     private static final class CommoLog implements CommoLogger {
+        final Queue<String> messages = new ConcurrentLinkedQueue<>();
         public void log(CommoLogger.Level level, CommoLogger.Type type, String message,
                         CommoLogger.LoggingDetail detail) {
+            messages.add(message);
             if (VERBOSE || level == CommoLogger.Level.ERROR)
                 System.out.println("quic-streaming: [" + level + "] " + message);
+        }
+        /** The first logged message holding the handshake IO error, or null. */
+        String handshakeFailure() {
+            for (String m : messages)
+                if (m.contains(HANDSHAKE_IO_ERROR)) return m;
+            return null;
         }
     }
 
@@ -75,8 +92,9 @@ public final class QuicStreamingTest {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 6 || !(args[5].equals("accept") || args[5].equals("refuse"))) {
-            System.err.println("usage: QuicStreamingTest CORE_LIB JNI_LIB CLIENT_P12 TRUST_P12 PORT accept|refuse");
+        final String mode = args.length == 6 ? args[5] : "";
+        if (!(mode.equals("accept") || mode.equals("refuse") || mode.equals("cause"))) {
+            System.err.println("usage: QuicStreamingTest CORE_LIB JNI_LIB CLIENT_P12 TRUST_P12 PORT accept|refuse|cause");
             System.exit(2);
         }
         System.load(args[0]);
@@ -84,9 +102,8 @@ public final class QuicStreamingTest {
         final byte[] clientP12 = Files.readAllBytes(Paths.get(args[2]));
         final byte[] trustP12 = Files.readAllBytes(Paths.get(args[3]));
         final int port = Integer.parseInt(args[4]);
-        final boolean expectAccept = args[5].equals("accept");
-
-        final Commo commo = new Commo(new CommoLog(), "quic-streaming-test", "QUIC-TEST");
+        final CommoLog log = new CommoLog();
+        final Commo commo = new Commo(log, "quic-streaming-test", "QUIC-TEST");
         try {
             final StatusLatch status = new StatusLatch();
             commo.addInterfaceStatusListener(status);
@@ -94,7 +111,7 @@ public final class QuicStreamingTest {
                     new CoTMessageType[] { CoTMessageType.SITUATIONAL_AWARENESS },
                     clientP12, trustP12, PASS, PASS, null, null);
 
-            if (expectAccept) {
+            if (mode.equals("accept")) {
                 final boolean up = status.up.await(UP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 check(up, "QUIC streaming interface comes up against a serverAuth certificate (error="
                         + status.error.get() + ")");
@@ -106,6 +123,15 @@ public final class QuicStreamingTest {
                     Thread.sleep(SEND_DELAY_MS);
                     System.out.println("quic-streaming: sent " + MARKERS + " markers uid=" + MARKER_UID);
                 }
+            } else if (mode.equals("cause")) {
+                final long deadline = System.currentTimeMillis() + CAUSE_WINDOW_MS;
+                while (log.handshakeFailure() == null && System.currentTimeMillis() < deadline)
+                    Thread.sleep(100);
+                final String failure = log.handshakeFailure();
+                check(status.up.getCount() == 1 && status.error.get() == NetInterfaceErrorCode.CONN_OTHER,
+                        "QUIC streaming interface to a closed port reports CONN_OTHER (got " + status.error.get() + ")");
+                check(failure != null && failure.contains("Connection refused"),
+                        "commo logs the handshake failure's cause: " + failure);
             } else {
                 final boolean up = status.up.await(REFUSE_WINDOW_MS, TimeUnit.MILLISECONDS);
                 check(!up, "QUIC streaming interface never comes up against a clientAuth-only certificate");
@@ -115,7 +141,7 @@ public final class QuicStreamingTest {
         } finally {
             commo.shutdown();
         }
-        System.out.println("quic-streaming " + args[5] + ": " + (failures == 0 ? "PASS" : "FAIL (" + failures + ")"));
+        System.out.println("quic-streaming " + mode + ": " + (failures == 0 ? "PASS" : "FAIL (" + failures + ")"));
         System.exit(failures == 0 ? 0 : 1);
     }
 }

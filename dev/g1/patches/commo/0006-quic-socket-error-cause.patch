@@ -1,0 +1,72 @@
+diff --git a/core/impl/netsocket.cpp b/core/impl/netsocket.cpp
+--- a/core/impl/netsocket.cpp
++++ b/core/impl/netsocket.cpp
+@@ -5,9 +5,29 @@
+ #include <string.h>
+ #include <sys/types.h>
+ #include <stdint.h>
++#include <cerrno>
++#include <string>
+ 
+ using namespace atakmap::commoncommo;
+ using namespace atakmap::commoncommo::impl;
++
++namespace {
++    // macTAK: a failed datagram call's cause, read right after the call, for
++    // SocketException's message. The bare SocketException() these calls threw
++    // said "An unknown error occurred", and the QUIC handshake reported only
++    // "quic IO error during handshake" (dev/spike/g55/NOTES.md trap 8).
++    std::string socketErrorWhat(const char *call)
++    {
++#ifdef WIN32
++        return std::string(call) + " failed (WSA error "
++               + std::to_string(WSAGetLastError()) + ")";
++#else
++        const int err = errno;
++        return std::string(call) + " failed: " + strerror(err)
++               + " (errno " + std::to_string(err) + ")";
++#endif
++    }
++}
+ 
+ // Define to try supporting ipv6
+ //#define COMMO_USE_IPV6 1
+@@ -545,7 +565,8 @@
+     case PlatformNet::IO_WOULD_BLOCK:
+         throw SocketWouldBlockException();
+     default:
+-        throw SocketException();
++        throw SocketException(netinterfaceenums::ERR_OTHER,
++                              socketErrorWhat("recvfrom"));
+     }
+ 
+     try {
+@@ -593,7 +614,8 @@
+     case PlatformNet::IO_WOULD_BLOCK:
+         throw SocketWouldBlockException();
+     default:
+-        throw SocketException();
++        throw SocketException(netinterfaceenums::ERR_OTHER,
++                              socketErrorWhat("sendto"));
+     }
+ }
+ 
+diff --git a/core/impl/streamingsocketmanagement.cpp b/core/impl/streamingsocketmanagement.cpp
+--- a/core/impl/streamingsocketmanagement.cpp
++++ b/core/impl/streamingsocketmanagement.cpp
+@@ -2275,9 +2275,13 @@
+ 
+         // Read any new data. this might generate new tx data as well
+         quicConn->read(socket, *localAddr, NULL, 0);
+-    } catch (SocketException &) {
++    } catch (SocketException &e) {
+         // exceptions from read/write don't indicate connect err codes
+-        throw SocketException(ERR_CONN_OTHER, "quic IO error during handshake");
++        // macTAK: keep the cause (e.g. "recvfrom failed: Connection refused"),
++        // which this rethrow discarded (dev/spike/g55/NOTES.md trap 8)
++        throw SocketException(ERR_CONN_OTHER,
++                              std::string("quic IO error during handshake: ")
++                              + e.what());
+     }
+ 
+     // Check if handshake completed
