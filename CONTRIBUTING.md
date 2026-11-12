@@ -152,6 +152,11 @@ The upstream baseline is moving from `889eee2` to
   the same PR, or the PR says why it does not apply to 5.5. Harness
   changes go in `dev/spike/g55/`; `src/`, `dev/g1/build-native.sh` and
   the `889eee2` pin stay as they are until the re-pin.
+- **Reusing the 4.6 gates.** A 5.5 run reuses a G1/G2 script through an
+  opt-in `MACTAK_*` override rather than a copy, so both versions run
+  one copy of each gate. Unset, the override changes nothing about the
+  4.6 behaviour, and the script's header documents it. At the re-pin the
+  defaults move to 5.5 and the wrappers in `dev/spike/g55/` go.
 - **Binaries.** 5.5 jars may be built in CI from the pinned upstream
   commit (the 5.5 engine and android-port jars are), so no binary enters
   the repo. A 5.5 jar that is committed goes in
