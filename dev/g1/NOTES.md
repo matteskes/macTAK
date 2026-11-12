@@ -74,7 +74,10 @@ gradle, no mavenLocal in CI's native job.
    `spatialite_init_ex → sqlite3_create_function_v2 → findElementWithHash`.
 2. **`set -o pipefail` + `grep -q` is flaky**: grep exits on first match,
    nm eats SIGPIPE (141), pipefail turns a passing check into a failure.
-   Use `grep ... >/dev/null` in pipeline guards.
+   Use `grep ... >/dev/null` in pipeline guards. **Guard (2026-11-11):**
+   `dev/check-pipefail-grep.sh` (`make lint`, CI's lint job) fails a
+   pipefail script that pipes into `grep -q`/`-m`
+   ([g55 trap 3](../spike/g55/NOTES.md)).
 3. **`System.load` needs absolute paths**; `run.sh` resolves its dist dir.
 4. **rsync flattens `src/main/` into `build/engine/`** (trailing-slash
    copy): the glue lives at `build/engine/jni`, not

@@ -23,6 +23,7 @@ assumes them:
 | [docs/ci-qa.md](docs/ci-qa.md) | CI tiers, runner strategy, as-landed state |
 | [docs/atak-feature-coverage.md](docs/atak-feature-coverage.md) | ATAK's feature set mapped to what macTAK supports today |
 | [docs/rebase-study-5.5.md](docs/rebase-study-5.5.md) | Measured cost of moving the upstream baseline from 4.6 to 5.5 |
+| [dev/spike/g55/NOTES.md](dev/spike/g55/NOTES.md) | The 5.5 rebase as it runs: the patch port, each iteration's state, traps |
 | [dev/g1/NOTES.md](dev/g1/NOTES.md) · [dev/g2/NOTES.md](dev/g2/NOTES.md) | Engineering notes: how each milestone actually went — traps, gate logs, guards |
 
 ## Setup
@@ -30,7 +31,7 @@ assumes them:
 macOS arm64; Homebrew for the native dependency sets:
 
 ```bash
-brew bundle install              # Brewfile = the union of ci.yml's engine + comms sets
+brew bundle install              # Brewfile = the union of every workflow's brew installs
 make hooks                       # install the pre-commit gate (core.hooksPath .githooks)
 ```
 
@@ -124,7 +125,9 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 | `ci.yml` | push / pull_request on `main` | the gate ladder above — native engine, ANGLE render + drift gates, shell compile, comms stack, JVM tests, lint |
 | `cot-roundtrip.yml` | PRs / pushes touching `dev/g1/**` | hermetic CoT round-trip gate |
 | `docs.yml` | **every PR targeting `main`** (unconditionally, so the required check always reports) | markdownlint + lychee link check on changed `*.md` |
-| `supply-chain.yml` | Brewfile changes | `brew bundle check` against the committed `Brewfile.lock.json` |
+| `supply-chain.yml` | Brewfile or any workflow changes | the Brewfile equals every workflow's brew installs; `brew bundle check` against the committed `Brewfile.lock.json`; osv-scanner |
+| `ots-profile-drift.yml` | nightly; PRs touching the checker or its fixture | the pinned OpenTAKServer cert profiles still match upstream (not a PR gate) |
+| `spike-55.yml` | pushes to `spike/g55-*` touching `dev/spike/g55/`; dispatch | the 5.5 rebase's build and gates on `macos-26` — evidence, not a required check |
 
 Two consequences worth knowing before your first PR:
 
@@ -135,6 +138,42 @@ Two consequences worth knowing before your first PR:
   provenance").
 - The link check resolves relative links between docs — keep them working
   when you move files.
+
+## Rebase work (4.6 → 5.5), until the re-pin
+
+The upstream baseline is moving from `889eee2` to
+`TAK-Product-Center/atak-civ` 5.5.1.10 in stages
+([docs/rebase-study-5.5.md](docs/rebase-study-5.5.md)). Until the re-pin,
+5.5 work runs beside the 4.6 build without touching it:
+
+- **Where it lands.** The 5.5 patch series lives in
+  `dev/spike/g55/patches/`, each patch under the same filename as its
+  `dev/g1/patches/` twin. A fix to a 4.6 patch lands in both series in
+  the same PR, or the PR says why it does not apply to 5.5. Harness
+  changes go in `dev/spike/g55/`; `src/`, `dev/g1/build-native.sh` and
+  the `889eee2` pin stay as they are until the re-pin.
+- **Reusing the 4.6 gates.** A 5.5 run reuses a G1/G2 script through an
+  opt-in `MACTAK_*` override rather than a copy, so both versions run
+  one copy of each gate. Unset, the override changes nothing about the
+  4.6 behaviour, and the script's header documents it. At the re-pin the
+  defaults move to 5.5 and the wrappers in `dev/spike/g55/` go.
+- **Binaries.** 5.5 jars may be built in CI from the pinned upstream
+  commit (the 5.5 engine and android-port jars are), so no binary enters
+  the repo. A 5.5 jar that is committed goes in
+  `dev/spike/g55/transplants/` with a `SHA256SUMS` that lists every one;
+  `dev/check-transplants.sh` and the pre-commit hook already cover that
+  directory.
+- **Shadows.** No 5.5 engine shadow lands without a drift gate that does
+  for it what `check-engine-shadows` does for 4.6.
+- **Branches, commits, CI.** Branches are `spike/g55-<topic>` (what
+  `spike-55.yml` triggers on); commits use the `spike:` area. Each
+  iteration's gate (JNI canary, render smoke) joins `spike-55.yml` as a
+  job: evidence, not a required check. The gates move into `ci.yml` at the
+  re-pin.
+- **Records.** Each iteration adds a dated State section to
+  [dev/spike/g55/NOTES.md](dev/spike/g55/NOTES.md); its traps continue
+  that file's numbering, and CHANGELOG entries cite g55 trap numbers and
+  patch filenames.
 
 ## House style — NOTES, traps, CHANGELOG
 

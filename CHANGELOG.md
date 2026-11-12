@@ -133,8 +133,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   without a JDK 8; CI's native job installs Zulu 8 and uploads
   `takengine-jni-guards.xml` + `takengine-jni-kernel.xml`.
 
+### Changed
+
+- `CONTRIBUTING.md`'s rebase section allows a 5.5 run to reuse a G1/G2
+  gate through an opt-in `MACTAK_*` override in the 4.6 script (unset, no
+  change; documented in the script's header), rather than a copy under
+  `dev/spike/g55/`, so both versions run one copy of each gate.
+- The 5.5 rebase follows house style (docs only). `CONTRIBUTING.md` has a
+  "Rebase work (4.6 → 5.5), until the re-pin" section that says where 5.5
+  patches, harness changes and jars land, that a 4.6 patch fix lands in
+  both series, that 5.5 shadows need a drift gate, and how branches, CI
+  (`spike-55.yml`) and the g55 trap lineage work; its reading order and CI
+  table add `dev/spike/g55/NOTES.md`, `spike-55.yml` and
+  `ots-profile-drift.yml`. `dev/spike/g55/NOTES.md` opens with a dated
+  State section. `docs/rebase-study-5.5.md`'s patch table now gives
+  spike 1's measured port (17 unchanged, 1 refreshed, 7 hand-ported,
+  9 reworked, 3 upstream) instead of the `--fuzz=3` dry-run (g55 traps
+  1–2). The roadmap has spike 1's dated paragraph, `docs/ci-qa.md` an
+  as-landed note for `spike-55.yml`, and the README lists both 2026-11-11
+  docs.
+
 ### Fixed
 
+- The Brewfile lists the spike's Homebrew packages (`ninja`, `mdbtools`,
+  `glib`, `assimp`, from `spike-55.yml`), so they are in the lock and
+  the OSV scan; `supply-chain.yml` now runs on any workflow change,
+  since its drift step reads them all (`dev/spike/g55/NOTES.md` trap 4).
+- `grep -q` at the end of a pipe under `pipefail` now has a guard (G1
+  trap 2, G2 trap 8, `dev/spike/g55/NOTES.md` trap 3): grep quits on the
+  first match, the writer takes SIGPIPE, and the match reads as a
+  failure. `dev/check-pipefail-grep.sh` (`make lint`, CI's lint job)
+  fails any such script under `dev/`; it found four, now fixed by
+  capturing first: `dev/g2/fetch-angle.sh` (two `lipo -info` checks and
+  the `otool -L` Metal check, part of G2.5 finding #7) and the commo
+  canary in `dev/g1/build-commo.sh`. `dev/check-transplants.sh` and the
+  pre-commit hook also cover `dev/spike/g55/transplants/`, ready for the
+  rebase's 5.5 jars.
 - The Swift shell exits with the render's exit code (`dev/g2/NOTES.md`
   §G2.5, trap #56, G2 correctness audit #8). It exited 0 on every run:
   AppKit's `terminate` ends the process itself, so the lines after

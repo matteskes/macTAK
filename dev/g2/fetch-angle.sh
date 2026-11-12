@@ -83,8 +83,10 @@ log "source: $SRC"
 mkdir -p "$DEST"
 for lib in libEGL libGLESv2; do
   in="$SRC/$lib.dylib"; out="$DEST/$lib.dylib"
-  if lipo -info "$in" 2>/dev/null | grep -q 'arm64'; then
-    if lipo -info "$in" | grep -q 'Non-fat'; then cp -f "$in" "$out"; else lipo -thin arm64 "$in" -output "$out"; fi
+  # capture, then grep: grep -q at a pipe's end under pipefail (G1 trap 2)
+  arch_info="$(lipo -info "$in" 2>/dev/null || true)"
+  if grep -q 'arm64' <<<"$arch_info"; then
+    if grep -q 'Non-fat' <<<"$arch_info"; then cp -f "$in" "$out"; else lipo -thin arm64 "$in" -output "$out"; fi
   else
     echo "FATAL: $in has no arm64 slice" >&2; exit 1
   fi
@@ -110,7 +112,8 @@ nm -gU "$DEST/libGLESv2.dylib" | grep ' T _glDrawArrays$' >/dev/null \
   || { echo "FATAL: libGLESv2 lacks GL ES exports" >&2; exit 1; }
 nm -gU "$DEST/libEGL.dylib" | grep ' T _eglGetPlatformDisplayEXT$' >/dev/null \
   || { echo "FATAL: libEGL lacks eglGetPlatformDisplayEXT (ANGLE platform selection)" >&2; exit 1; }
-otool -L "$DEST/libEGL.dylib" | grep -q 'Metal.framework' \
+egl_linkage="$(otool -L "$DEST/libEGL.dylib")"
+grep -q 'Metal.framework' <<<"$egl_linkage" \
   || log "WARNING: libEGL does not link Metal.framework — backend may not be Metal"
 
 {

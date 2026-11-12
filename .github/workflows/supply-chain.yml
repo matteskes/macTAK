@@ -3,8 +3,8 @@
 # Two jobs:
 #
 # brewfile-lock (macos-26) — Gate = Brewfile.lock.json freshness: the
-# checked-in Brewfile lists exactly the packages ci.yml brew-installs
-# (union of the engine + comms install lines), and a step below enforces
+# checked-in Brewfile lists exactly the packages the workflows
+# brew-install (ci.yml's engine + comms lines, spike-55.yml's), and a step below enforces
 # that union against every workflow's brew install lines — a package added
 # there without a Brewfile + lock update fails this job instead of
 # escaping the lock and the osv scan. Note: Homebrew removed built-in
@@ -25,17 +25,17 @@ name: Supply chain
 on:
   pull_request:
     paths:
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/cot-roundtrip.yml'
-      - '.github/workflows/supply-chain.yml'
+      # every workflow: the drift step below reads all of them, so a new
+      # workflow's brew install line must trigger it (g55 trap 4)
+      - '.github/workflows/*.yml'
       - 'Brewfile'
       - 'Brewfile.lock.json'
   push:
     branches: [main]
     paths:
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/cot-roundtrip.yml'
-      - '.github/workflows/supply-chain.yml'
+      # every workflow: the drift step below reads all of them, so a new
+      # workflow's brew install line must trigger it (g55 trap 4)
+      - '.github/workflows/*.yml'
       - 'Brewfile'
       - 'Brewfile.lock.json'
   workflow_dispatch:
@@ -56,8 +56,8 @@ jobs:
 
       - name: Fail if the Brewfile drifts from the workflows' brew install lines
         run: |
-          # The Brewfile is the union of the brew install lines in ci.yml and
-          # cot-roundtrip.yml. A package added to a workflow without a
+          # The Brewfile is the union of the brew install lines in every
+          # workflow. A package added to a workflow without a
           # Brewfile (+ lock) update must fail here, not quietly escape the
           # lock regeneration and the osv scan. Stdlib re over the raw YAML
           # — the two-line folded scalars the install lines use included —

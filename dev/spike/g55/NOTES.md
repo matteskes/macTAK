@@ -8,6 +8,19 @@ macTAK's patch series carried over? Nothing here changes the build
 macTAK ships: `src/`, `dev/g1/build-native.sh` and the 4.6 pin are
 untouched. The re-pin is a later step.
 
+Each iteration of the rebase adds a dated State section here, newest on
+top, and its traps continue this file's numbering (the g55 lineage).
+After the re-pin this record stays as history, and new traps go back to
+the G1 and G2 lineages.
+
+## State (spike 1 — 2026-11-11): the 5.5 engine builds on macOS arm64 without 3D Tiles
+
+takkernel 8.30.5 with macTAK's 34-patch 5.5 series compiles and links on
+`macos-26`: 471 of 471 build steps, `libtakengine.dylib` linked
+(`spike-55.yml` run 42970368105, PR #98). Not yet run: no JNI glue, no
+canary, no gate. Next is the JNI glue on 5.5 (§Exit). Details in
+§Result below.
+
 ## Result
 
 **Yes.** On `macos-26` (Xcode 26 toolchain, Homebrew GDAL 3.13.3), the
@@ -198,7 +211,7 @@ added): `FeatureDefinition` lookups moved to the new
 lookups. Both are guarded now (§JNI glue), which with the LAS and logger
 patches brings the series to 37.
 
-## Traps found on the way
+## Traps found on the way (do not rediscover these)
 
 1. **`--fuzz=3` places hunks with no context.** GNU patch at fuzz N
    ignores N context lines at each end of a hunk; a 3-line-context hunk
@@ -219,12 +232,44 @@ patches brings the series to 37.
    port's own replay helper): `grep -q` exits on the first match, `git
    log` takes SIGPIPE, and the pipeline reports failure, so an applied
    patch read as not applied. Read the log into a variable first.
-4. **`java_home -v N` answers a missing JDK with the default one.** With
+   It is the third time (G1 trap 2, G2 trap 8). **Guard:**
+   `dev/check-pipefail-grep.sh` (`make lint`, CI's lint job) fails any
+   script under `dev/` that sets `pipefail` and pipes into `grep -q`,
+   `--quiet`, `-m` or `--max-count`. On `main` before the fix it found
+   four more, all fixed on branch `chore/rebase-guards`:
+
+   ```text
+   [check-pipefail-grep] FAIL dev/g1/build-commo.sh:240: pipes into an early-exit grep under pipefail
+   [check-pipefail-grep] FAIL dev/g2/fetch-angle.sh:86: pipes into an early-exit grep under pipefail
+   [check-pipefail-grep] FAIL dev/g2/fetch-angle.sh:87: pipes into an early-exit grep under pipefail
+   [check-pipefail-grep] FAIL dev/g2/fetch-angle.sh:113: pipes into an early-exit grep under pipefail
+   ```
+
+   After: `[check-pipefail-grep] OK: no early-exit grep at the end of a
+   pipe under pipefail`. The fixed `fetch-angle.sh` re-staged ANGLE and
+   passed its triangle smoke (`make angle`: `egl-triangle: PASS`).
+4. **A new workflow escaped the Brewfile drift check.** `spike-55.yml`
+   installs `ninja`, `mdbtools`, `glib` and `assimp`, none of them in
+   the `Brewfile`. `supply-chain.yml`'s drift step reads every workflow,
+   but the job ran only on PRs touching `ci.yml`, `cot-roundtrip.yml`,
+   itself or the Brewfile pair, so #98 merged green and the next PR to
+   touch `ci.yml` (#102) went red for it:
+
+   ```text
+   ##[error]Brewfile != union of the workflows' brew install lines
+     in workflows only: assimp glib mdbtools ninja
+   ```
+
+   **Guard:** the four are in the `Brewfile` and its lock, and the job
+   now triggers on any change under `.github/workflows/*.yml`, so a
+   workflow that adds a package fails in its own PR (branch
+   `ci/brewfile-spike-deps`).
+5. **`java_home -v N` answers a missing JDK with the default one.** With
    no JDK 13 installed, `/usr/libexec/java_home -v 13` prints JDK 27's
    home and exits 0, so a script asking for JDK 8 silently ran on
    whatever is newest. **Guard:** `runtime.sh`'s `g55_jdk_home` checks
    `JAVA_VERSION` in the JDK's `release` file and fails on a mismatch.
-5. **The android-port substitute shadows kernel classes.** It carries
+6. **The android-port substitute shadows kernel classes.** It carries
    the 5.5.1.8 apk's own `com.atakmap.*`, including an Android
    `coremap.log.Log` that calls `android.util.Log`, whose substitute
    throws `Stub!`. With the jars in directory order, `android-port-*`
@@ -232,7 +277,7 @@ patches brings the series to 37.
    `Log.w`. G1's classpath has the same order constraint. **Guard:**
    `g55_kernel_classpath` puts the kernel jars first and android-port
    last.
-6. **A missing slf4j crashed `JNI_OnLoad`** (5.5's `ManagedLogger`,
+7. **A missing slf4j crashed `JNI_OnLoad`** (5.5's `ManagedLogger`,
    §JNI glue). **Guard:** `common-managedlogger-guards.patch`; the
    canaries take slf4j from the engine's own runtime classpath.
 
