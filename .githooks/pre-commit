@@ -53,7 +53,7 @@ while IFS= read -r f; do
             fi
             checked=$((checked + 1))
             ;;
-        dev/g1/transplants/*|dev/spike/g0/transplants/*)
+        dev/g1/transplants/*|dev/spike/g0/transplants/*|dev/spike/g55/transplants/*)
             # One check for hook, make and CI: every jar listed and matching,
             # and no unlisted jar (dev/check-transplants.sh). Run once per
             # commit however many transplant files are staged.

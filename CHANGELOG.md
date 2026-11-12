@@ -119,6 +119,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `glib`, `assimp`, from `spike-55.yml`), so they are in the lock and
   the OSV scan; `supply-chain.yml` now runs on any workflow change,
   since its drift step reads them all (`dev/spike/g55/NOTES.md` trap 4).
+- `grep -q` at the end of a pipe under `pipefail` now has a guard (G1
+  trap 2, G2 trap 8, `dev/spike/g55/NOTES.md` trap 3): grep quits on the
+  first match, the writer takes SIGPIPE, and the match reads as a
+  failure. `dev/check-pipefail-grep.sh` (`make lint`, CI's lint job)
+  fails any such script under `dev/`; it found four, now fixed by
+  capturing first: `dev/g2/fetch-angle.sh` (two `lipo -info` checks and
+  the `otool -L` Metal check, part of G2.5 finding #7) and the commo
+  canary in `dev/g1/build-commo.sh`. `dev/check-transplants.sh` and the
+  pre-commit hook also cover `dev/spike/g55/transplants/`, ready for the
+  rebase's 5.5 jars.
 - The Swift shell exits with the render's exit code (`dev/g2/NOTES.md`
   §G2.5, trap #56, G2 correctness audit #8). It exited 0 on every run:
   AppKit's `terminate` ends the process itself, so the lines after

@@ -157,6 +157,22 @@ lookups.
    port's own replay helper): `grep -q` exits on the first match, `git
    log` takes SIGPIPE, and the pipeline reports failure, so an applied
    patch read as not applied. Read the log into a variable first.
+   It is the third time (G1 trap 2, G2 trap 8). **Guard:**
+   `dev/check-pipefail-grep.sh` (`make lint`, CI's lint job) fails any
+   script under `dev/` that sets `pipefail` and pipes into `grep -q`,
+   `--quiet`, `-m` or `--max-count`. On `main` before the fix it found
+   four more, all fixed on branch `chore/rebase-guards`:
+
+   ```text
+   [check-pipefail-grep] FAIL dev/g1/build-commo.sh:240: pipes into an early-exit grep under pipefail
+   [check-pipefail-grep] FAIL dev/g2/fetch-angle.sh:86: pipes into an early-exit grep under pipefail
+   [check-pipefail-grep] FAIL dev/g2/fetch-angle.sh:87: pipes into an early-exit grep under pipefail
+   [check-pipefail-grep] FAIL dev/g2/fetch-angle.sh:113: pipes into an early-exit grep under pipefail
+   ```
+
+   After: `[check-pipefail-grep] OK: no early-exit grep at the end of a
+   pipe under pipefail`. The fixed `fetch-angle.sh` re-staged ANGLE and
+   passed its triangle smoke (`make angle`: `egl-triangle: PASS`).
 4. **A new workflow escaped the Brewfile drift check.** `spike-55.yml`
    installs `ninja`, `mdbtools`, `glib` and `assimp`, none of them in
    the `Brewfile`. `supply-chain.yml`'s drift step reads every workflow,
