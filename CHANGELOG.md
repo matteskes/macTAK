@@ -38,7 +38,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   code in 4.6), which blocks peer-to-peer QUIC discovery; and 5.5
   deprecates the `addStreamingInterface` overload `HeadlessCLI` uses
   (`atak-headless` gains opt-in `MACTAK_HEADLESS_CLASSES` and
-  `MACTAK_JAVAC_LINT`). `spike-55.yml` gains a commo job.
+  `MACTAK_JAVAC_LINT`). `spike-55.yml` gains a commo job. Trap 8 in
+  `dev/spike/g55/NOTES.md` (commo hides the cause of a QUIC failure)
+  stays open, with the patch that would close it described there.
 
 - Spike 1, render step (`dev/spike/g55/`, NOTES §Render gates): the G2
   render gates pass on the 5.5 build linked against ANGLE/Metal. These

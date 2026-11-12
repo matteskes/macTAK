@@ -70,7 +70,9 @@ for lib in libcommoncommo libcommoncommojni; do
     die "$lib.dylib links a second OpenSSL or a shared ngtcp2: $(grep -E 'openssl|ngtcp2' <<<"$linkage" | tr -s ' ')"
   fi
 done
-nm -gU "$DIST/libcommoncommo.dylib" | grep -q '_ngtcp2_crypto_ossl_configure_client_session' \
+# capture, then grep: grep -q at a pipe's end under pipefail (g55 trap 3)
+exports="$(nm -gU "$DIST/libcommoncommo.dylib")"
+grep -q '_ngtcp2_crypto_ossl_configure_client_session' <<<"$exports" \
   || die "libcommoncommo.dylib does not carry ngtcp2's ossl backend"
 echo "[g55-commo] ok: one OpenSSL runtime (openssl@3), ngtcp2 + crypto_ossl inside libcommoncommo"
 

@@ -13,6 +13,17 @@ top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
 
+## State (commo — 2026-11-11): 5.5 commo and its QUIC pass the G1 comms gates
+
+5.5's commoncommo builds through `dev/g1/build-commo.sh` (opt-in
+`MACTAK_COMMO_*` overrides) with its mandatory QUIC on ngtcp2 1.26.0's
+`ossl` backend over Homebrew `openssl@3`, one OpenSSL runtime linked.
+`commo.sh`'s six checks are green: streaming QUIC against an aioquic
+stand-in (a clientAuth-only impostor refused, so security fix #1 holds
+on QUIC), `tls-purpose.sh` and the two-client CoT round-trip (#101).
+Five commo patches; trap 8 (commo hides a QUIC failure's cause) is
+open. Next: the move to JDK 21, then the re-pin (§Exit).
+
 ## State (render gates — 2026-11-11): the G2 render gates pass on 5.5 with ANGLE/Metal
 
 The nine steps of `ci.yml`'s `render-angle` job run green on the 5.5
@@ -432,11 +443,15 @@ patches brings the series to 37.
 7. **A missing slf4j crashed `JNI_OnLoad`** (5.5's `ManagedLogger`,
    §JNI glue). **Guard:** `common-managedlogger-guards.patch`; the
    canaries take slf4j from the engine's own runtime classpath.
-7. **commo swallows the cause of a QUIC failure.** Any exception from
+8. **commo swallows the cause of a QUIC failure.** Any exception from
    the handshake's `write`/`read` became "quic IO error during
    handshake", `CONN_OTHER`, whatever it was (here `EISCONN` from
-   `sendto`). **Guard:** none in commo; `QUIC_TEST_VERBOSE=1` prints
-   commo's whole log, and a throwaway errno probe on `sendto` found it.
+   `sendto`). `QUIC_TEST_VERBOSE=1` prints commo's whole log, and a
+   throwaway errno probe on `sendto` found it. **Guard: none yet (open).**
+   Closing it takes a commo patch that carries the errno or exception
+   text into the QUIC failure's error message, pinned by a
+   `QuicStreamingTest` leg that forces a socket error and expects the
+   cause in the output.
 
 ## Exit
 
@@ -464,7 +479,8 @@ passes the G1 comms gates. What remains before the re-pin (study step
    `StreamingTransport` overload; peer-to-peer QUIC, after the
    pre-existing interface-scanner bug; and whether ngtcp2 is built in CI
    as here or committed.
-4. **The Java 8 → 21 move** (2–3 days): CI's Zulu 8 jobs, the headless
+4. **The Java 8 → 21 move** (2–3 days; decided on #99's review: JDK 21,
+   its own PR after this stack): CI's Zulu 8 jobs, the headless
    launcher (then `layer.sh` and the full 5.5 headless run), the render
    harness, and JDK 21's `this-escape` lint.
 5. **The re-pin** (1–2 days): fold `build-engine.sh`'s wrapper changes into
