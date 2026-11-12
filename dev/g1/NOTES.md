@@ -1515,3 +1515,40 @@ classpath without the kernel, and all three classes ship in
 `takkernel-engine`, so no real classpath reaches the new lookups with
 them missing. The elevation consumers already go through `checkInit`
 upstream, so they need no consumer guards.
+
+## G1.18 — peer-to-peer QUIC, tested (2026-11-12, branch `g1/quic-peer`)
+
+Carried forward from `dev/spike/g55/NOTES.md` §Commo: peer-to-peer QUIC
+was untested and reported blocked on macOS, with commo's interface
+scanner reading `lo0` as `127.51.68.120`. That does not reproduce on
+`main` (5.5 commo, the six `patches/commo` patches). A probe of two
+commo instances in one JVM found the scanner right and peer QUIC working
+in all three shapes:
+
+| Interface | Address mode | Scanner | Discovery | QUIC delivery |
+|---|---|---|---|---|
+| `lo0` | NAME | `UP 127.0.0.1` | yes | yes, to `127.0.0.1:4243` |
+| `en0` | NAME | `UP 10.0.0.242` | yes | yes |
+| `en0` | PHYS_ADDR (its MAC) | `UP 10.0.0.242` | yes | yes |
+
+The spike's probe is not in the history, so its setup cannot be
+replayed. `hwifscanner.cpp` and the macOS branch of
+`InterfaceEnumerator::rescanInterfaces` are unchanged here.
+
+The guard is a fourth `make test-quic` leg, `peer`
+(`headless/test/QuicPeerTest.java`): A and B in NAME mode on `lo0`, no
+server. A multicasts its SA to `239.2.3.1`; B adds A as a contact and
+sends it a marker; the leg requires that B send to A's advertised QUIC
+endpoint and that A receive the marker on its QUIC inbound. A/B: with
+`patches/commo/0005-udpsocket-connected-sendto-macos` taken out, the leg
+fails, B logging `Quic Tx socket init failed sendto failed: Socket is
+already connected (errno 56)` and A receiving nothing; with it, all four
+legs pass.
+
+### Traps found on the way (do not rediscover these)
+
+1. **commo advertises peer QUIC on 4243 whatever port the inbound
+   listens on.** `CoTMessage::endpointForType` writes `<ip>:4243:quic`
+   (ATAK's port); with A's QUIC inbound on 4245, B still sent to
+   `127.0.0.1:4243` and nothing arrived. The test's receiving peer
+   listens on 4243.

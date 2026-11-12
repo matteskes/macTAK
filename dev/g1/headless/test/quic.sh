@@ -12,13 +12,18 @@
 #           it on TCP — G1 security finding #1, on the QUIC path
 #   cause   nothing listens: the handshake's read fails with ECONNREFUSED,
 #           and commo's log must say so (g55 trap 8, patches/commo/0006)
+#   peer    two commo instances, no server: B finds A from A's SA multicast
+#           on lo0 and sends A a marker over A's QUIC inbound
+#           (QuicPeerTest; dev/g1/NOTES.md G1.18)
 #
 # From spike 2 (dev/spike/g55/NOTES.md §Commo). aioquic installs into a
 # venv from the hash-pinned requirements-quic.txt (--require-hashes).
 #
 # usage: test/quic.sh   (needs dev/g1/native-dist from build-commo.sh)
 # env:   QUIC_TEST_PORT (default 18190; the refuse leg uses +1, the cause
-#        leg +2, which must have no listener),
+#        leg +2, which must have no listener; the peer leg +3 for B's QUIC
+#        inbound and +4 for the mesh, and 4243 for A's QUIC inbound, the
+#        port commo always advertises),
 #        QUIC_TEST_VERBOSE=1 prints commo's whole log
 set -euo pipefail
 
@@ -78,7 +83,7 @@ done
   -out "$WORK/truststore.p12" -passout "pass:$PASS" -name ca
 
 "$JDK/bin/javac" --release 21 -Xlint:all -Werror -cp "$DIST/jcommoncommo.jar" \
-  -d "$WORK/classes" "$HERE/QuicStreamingTest.java"
+  -d "$WORK/classes" "$HERE/QuicStreamingTest.java" "$HERE/QuicPeerTest.java"
 
 quic_server=""
 # shellcheck disable=SC2317,SC2329  # invoked via trap
@@ -117,4 +122,9 @@ log "cause leg: nothing listens on :$((PORT + 2))"
   "$DIST/libcommoncommo.dylib" "$DIST/libcommoncommojni.dylib" \
   "$WORK/client.p12" "$WORK/truststore.p12" "$((PORT + 2))" cause
 
-log "PASS: commo streams over QUIC, refuses a clientAuth-only server certificate, and names a failed handshake's cause"
+log "peer leg: B finds A on lo0 (mesh :$((PORT + 4))) and sends it a marker over QUIC (A :4243, B :$((PORT + 3)))"
+"$JDK/bin/java" -cp "$DIST/jcommoncommo.jar:$WORK/classes" QuicPeerTest \
+  "$DIST/libcommoncommo.dylib" "$DIST/libcommoncommojni.dylib" \
+  "$WORK/server.p12" "$((PORT + 3))" "$((PORT + 4))"
+
+log "PASS: commo streams over QUIC, refuses a clientAuth-only server certificate, names a failed handshake's cause, and delivers peer to peer over QUIC"

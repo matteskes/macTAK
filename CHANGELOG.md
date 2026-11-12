@@ -9,6 +9,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `make test-quic` gains a `peer` leg (`QuicPeerTest`): two commo
+  instances with no server; B finds A from A's SA multicast on `lo0` and
+  delivers a marker to A's QUIC inbound (`dev/g1/NOTES.md` G1.18). The
+  leg fails with `patches/commo/0005-udpsocket-connected-sendto-macos`
+  taken out. The interface-scanner bug the 5.5 spike reported against
+  peer QUIC (`lo0` read as `127.51.68.120`) does not reproduce: peer
+  QUIC works on `lo0` and `en0`, in NAME and PHYS_ADDR modes.
 - Spike 2, 5.5 commo (`dev/spike/g55/`, NOTES §Commo): 5.5's
   commoncommo builds on macOS with its now-mandatory QUIC on ngtcp2's
   `ossl` backend, OpenSSL 3.5's own QUIC TLS API, over the same
