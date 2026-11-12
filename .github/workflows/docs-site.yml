@@ -1,0 +1,71 @@
+# The docs site (dev/docs-site/build.sh, `make docs-site`): the repo's
+# Markdown as a browsable site, published to GitHub Pages from main.
+#
+# On a PR the site is built in MkDocs strict mode, so a broken link or
+# anchor between documents fails the build; nothing is published. On a push
+# to main the same build is uploaded and deployed to Pages.
+#
+# Not a required check, so the paths filter is safe here (docs.yml explains
+# why the required "markdownlint" check cannot have one).
+
+name: Docs site
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.md'
+      - 'dev/docs-site/**'
+      - '.github/workflows/docs-site.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+      - 'dev/docs-site/**'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-site-${{ github.ref }}
+  # a deploy in flight finishes; a newer push then deploys after it
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build docs site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out macTAK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the site (MkDocs strict, hash-pinned)
+        run: bash dev/docs-site/build.sh
+
+      - name: Upload the site for Pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dev/docs-site/build/site
+
+  deploy:
+    name: deploy docs site
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

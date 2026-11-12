@@ -81,6 +81,7 @@ gate passes, the artifact was really produced this run.
 | `make test-render-resize` / `test-render-window` | the window surface survives mid-run `drawableSize` changes | CI + local |
 | `make check-gen-gles-shim` | committed GLES shim matches its generator's output | CI + local |
 | `make build-shell` | the Swift/C shell compiles | CI + local |
+| `make docs-site` | the docs site builds in MkDocs strict mode: every link and anchor between the documents resolves | CI (`docs-site.yml`) + local |
 | `make smoke-window` / `make test-shell` | a real window opens and presents frames | **dev Mac only** — needs a GUI session; CI runners have no WindowServer, so CI compiles the shell but the last mile of every window milestone is a local gate |
 
 Run the affected gates before pushing; CI will re-run the ones it can.
@@ -106,7 +107,8 @@ Run the affected gates before pushing; CI will re-run the ones it can.
   External downloads are SHA256-pinned: ANGLE (`dev/g2/fetch-angle.sh`,
   which writes `PROVENANCE.txt`), ngtcp2 (`dev/g1/fetch-ngtcp2.sh`) and
   aioquic with its dependencies (`--require-hashes`,
-  `dev/g1/headless/test/requirements-quic.txt`).
+  `dev/g1/headless/test/requirements-quic.txt`), and MkDocs for the docs
+  site (`--require-hashes`, `dev/docs-site/requirements-docs.txt`).
 
 ## Where changes land
 
@@ -144,6 +146,7 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 | `ci.yml` | push / pull_request on `main` | the gate ladder above — native engine, ANGLE render + GLES-shim drift gate, shell compile, comms stack + QUIC, JVM tests (kernel jars, JNI-header drift, `test-kernel`, canaries), lint |
 | `cot-roundtrip.yml` | PRs / pushes touching `dev/g1/**` | hermetic CoT round-trip gate |
 | `docs.yml` | **every PR targeting `main`** (unconditionally, so the required check always reports) | markdownlint + lychee link check on changed `*.md` |
+| `docs-site.yml` | PRs / pushes touching `*.md` or `dev/docs-site/` | builds the docs site (strict); on `main`, deploys it to GitHub Pages |
 | `supply-chain.yml` | Brewfile or any workflow changes | the Brewfile equals every workflow's brew installs; `brew bundle check` against the committed `Brewfile.lock.json`; osv-scanner |
 | `ots-profile-drift.yml` | nightly; PRs touching the checker or its fixture | the pinned OpenTAKServer cert profiles still match upstream (not a PR gate) |
 

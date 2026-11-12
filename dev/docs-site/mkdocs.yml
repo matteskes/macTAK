@@ -1,0 +1,81 @@
+# The macTAK docs site: the repo's Markdown, browsable (dev/docs-site/build.sh,
+# `make docs-site`; published to GitHub Pages by .github/workflows/docs-site.yml).
+# stage.py copies the pages into build/stage at their repo paths; this file
+# builds them. Every page gets a table of contents in the right-hand sidebar
+# (the drawer on narrow screens), from its headings.
+site_name: macTAK
+site_description: Engineering notes, roadmap and studies for macTAK, the TAK stack on native macOS
+repo_url: https://github.com/matteskes/macTAK
+repo_name: matteskes/macTAK
+edit_uri: edit/main/
+
+docs_dir: build/stage
+site_dir: build/site
+strict: true
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - tables
+  - attr_list
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - mdx_truly_sane_lists:
+      nested_indent: 2
+
+nav:
+  - Home: README.md
+  - Roadmap: docs/roadmap.md
+  - Contributing: CONTRIBUTING.md
+  - Changelog: CHANGELOG.md
+  - Engineering notes:
+      - "G1: JVM host and JNI glue": dev/g1/NOTES.md
+      - "G2: map in a native window": dev/g2/NOTES.md
+      - "Spike G0: the engine builds": dev/spike/g0/NOTES.md
+      - "Spike 5.5: the rebase": dev/spike/g55/NOTES.md
+  - Design and studies:
+      - Architecture: docs/architecture.md
+      - Feasibility report: docs/feasibility-report.md
+      - "Pathway A: the WinTAK reference": docs/pathway-a.md
+      - "Pathway C: the port": docs/pathway-c.md
+      - ATAK feature coverage: docs/atak-feature-coverage.md
+      - "Rebase study: 5.5": docs/rebase-study-5.5.md
+      - CI and QA: docs/ci-qa.md
+  - Tooling:
+      - G1 tools: dev/g1/tools/README.md
+      - G0 transplants: dev/spike/g0/transplants/README.md

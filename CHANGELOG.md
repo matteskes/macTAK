@@ -9,6 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A docs site: the README, CONTRIBUTING, CHANGELOG, the program documents
+  in `docs/` and the engineering notes under `dev/` as one browsable site
+  on GitHub Pages, with a sidebar, search and a table of contents on
+  every page (`dev/docs-site/`, `make docs-site`, `docs-site.yml`). The
+  pages are the repo's own files, built in MkDocs strict mode, so a
+  broken link or anchor between them fails the PR; links to scripts and
+  source point at GitHub. MkDocs and Material install from a hash-pinned
+  requirements file.
 - The rest of G2 is planned (`dev/g2/NOTES.md` "The rest of G2 — decided
   2026-11-12", roadmap G2): M3.3 → M3.4 (the R4 verdict) → G2.4 b.1
   imagery → G2.6 elevation (kept in G2) → the exit run; synthetic
