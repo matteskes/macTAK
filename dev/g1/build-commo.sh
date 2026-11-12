@@ -9,39 +9,35 @@
 #     from dev/g1/patches/*.patch, which are -p3 ENGINE patches — keep it so)
 #   + build-commo/shim: a takthirdparty-style layout made of Homebrew prefixes
 #     (include/libxml2, include/openssl, include/google, microhttpd.h, lib/*)
-#   → libcommoncommo.dylib   (core/impl Makefile; 2016 code pinned -std=c++11,
-#                             protobuf objects precompiled -std=c++17 because
-#                             brew protoc ≥27 no longer emits C++11)
-#   → libcommoncommojni.dylib (jni/native Makefile TARGET=macos, JDK 8 javah;
-#                             classes are seeded with javac first so the
+#   + ngtcp2 (dev/g1/fetch-ngtcp2.sh: its ossl backend over openssl@3,
+#     static) — 5.5 compiles commo's QUIC unconditionally
+#   → libcommoncommo.dylib   (core/impl Makefile; protobuf objects
+#                             precompiled -std=c++17 because brew
+#                             protoc ≥27 no longer emits C++11)
+#   → libcommoncommojni.dylib (jni/native Makefile TARGET=macos; classes and
+#                             javac -h headers are seeded first, so the
 #                             Makefile's ant hook never fires)
 #   → jcommoncommo.jar       (com.atakmap.commoncommo API classes)
 #   staged in dev/g1/native-dist/ and wired together via @loader_path
 #   (+ ad-hoc codesign — install_name_tool invalidates the linker signature
 #   and arm64 refuses unsigned dylibs).
 #
-# Canaries: dlopen, Java_com_atakmap_commoncommo exports, and a JVM load that
-# constructs + shuts down a real Commo instance (no server needed). The live
-# CoT round-trip lives in dev/g1/headless/run.sh (needs FTS on 127.0.0.1:8087).
+# Canaries: dlopen, Java_com_atakmap_commoncommo exports, one OpenSSL runtime
+# with ngtcp2 linked in statically, and a JVM load that constructs + shuts
+# down a real Commo instance (no server needed). The live CoT round-trip
+# lives in dev/g1/headless/run.sh, QUIC in dev/g1/headless/test/quic.sh.
 #
 # Everything lands under g1/build-commo (wiped each run). A clean build is
-# well under a minute at -j$(hw.ncpu).
-#
-# Overrides (dev/spike/g55/commo.sh builds 5.5's commo with this script;
-# unset, nothing changes): MACTAK_COMMO_SRC (commoncommo tree),
-# MACTAK_COMMO_PATCHES (its -p1 series), MACTAK_COMMO_WORK (build dir),
-# MACTAK_NATIVE_DIST (staging dir, as atak-headless reads it) and
-# MACTAK_NGTCP2_PREFIX (an ngtcp2 install linked into the shim; 5.5's QUIC).
+# well under a minute at -j$(hw.ncpu), plus ngtcp2 once.
 set -euo pipefail
 
 DEV="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # <repo>/dev — this script lives at dev/g1/
 ROOT="$(cd "$DEV/.." && pwd)"                             # <repo>
 G1="$DEV/g1"
-WORK="${MACTAK_COMMO_WORK:-$G1/build-commo}"
-OUT="${MACTAK_NATIVE_DIST:-$G1/native-dist}"
-COMMOSRC="${MACTAK_COMMO_SRC:-$ROOT/src/commoncommo}"
-COMMO_PATCHES="${MACTAK_COMMO_PATCHES:-$G1/patches/commo}"
-NGTCP2="${MACTAK_NGTCP2_PREFIX:-}"
+WORK="$G1/build-commo"
+OUT="$G1/native-dist"
+COMMOSRC="$ROOT/src/commoncommo"
+NGTCP2="$G1/build-ngtcp2/prefix"
 JOBS="$(sysctl -n hw.ncpu)"
 HB=/opt/homebrew
 
@@ -74,23 +70,20 @@ for f in openssl@3 libxml2 protobuf libmicrohttpd curl; do
     || die "brew formula missing: $f
        → brew install openssl@3 libxml2 protobuf libmicrohttpd curl"
 done
-# Two JDKs until the 5.5 re-pin (dev/jdk.sh): JDK 8 builds commo (4.6's
-# JNI Makefile calls $(JAVA_HOME)/bin/javah, gone since JDK 10), JDK 21
-# runs the canary, as every other JVM macTAK starts.
 # shellcheck source=SCRIPTDIR/../jdk.sh
 source "$DEV/jdk.sh"
-JDK="$(mactak_jdk_home 8 || true)"
-[[ -n "$JDK" && -x "$JDK/bin/javah" ]] \
-  || die "JDK 8 with javah required to build 4.6 commo (dev/jdk.sh: MACTAK_JDK8_HOME or java_home -v 1.8)"
-RUNTIME_JDK="$(mactak_jdk_home 21 || true)"
-[[ -n "$RUNTIME_JDK" ]] || die "JDK 21 required to run the canary (dev/jdk.sh)"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" ]] || die "JDK 21 required (dev/jdk.sh)"
 PROTOC="$(command -v protoc)"
 CURL_CONF="$HB/opt/curl/bin/curl-config"
 [[ -x "$CURL_CONF" ]] || CURL_CONF="$(command -v curl-config)"
 [[ -d "$COMMOSRC/core/impl" ]] \
-  || die "commoncommo tree missing — run: (cd $ROOT/src && git submodule update --init --recursive)"
+  || die "commoncommo tree missing at $COMMOSRC — populate src/ per CONTRIBUTING.md (Setup)"
 
 log "preflight ok (root=$ROOT, -j$JOBS)"
+
+log "ngtcp2 (QUIC) against openssl@3"
+bash "$G1/fetch-ngtcp2.sh"
 
 # --- work tree -----------------------------------------------------------
 rm -rf "$WORK"
@@ -99,7 +92,7 @@ mkdir -p "$WORK/shim" "$WORK/canary" "$OUT"
 log "copying commoncommo tree → $WORK/commo"
 rsync -a --exclude .git "$COMMOSRC/" "$WORK/commo/"
 
-for p in "$COMMO_PATCHES"/*.patch; do
+for p in "$G1"/patches/commo/*.patch; do
   [[ -e "$p" ]] || continue
   patch --forward --silent --fuzz=0 -p1 -d "$WORK/commo" < "$p" || die "patch failed: $(basename "$p")"
   log "  applied $(basename "$p")"
@@ -117,12 +110,10 @@ ln -sf  "$HB/opt/openssl@3/lib/libssl.dylib"            "$WORK/shim/lib/"
 ln -sf  "$HB/opt/openssl@3/lib/libcrypto.dylib"         "$WORK/shim/lib/"
 ln -sf  "$HB/opt/libmicrohttpd/lib/libmicrohttpd.dylib" "$WORK/shim/lib/"
 ln -sf  "$HB/lib/libprotobuf-lite.dylib"                "$WORK/shim/lib/"
-if [[ -n "$NGTCP2" ]]; then
-  # static archives: the shim's lib dir is searched before $HB/lib, whose
-  # libngtcp2_crypto_ossl.dylib links openssl@4
-  ln -sfn "$NGTCP2/include/ngtcp2" "$WORK/shim/include/ngtcp2"
-  ln -sf  "$NGTCP2"/lib/libngtcp2*.a "$WORK/shim/lib/"
-fi
+# ngtcp2's static archives: the shim's lib dir is searched before $HB/lib,
+# whose libngtcp2_crypto_ossl.dylib links openssl@4
+ln -sfn "$NGTCP2/include/ngtcp2" "$WORK/shim/include/ngtcp2"
+ln -sf  "$NGTCP2"/lib/libngtcp2*.a "$WORK/shim/lib/"
 
 # --- protobuf codegen + objects ------------------------------------------
 # New protoc emits code that no longer compiles as C++11; the 2016 core
@@ -168,8 +159,8 @@ CORE_CXXFLAGS="-g -O2 -fPIC -std=c++17 -Wall -fstack-protector-all \
 make -C "$WORK/commo/core/impl" -j"$JOBS" all \
   TAKTHIRDPARTYDIR="$WORK/shim" PROTOC="$PROTOC" CXXFLAGS="$CORE_CXXFLAGS"
 
-# --- Java API (seeded classes so the Makefile's ant hook never fires) -----
-log "compiling com.atakmap.commoncommo API (JDK 8, javah's build)"
+# --- Java API (seeded classes + headers so the Makefile's ant hook never fires)
+log "compiling com.atakmap.commoncommo API + JNI headers (javac -h)"
 mkdir -p "$WORK/commo/jni/classes"
 # Only the public API package; InternalNativeInitializer is the ant-selected
 # alternative to ExternalNativeInitializer (both declare NativeInitializer) —
@@ -177,7 +168,10 @@ mkdir -p "$WORK/commo/jni/classes"
 # is for. commoncommotest is a desktop test harness, not part of the API.
 find "$WORK/commo/jni/com/atakmap/commoncommo" -maxdepth 1 -name '*.java' \
   ! -name 'InternalNativeInitializer.java' > "$WORK/java-srcs.txt"
-"$JDK/bin/javac" -d "$WORK/commo/jni/classes" @"$WORK/java-srcs.txt"
+# -h writes the headers the Makefile's usejavacheaders branch copies from
+# jni/native/headers (javah is gone since JDK 10)
+"$JDK/bin/javac" -d "$WORK/commo/jni/classes" -h "$WORK/commo/jni/native/headers" \
+  @"$WORK/java-srcs.txt"
 # Fresh-mtime .class files sit next to the .java sources; make's %.class
 # rule (which shells out to ant) is satisfied and never runs.
 cp -R "$WORK/commo/jni/classes/com" "$WORK/commo/jni/"
@@ -193,13 +187,12 @@ JNI_CXXFLAGS="-g -O2 -fPIC -std=c++17 -Wall -Wno-unused \
  -I$WORK/shim/PGSC_Utils/include \
  -I$JDK/include -I$JDK/include/darwin -I$WORK/shim/include/libxml2 \
  -Wno-deprecated-declarations"
-# javaversion= : 5.5's Makefile asks ant for it and, where ant is
-# installed (GitHub's macOS image), expects javac -h headers instead of
-# javah's; the empty override keeps the javah path everywhere (4.6's
-# Makefile has no such variable)
+# javaversion=usejavacheaders: the Makefile otherwise asks ant, and without
+# ant (or with a JDK that has no javah) its javah branch fails; this branch
+# takes the javac -h headers seeded above
 make -C "$WORK/commo/jni/native" -j"$JOBS" all TARGET=macos \
   JAVA_HOME="$JDK" TAKTHIRDPARTYDIR="$WORK/shim" CURL_CONF="$CURL_CONF" \
-  CXXFLAGS="$JNI_CXXFLAGS" LINK_FLAGS="-shared" javaversion=
+  CXXFLAGS="$JNI_CXXFLAGS" LINK_FLAGS="-shared" javaversion=usejavacheaders
 
 # --- Java jar --------------------------------------------------------------
 log "packing jcommoncommo.jar"
@@ -216,14 +209,14 @@ install_name_tool -change "$CORE_ID" "@loader_path/libcommoncommo.dylib" \
 codesign --force --sign - "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib"
 
 # --- canaries ---------------------------------------------------------------
-log "canary 1/3: dlopen (jni pulls core via @loader_path)"
+log "canary 1/4: dlopen (jni pulls core via @loader_path)"
 python3 - "$OUT/libcommoncommojni.dylib" <<'PY'
 import ctypes, sys
 ctypes.CDLL(sys.argv[1])
 print("[g1-commo] dlopen OK:", sys.argv[1])
 PY
 
-log "canary 2/3: JNI exports"
+log "canary 2/4: JNI exports"
 nm -gU "$OUT/libcommoncommojni.dylib" | grep 'Java_com_atakmap_commoncommo' >/dev/null \
   || die "libcommoncommojni.dylib is missing the commoncommo JNI exports"
 nm -gU "$OUT/libcommoncommojni.dylib" | grep 'Java_mactak_headless_NativeSsl_loadLegacyProvider' >/dev/null \
@@ -237,7 +230,19 @@ for lib in libcommoncommo libcommoncommojni; do
     || die "$lib.dylib does not link openssl@3's libcrypto: $(otool -L "$OUT/$lib.dylib" | grep -i crypto | tr -s ' ')"
 done
 
-log "canary 3/3: JVM in-process Commo create"
+log "canary 3/4: no second OpenSSL, ngtcp2 static with its ossl backend"
+for lib in libcommoncommo libcommoncommojni; do
+  linkage="$(otool -L "$OUT/$lib.dylib")"
+  if grep -Eq 'openssl@4|libngtcp2' <<<"$linkage"; then
+    die "$lib.dylib links a second OpenSSL or a shared ngtcp2: $(grep -E 'openssl|ngtcp2' <<<"$linkage" | tr -s ' ')"
+  fi
+done
+# capture, then grep: grep -q at a pipe's end under pipefail (g55 trap 3)
+exports="$(nm -gU "$OUT/libcommoncommo.dylib")"
+grep -q '_ngtcp2_crypto_ossl_configure_client_session' <<<"$exports" \
+  || die "libcommoncommo.dylib does not carry ngtcp2's ossl backend"
+
+log "canary 4/4: JVM in-process Commo create"
 cat > "$WORK/canary/CommoLoadSmoke.java" <<'JAVA'
 import com.atakmap.commoncommo.Commo;
 import com.atakmap.commoncommo.CommoException;
@@ -259,9 +264,9 @@ public class CommoLoadSmoke {
     }
 }
 JAVA
-"$RUNTIME_JDK/bin/javac" -cp "$OUT/jcommoncommo.jar" -d "$WORK/canary" "$WORK/canary/CommoLoadSmoke.java"
+"$JDK/bin/javac" -cp "$OUT/jcommoncommo.jar" -d "$WORK/canary" "$WORK/canary/CommoLoadSmoke.java"
 # to a file, then grep: grep -q at a pipe's end under pipefail (G1 trap 2)
-if ! "$RUNTIME_JDK/bin/java" -cp "$OUT/jcommoncommo.jar:$WORK/canary" CommoLoadSmoke \
+if ! "$JDK/bin/java" -cp "$OUT/jcommoncommo.jar:$WORK/canary" CommoLoadSmoke \
        "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib" \
        >"$WORK/canary/out.txt" \
    || ! grep -q COMMO-LOAD-OK "$WORK/canary/out.txt"; then

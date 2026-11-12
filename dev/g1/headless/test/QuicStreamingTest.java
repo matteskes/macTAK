@@ -14,13 +14,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Spike 2 QUIC canary (dev/spike/g55/NOTES.md §Commo): commo's streaming
- * QUIC client (StreamingTransport.QUIC, ALPN "takstream") on ngtcp2's ossl
- * backend (OpenSSL 3.5's QUIC TLS API), against commo/fake-quic-server.py
+ * QUIC canary (test/quic.sh; from spike 2, dev/spike/g55/NOTES.md §Commo):
+ * commo's streaming QUIC client (StreamingTransport.QUIC, ALPN "takstream")
+ * on ngtcp2's ossl backend (OpenSSL 3.5's QUIC TLS API), against test/fake-quic-server.py
  * presenting a certificate signed by the CA in TRUST_P12.
  *
  *   accept  the server presents a serverAuth leaf: the interface comes up,
- *           and markers go out on it (commo.sh checks that the server
+ *           and markers go out on it (quic.sh checks that the server
  *           received MARKER_UID)
  *   refuse  the server presents a clientAuth-only leaf, the impostor of G1
  *           security finding #1: the interface reports

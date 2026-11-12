@@ -13,6 +13,8 @@
 
 # G1.2 comms stack: throwaway build tree (wiped/rebuilt by dev/g1/build-commo.sh)
 /dev/g1/build-commo/
+# ngtcp2 for commo's QUIC (dev/g1/fetch-ngtcp2.sh; cached across commo builds)
+/dev/g1/build-ngtcp2/
 
 # G1 probe/build logs (diagnostics, not evidence)
 /dev/g1/*.log

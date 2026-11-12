@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Spike 2 (docs/rebase-study-5.5.md step 2): ngtcp2 for 5.5 commo's QUIC,
-# on the OpenSSL commo already uses.
+# ngtcp2 for commo's QUIC (5.5 compiles it unconditionally), on the OpenSSL
+# commo already uses. build-commo.sh runs this first; the build is cached.
 #
 # 5.5 commo links ngtcp2 with its quictls backend; upstream builds
 # ngtcp2 1.6.0 against openssl-3.0.14-quic1 (takthirdparty), and OpenSSL
@@ -9,24 +9,23 @@
 # ossl backend (OpenSSL 3.5's own QUIC TLS API) but links openssl@4, a
 # second OpenSSL runtime beside commo's openssl@3. So: the same ngtcp2
 # release Homebrew packages, built here against Homebrew's openssl@3,
-# static, library only (NOTES.md §Commo).
+# static, library only (dev/spike/g55/NOTES.md §Commo).
 #
-# usage: fetch-ngtcp2.sh               → dev/spike/g55/build/ngtcp2/{include,lib}
+# usage: fetch-ngtcp2.sh               → dev/g1/build-ngtcp2/prefix/{include,lib}
 # needs: brew openssl@3 (≥ 3.5, for SSL_set_quic_tls_cbs), pkg-config, curl
 set -euo pipefail
 
-COMMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/spike/g55/commo
-G55="$(cd "$COMMO_DIR/.." && pwd)"
-WORK="$G55/build/ngtcp2-src"
-PREFIX="$G55/build/ngtcp2"
+G1="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g1
+WORK="$G1/build-ngtcp2/src"
+PREFIX="$G1/build-ngtcp2/prefix"
 VERSION="1.26.0"
 # Homebrew's libngtcp2 formula pins the same tarball and checksum
 SHA256="7804aa0fa1c39942ba322a90805824c37231f7675b08d0c3cc4332858a7b085e"
 URL="https://github.com/ngtcp2/ngtcp2/releases/download/v$VERSION/ngtcp2-$VERSION.tar.xz"
 MIN_OPENSSL="3.5"
 
-log() { printf '[g55-ngtcp2] %s\n' "$*"; }
-die() { printf '[g55-ngtcp2] FATAL: %s\n' "$*" >&2; exit 2; }
+log() { printf '[g1-ngtcp2] %s\n' "$*"; }
+die() { printf '[g1-ngtcp2] FATAL: %s\n' "$*" >&2; exit 2; }
 
 for t in curl pkg-config make shasum; do
   command -v "$t" >/dev/null 2>&1 || die "missing tool: $t"

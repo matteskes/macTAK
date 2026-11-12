@@ -1,13 +1,13 @@
 """A QUIC stand-in for a TAK server's streaming endpoint (ALPN "takstream").
 
-Spike 2 (dev/spike/g55/NOTES.md §Commo): commo's streaming QUIC client
+From spike 2 (dev/spike/g55/NOTES.md §Commo): commo's streaming QUIC client
 needs a server, and commo's own QUIC inbound speaks only the peer protocol
 ("takcot"). This one completes the handshake with the certificate it is
 given (no client certificate requested), then logs, one line each, the
-handshake and every stream payload, so commo.sh can check what arrived.
+handshake and every stream payload, so quic.sh can check what arrived.
 
 usage: fake-quic-server.py PORT CERT_PEM KEY_PEM
-needs: aioquic (commo.sh installs a pinned copy into a venv)
+needs: aioquic (quic.sh installs the hash-pinned requirements-quic.txt into a venv)
 """
 import asyncio
 import sys

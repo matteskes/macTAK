@@ -1,4 +1,4 @@
-.PHONY: help hooks build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-engine-shadows check-transplants check-ots-profiles test test-jni test-roundtrip test-tls test-render test-render-resize build-window-host test-render-window smoke-window lint clean
+.PHONY: help hooks build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-engine-shadows check-transplants check-ots-profiles test test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window lint clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -38,6 +38,7 @@ help:
 	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"
+	@echo "  test-quic      - QUIC canary: commo streams over QUIC (ngtcp2 ossl backend) and refuses a client-only impostor"
 	@echo "  test-render    - G2 render smoke: engine GLGlobe into an EGL pbuffer on ANGLE, bare + GeoJSON layer + MBTiles basemap (dev/g2/render/run.sh)"
 	@echo "  test-render-resize - M3.1 dynamic-size exercise: --resize mid-run, bare + GeoJSON layer (surface OnSizeChangedListeners must fire)"
 	@echo "  build-window-host - compile the M3.1 window-harness host dylib (WindowHost.m -> build/window-host.dylib)"
@@ -121,6 +122,9 @@ test-roundtrip:
 
 test-tls:
 	@bash dev/g1/headless/test/tls-purpose.sh
+
+test-quic:
+	@bash dev/g1/headless/test/quic.sh
 
 test-render:
 	bash dev/g2/render/test/gles-shim.sh
