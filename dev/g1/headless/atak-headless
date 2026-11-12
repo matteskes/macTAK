@@ -32,7 +32,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 G1="$(cd "$HERE/.." && pwd)"
 ROOT="$(cd "$G1/../.." && pwd)"
 DIST="${MACTAK_NATIVE_DIST:-$G1/native-dist}"
-OUT="$HERE/build/classes"
+# MACTAK_HEADLESS_CLASSES / MACTAK_JAVAC_LINT: the class dir and javac's
+# -Xlint set, for runs against another comms build (dev/spike/g55/commo.sh:
+# 5.5's commo deprecates the addStreamingInterface overload used here).
+# Unset, nothing changes.
+OUT="${MACTAK_HEADLESS_CLASSES:-$HERE/build/classes}"
+JAVAC_LINT="${MACTAK_JAVAC_LINT:-all}"
 VER="${TAKKERNEL_VER:-0.59.1}"
 M2="${HOME}/.m2/repository"
 
@@ -70,7 +75,7 @@ GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/hom
 # against a stale/partial class set.
 if [[ ! -d "$OUT" ]] || [[ -n "$(find "$HERE/src" -name '*.java' -newer "$OUT" -print -quit)" ]]; then
   rm -rf "$OUT"; mkdir -p "$OUT"
-  "$JDK/bin/javac" -source 8 -target 8 -Xlint:all -Werror -encoding UTF-8 \
+  "$JDK/bin/javac" -source 8 -target 8 -Xlint:"$JAVAC_LINT" -Werror -encoding UTF-8 \
     -classpath "$CP" -d "$OUT" "$HERE"/src/mactak/headless/*.java \
     || { rm -rf "$OUT"; exit 1; }
   touch "$OUT"

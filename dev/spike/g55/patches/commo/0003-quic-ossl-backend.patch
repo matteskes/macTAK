@@ -1,0 +1,184 @@
+diff --git a/core/impl/Makefile b/core/impl/Makefile
+--- a/core/impl/Makefile
++++ b/core/impl/Makefile
+@@ -60,7 +60,7 @@
+ libcommoncommo.so: CXXFLAGS += -fPIC
+ libcommoncommo.so: buildstampgen $(OBJS)
+ 	$(CXX) $(CXXFLAGS) -shared -o $@ $(OBJS) -L$(TAKTHIRDPARTYDIR)/lib        \
+-	        -lxml2 -lngtcp2 -lngtcp2_crypto_quictls -lssl -lcrypto                                        \
++	        -lxml2 -lngtcp2 -lngtcp2_crypto_ossl -lssl -lcrypto                                        \
+ 	        -lmicrohttpd -lprotobuf-lite
+ 
+ libcommoncommo.a: buildstampgen $(OBJS)
+diff --git a/jni/native/Makefile b/jni/native/Makefile
+--- a/jni/native/Makefile
++++ b/jni/native/Makefile
+@@ -48,7 +48,7 @@
+ LIBNAME=commoncommojni
+ 
+ 
+-LIBS=-L$(COMMOPATH)/core/impl -L$(TAKTHIRDPARTYDIR)/lib -lcommoncommo -lxml2 -lssl -lcrypto $(PTHREAD_LIB) $(shell $(CURL_CONF) --libs) -lmicrohttpd -liconv -lprotobuf-lite -lngtcp2 -lngtcp2_crypto_quictls
++LIBS=-L$(COMMOPATH)/core/impl -L$(TAKTHIRDPARTYDIR)/lib -lcommoncommo -lxml2 -lssl -lcrypto $(PTHREAD_LIB) $(shell $(CURL_CONF) --libs) -lmicrohttpd -liconv -lprotobuf-lite -lngtcp2 -lngtcp2_crypto_ossl
+ INCLUDES=-I$(COMMOPATH)/core/include                                         \
+          -I$(TAKTHIRDPARTYDIR)/include                                       \
+          -I$(TAKTHIRDPARTYDIR)/PGSC_Utils/include                            \
+diff --git a/core/impl/quicconnection.h b/core/impl/quicconnection.h
+--- a/core/impl/quicconnection.h
++++ b/core/impl/quicconnection.h
+@@ -5,6 +5,7 @@
+ #include "commologger.h"
+ #include "ngtcp2/ngtcp2.h"
+ #include "ngtcp2/ngtcp2_crypto.h"
++#include "ngtcp2/ngtcp2_crypto_ossl.h"
+ 
+ namespace atakmap {
+ namespace commoncommo {
+@@ -230,6 +231,8 @@
+     private:
+         SSL_CTX *sslCtx;
+         SSL *ssl;
++        // macTAK: ngtcp2's per-connection state for the ossl backend
++        ngtcp2_crypto_ossl_ctx *ngOsslCtx;
+         ngtcp2_crypto_conn_ref ngConnRef;
+ 
+         ngtcp2_conn *ngConn;
+diff --git a/core/impl/quicconnection.cpp b/core/impl/quicconnection.cpp
+--- a/core/impl/quicconnection.cpp
++++ b/core/impl/quicconnection.cpp
+@@ -1,7 +1,7 @@
+ #include "quicconnection.h"
+ #include "internalutils.h"
+ 
+-#include "ngtcp2/ngtcp2_crypto_quictls.h"
++#include "ngtcp2/ngtcp2_crypto_ossl.h"
+ #include "openssl/ssl.h"
+ #include "openssl/rand.h"
+ 
+@@ -11,7 +11,28 @@
+ using namespace atakmap::commoncommo;
+ using namespace atakmap::commoncommo::impl;
+ 
++// macTAK: ngtcp2's ossl backend (OpenSSL 3.5's own QUIC TLS API) in place
++// of quictls (a fork of OpenSSL 3.0, end of life 2026-09-07), so QUIC runs
++// on the same OpenSSL as the rest of commo. quictls'
++// configure_*_context pinned the SSL_CTX to TLS 1.3 and installed the
++// QUIC method; here the pin stays on the context and the callbacks go on
++// each session (attachOsslBackend).
++namespace {
++    bool configureTls13Only(SSL_CTX *sslCtx)
++    {
++        return SSL_CTX_set_min_proto_version(sslCtx, TLS1_3_VERSION) == 1 &&
++               SSL_CTX_set_max_proto_version(sslCtx, TLS1_3_VERSION) == 1;
++    }
+ 
++    // ngtcp2 recommends initialising the backend once, before first use
++    void initOsslBackendOnce()
++    {
++        static const int initResult = ngtcp2_crypto_ossl_init();
++        (void)initResult;
++    }
++}
++
++
+ namespace {
+     void rand_cb_impl(uint8_t *dest, size_t destlen, const ngtcp2_rand_ctx *randctx) {
+         RAND_bytes(dest, (int)destlen);
+@@ -42,6 +63,7 @@
+         logger(logger),
+         sslCtx(NULL),
+         ssl(NULL),
++        ngOsslCtx(NULL),
+         ngConnRef{getConnFromRefCb, this},
+         ngConn(NULL),
+         state(Prehandshake),
+@@ -120,11 +142,12 @@
+             throw std::invalid_argument("Could not create ngtcp2 server");
+ 
+         // Set up TLS/SSL layer
++        initOsslBackendOnce();
+         sslCtx = SSL_CTX_new(TLS_server_method());
+         if (!sslCtx)
+             throw std::invalid_argument("Could create TLS layer");
+         
+-        if (ngtcp2_crypto_quictls_configure_server_context(sslCtx) != 0)
++        if (!configureTls13Only(sslCtx))
+             throw std::invalid_argument("ngtcp2 config of TLS layer failed");
+         
+         SSL_CTX_set_alpn_select_cb(sslCtx, selectAlpnSSLCb, this);
+@@ -141,7 +164,10 @@
+         
+         SSL_set_app_data(ssl, &ngConnRef);
+         SSL_set_accept_state(ssl);
+-        ngtcp2_conn_set_tls_native_handle(ngConn, ssl);
++        if (ngtcp2_crypto_ossl_configure_server_session(ssl) != 0 ||
++            ngtcp2_crypto_ossl_ctx_new(&ngOsslCtx, ssl) != 0)
++            throw std::invalid_argument("ngtcp2 config of TLS session failed");
++        ngtcp2_conn_set_tls_native_handle(ngConn, ngOsslCtx);
+ 
+         txBufferSize = 2 * STREAM_FLOW_CTRL_BYTES;
+         txBuffer = new uint8_t[txBufferSize];
+@@ -172,6 +198,7 @@
+         logger(logger),
+         sslCtx(NULL),
+         ssl(NULL),
++        ngOsslCtx(NULL),
+         ngConnRef{getConnFromRefCb, this},
+         ngConn(NULL),
+         state(Prehandshake),
+@@ -253,6 +280,7 @@
+             throw std::invalid_argument("Could not create ngtcp2 client");
+ 
+         // Set up TLS/SSL layer
++        initOsslBackendOnce();
+         sslCtx = SSL_CTX_new(TLS_client_method());
+         if (!sslCtx)
+             throw std::invalid_argument("Could create TLS layer");
+@@ -262,7 +290,7 @@
+             // (see streamingsocketmanagement notes as to why)
+             SSL_CTX_set_verify(sslCtx, SSL_VERIFY_NONE, NULL);
+         
+-        if (ngtcp2_crypto_quictls_configure_client_context(sslCtx) != 0)
++        if (!configureTls13Only(sslCtx))
+             throw std::invalid_argument("ngtcp2 config of TLS layer failed");
+         
+         ssl = SSL_new(sslCtx);
+@@ -276,8 +304,10 @@
+         SSL_set_app_data(ssl, &ngConnRef);
+         SSL_set_connect_state(ssl);
+         SSL_set_alpn_protos(ssl, alpn, (unsigned int)alpnLen);
+-        
+-        ngtcp2_conn_set_tls_native_handle(ngConn, ssl);
++        if (ngtcp2_crypto_ossl_configure_client_session(ssl) != 0 ||
++            ngtcp2_crypto_ossl_ctx_new(&ngOsslCtx, ssl) != 0)
++            throw std::invalid_argument("ngtcp2 config of TLS session failed");
++        ngtcp2_conn_set_tls_native_handle(ngConn, ngOsslCtx);
+ 
+         txBufferSize = 2 * STREAM_FLOW_CTRL_BYTES;
+         txBuffer = new uint8_t[txBufferSize];
+@@ -310,8 +340,13 @@
+ {
+     if (ngConn)
+         ngtcp2_conn_del(ngConn);
+-    if (ssl)
++    if (ngOsslCtx)
++        ngtcp2_crypto_ossl_ctx_del(ngOsslCtx);
++    if (ssl) {
++        // ngtcp2_crypto_ossl.h: clear the conn ref before SSL_free
++        SSL_set_app_data(ssl, NULL);
+         SSL_free(ssl);
++    }
+     if (sslCtx)
+         SSL_CTX_free(sslCtx);
+     delete remoteClientAddr;
+diff --git a/core/impl/quicmanagement.cpp b/core/impl/quicmanagement.cpp
+--- a/core/impl/quicmanagement.cpp
++++ b/core/impl/quicmanagement.cpp
+@@ -4,7 +4,7 @@
+ #include "internalutils.h"
+ #include "commothread.h"
+ 
+-#include "ngtcp2/ngtcp2_crypto_quictls.h"
++#include "ngtcp2/ngtcp2_crypto_ossl.h"
+ #include "openssl/ssl.h"
+ #include "openssl/rand.h"
+ 

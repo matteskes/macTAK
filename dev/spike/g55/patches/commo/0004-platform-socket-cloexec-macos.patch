@@ -1,0 +1,16 @@
+diff --git a/core/impl/platform.cpp b/core/impl/platform.cpp
+--- a/core/impl/platform.cpp
++++ b/core/impl/platform.cpp
+@@ -308,6 +308,12 @@
+ {
+ #ifdef WIN32
+     PlatformNet::SocketFD newfd = WSASocket(addressFamily, type, protocol, NULL, 0, WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
++#elif defined(__APPLE__)
++    // macTAK: SOCK_CLOEXEC is a Linux socket() flag; macOS sets
++    // close-on-exec on the descriptor instead
++    PlatformNet::SocketFD newfd = ::socket(addressFamily, type, protocol);
++    if (newfd != -1)
++        ::fcntl(newfd, F_SETFD, FD_CLOEXEC);
+ #else
+     PlatformNet::SocketFD newfd = ::socket(addressFamily, type | SOCK_CLOEXEC, protocol);
+ #endif

@@ -1,0 +1,55 @@
+diff --git a/core/impl/netsocket.h b/core/impl/netsocket.h
+--- a/core/impl/netsocket.h
++++ b/core/impl/netsocket.h
+@@ -288,6 +288,8 @@
+     NetAddress *boundAddr;
+     int currentTTL;
+     bool outboundMcastIfSet;
++    // macTAK: made by the connecting constructor (sendto, macOS)
++    bool connected;
+ };
+ 
+ 
+diff --git a/core/impl/netsocket.cpp b/core/impl/netsocket.cpp
+--- a/core/impl/netsocket.cpp
++++ b/core/impl/netsocket.cpp
+@@ -485,7 +485,7 @@
+ UdpSocket::UdpSocket(const NetAddress *localAddr, bool isBlocking, bool reuseAddr, bool mcastLooping)
+     COMMO_THROW (SocketException) :
+         Socket(), boundAddr(NULL), currentTTL(1),
+-        outboundMcastIfSet(false)
++        outboundMcastIfSet(false), connected(false)
+ {
+     try {
+         commonInit(false, localAddr, isBlocking, reuseAddr);
+@@ -508,7 +508,7 @@
+ UdpSocket::UdpSocket(const NetAddress *remoteAddr, bool isBlocking)
+     COMMO_THROW (SocketException) :
+         Socket(), boundAddr(NULL), currentTTL(1),
+-        outboundMcastIfSet(false)
++        outboundMcastIfSet(false), connected(true)
+ {
+     commonInit(true, remoteAddr, isBlocking, false);
+ }
+@@ -575,9 +575,18 @@
+ {
+     checkAddr(dest);
+ 
+-    PlatformNet::ErrorCode err = 
+-        PlatformNet::socketWriteTo(fd, data, &len, dest->getSockAddr(), 
+-                                                   dest->getSockAddrLen());
++#ifdef __APPLE__
++    // macTAK: BSD sendto refuses a destination on a connected socket
++    // (EISCONN), which Linux accepts; the QUIC client's socket is connected
++    // to its server, so send to that peer without naming it
++    const bool toConnectedPeer = connected;
++#else
++    const bool toConnectedPeer = false;
++#endif
++    PlatformNet::ErrorCode err = toConnectedPeer
++        ? PlatformNet::socketWriteTo(fd, data, &len, NULL, 0)
++        : PlatformNet::socketWriteTo(fd, data, &len, dest->getSockAddr(),
++                                                     dest->getSockAddrLen());
+     switch (err) {
+     case PlatformNet::SUCCESS:
+         break;

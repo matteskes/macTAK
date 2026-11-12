@@ -9,6 +9,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Spike 2, 5.5 commo (`dev/spike/g55/`, NOTES §Commo): 5.5's
+  commoncommo builds on macOS with its now-mandatory QUIC on ngtcp2's
+  `ossl` backend, OpenSSL 3.5's own QUIC TLS API, over the same
+  Homebrew `openssl@3` the rest of commo uses. quictls is OpenSSL 3.0,
+  past end of life since 2026-09-07, and Homebrew's ngtcp2 links
+  `openssl@4`. `commo.sh` checks six things, all green:
+  - ngtcp2 1.26.0 builds against `openssl@3` (sha256 cross-checked
+    with Homebrew's formula);
+  - 5.5 commo builds through `dev/g1/build-commo.sh`, which gains
+    opt-in `MACTAK_COMMO_*` overrides;
+  - one OpenSSL runtime is linked;
+  - streaming QUIC against an aioquic `takstream` stand-in: the
+    handshake completes and markers arrive, and a clientAuth-only
+    impostor is refused with `CONN_SSL_PEER_CERT_NOT_TRUSTED`, so
+    security fix #1 holds on QUIC;
+  - `tls-purpose.sh`;
+  - the two-client CoT round-trip.
+
+  Five commo patches:
+  - the two G1 patches, ported;
+  - `0003-quic-ossl-backend`;
+  - `0004-platform-socket-cloexec-macos` (`SOCK_CLOEXEC` is Linux-only);
+  - `0005-udpsocket-connected-sendto-macos`: BSD's `sendto` returns
+    `EISCONN` on a connected UDP socket, so no QUIC packet left.
+
+  Also found: commo's interface scanner misreads `lo0` on macOS (same
+  code in 4.6), which blocks peer-to-peer QUIC discovery; and 5.5
+  deprecates the `addStreamingInterface` overload `HeadlessCLI` uses
+  (`atak-headless` gains opt-in `MACTAK_HEADLESS_CLASSES` and
+  `MACTAK_JAVAC_LINT`). `spike-55.yml` gains a commo job.
+
 - Spike 1, render step (`dev/spike/g55/`, NOTES §Render gates): the G2
   render gates pass on the 5.5 build linked against ANGLE/Metal. These
   are the same nine steps as `ci.yml`'s `render-angle` job, from GDAL
