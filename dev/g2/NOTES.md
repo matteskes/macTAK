@@ -1,5 +1,15 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (plan — 2026-11-12): the rest of G2 is decided; M3.3 is next
+
+The owner settled seven open questions before the remaining G2 work
+starts (section "The rest of G2 — decided 2026-11-12" at the end): the
+order is M3.3 → M3.4 (the R4 verdict) → G2.4 b.1 imagery → G2.6
+elevation → the exit run; elevation stays in G2; synthetic fixtures gate
+CI and a public-domain real-data clip backs the exit run; the 60 fps exit
+is a p95 frame time on the dev Mac; gestures follow Apple Maps and are
+tested in CI and on the dev Mac; M3.3 folds in G2.5 #7's teardown fix.
+
 ## State (re-pin — 2026-11-11): the render gates run on the 5.5 engine; shadows regenerate from src/
 
 Every G2 gate passes on the 5.5 build (`make build-angle`), `make
@@ -1088,7 +1098,9 @@ fixed on its own branch, in this order.
 
 Settled on the bench (2026-11-10): the reading left open whether the
 Swift shell exits non-zero when `WindowApp` fails. It did not; that is
-finding #8, trap #56. #7 is on hold by the owner's call.
+finding #8, trap #56. #7 is on hold by the owner's call; 2026-11-12: its
+`WindowApp.teardown` part folds into M3.3, the rest waits for G2.4 b.1
+("The rest of G2 — decided 2026-11-12").
 
 Traps found on the way (continuing G2 numbering):
 
@@ -1319,3 +1331,79 @@ bash dev/g2/shell/test/exit-code.sh
 [shell-exit] PASS: a failed render exits 2
 exit=0
 ```
+
+## The rest of G2 — decided 2026-11-12
+
+What G2 still owes its exit criterion ("layered map (imagery + vector +
+elevation) pans/zooms at 60 fps in a window", `docs/roadmap.md`), and the
+owner's answers to the questions that had to be settled before work on it
+starts. The M3 architecture above ("M3 design") is unchanged.
+
+### Order
+
+| Step | What | Exit gate |
+|---|---|---|
+| M3.3 | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7) | resize during a pan without glitches; frame times logged; `make test-shell` green |
+| M3.4 | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
+| G2.4 b.1 | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
+| G2.6 | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
+| Exit | the full stack (imagery + vector + elevation) under the scripted gesture run | the 60 fps gate below; G2 closes |
+
+R4 is G2's branch-point risk, so it is answered before the data work; the
+60 fps gate is measured once, at the end, on the full stack.
+
+### Elevation stays in G2
+
+The exit criterion stands as written. The engine reads DTED, SRTM, GDAL
+DEMs, Terrain-RGB and quantized mesh (`com.atakmap.map.formats.*`,
+`map.gdal.GdalElevationChunk`); none has rendered on ANGLE yet. G2.6
+proves a GeoTIFF DEM and DTED; the other formats are G4 import parity.
+
+### Fixtures: synthetic in CI, real data for the exit run
+
+- **CI gates** use synthetic data generated offline by a committed gdal
+  CLI script, as G2.3's graticule: a small GeoTIFF for imagery and a DEM
+  with a known relief. Deterministic, license-free, small.
+- **The exit run** (dev Mac) also uses a small clip of public-domain US
+  Government data (USGS imagery and SRTM/3DEP elevation), fetched by a
+  script with a pinned SHA256 and provenance noted, not committed. Real
+  data covers what the synthetic set cannot: dark imagery (the open
+  `countNonClear` threshold note in "Follow-ups"), no-data holes, real
+  relief. The dataset is chosen at b.1.
+
+### The 60 fps gate
+
+Dev Mac, manual, like `make test-shell`: a scripted 10 s pan, zoom and
+rotate (the injected events below) on a Retina window at the shell's
+default size, full stack. **Pass: p95 frame time ≤ 16.7 ms and no
+dropped presents.** The shell writes the per-frame log as the artifact.
+CI has no fps gate (hosted runners draw at ~170 ms/frame).
+
+### Gesture map (Apple Maps style)
+
+| Input | Camera |
+|---|---|
+| drag | pan |
+| two-finger scroll (trackpad) | pan |
+| mouse wheel (discrete) | zoom at the cursor |
+| pinch | zoom at the cursor |
+| two-finger rotate | rotate |
+| ⌥-drag, vertical | tilt |
+| ⌥-drag, horizontal | rotate |
+| double-click | zoom in |
+
+Gestures are interpreted JVM-side in `InputBridge`; the Swift shell only
+forwards events ("Architecture (committed)").
+
+### Gesture tests, both layers
+
+- **CI:** an `InputBridge` test feeds synthetic gesture records on the
+  pbuffer path (no window) and checks the camera moves as the map says.
+- **Dev Mac:** the shell posts in-process `NSEvent`s into its own window
+  during the 60 fps run. In-process posting needs no Accessibility
+  permission.
+
+### Not decided here
+
+Whether ATAK's app code is reused on the JVM or rewritten in Swift is a
+G3 question (`docs/roadmap.md` "Open before G3").
