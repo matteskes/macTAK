@@ -194,7 +194,7 @@ Not done here: the `ManagedFeatureDefinition` consumers (`getRawGeometry`
 and the rest) still call through the method IDs when the init failed,
 as `ManagedTextFormat2`'s did before `textformat2-class-init-consumer-guards`;
 and no guards-mode test pins the two new patches yet (G1's suite pins
-the 4.6 ones).
+the 4.6 ones). Both done after the re-pin: `dev/g1/NOTES.md` G1.17.
 
 ## Render gates
 
@@ -548,9 +548,9 @@ gate on ANGLE/Metal. Spike 2 took half a day: 5.5 commo, QUIC included,
 passes the G1 comms gates. What remains before the re-pin (study step
 4), in order, with estimates made from this spike's pace:
 
-1. ~~**JNI glue on 5.5**~~ **Done** (§JNI glue). Carried forward: the
+1. ~~**JNI glue on 5.5**~~ **Done** (§JNI glue). Carried forward: ~~the
    `ManagedFeatureDefinition` consumer guards and guards-mode pins for
-   the two new patches. Decided on #99's review: the 5.5 jars stay built
+   the two new patches~~ done (G1.17). Decided on #99's review: the 5.5 jars stay built
    in CI as here (CONTRIBUTING allows it), and **moving off Java 8**
    (the 5.5 jars are Java 11 bytecode: CI's Zulu 8 jobs, the launcher
    and the headless app) is its own PR on JDK 21, after this stack and
@@ -580,7 +580,7 @@ passes the G1 comms gates. What remains before the re-pin (study step
    `889eee2`.
 
 Carried forward past the rebase: ~~`:shared`'s tests (trap 11)~~ done (G1.15), ~~commo's
-QUIC failure cause (trap 8)~~ done (G1.16), the `ManagedFeatureDefinition` consumer
-guards and guards-mode pins for the two new JNI patches, peer-to-peer
+QUIC failure cause (trap 8)~~ done (G1.16), ~~the `ManagedFeatureDefinition` consumer
+guards and pins for the two new JNI patches~~ done (G1.17), peer-to-peer
 QUIC after the interface-scanner bug, and 3D Tiles (cesium-native and
 draco) when it is needed.

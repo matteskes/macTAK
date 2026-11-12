@@ -264,6 +264,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `ManagedFeatureDefinition`'s consumers no longer call through the NULL
+  method IDs a failed class init leaves (`dev/g1/NOTES.md` G1.17). New
+  `managedfeaturedefinition-consumer-guards.patch`: they return `TE_Err`
+  or upstream's default encoding. `make test-jni` pins it and the two 5.5
+  JNI guard patches: 4 guards-mode tests on a Java-backed definition, and
+  a new noslf4j leg (the kernel jars without `slf4j-api`) for
+  `common-managedlogger-guards`. Each pin fails with its patch taken out.
 - commo names a failed QUIC handshake's cause in its log, e.g. `quic IO
   error during handshake: recvfrom failed: Connection refused (errno 61)`
   instead of the bare first half (`dev/g1/NOTES.md` G1.16; closes

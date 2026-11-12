@@ -16,6 +16,10 @@
  *     IOProviderFactory proxy is installed as the engine's global
  *     Filesystem — the behavioral pins run through it on real files.
  *
+ *   noslf4j mode (TAKJNI_TEST_MODE=noslf4j, the kernel jars minus
+ *     slf4j-api): JNI_OnLoad's ManagedLogger finds no Log class, and
+ *     native logging must go quiet instead of crashing the JVM.
+ *
  * Boot probe order cribbed from dev/g2/shell/jni_boot.c (M3.2 shell —
  * proven against this box's Zulu 8). One JVM per process, never
  * destroyed: DestroyJavaVM on a JVM the engine has registered globals
@@ -227,6 +231,26 @@ protected:
         ASSERT_FALSE(threw) << "installFactory threw (stack trace above)";
         ok = (ptr != 0);
         ASSERT_TRUE(ok) << "installFactory returned no handle";
+    }
+};
+
+/* noslf4j mode (G1.17): the kernel jars without slf4j-api, under the
+ * java launcher. com.atakmap.coremap.log.Log's class init needs slf4j,
+ * so the ManagedLogger that JNI_OnLoad installs finds no Log class: the
+ * vector of common-managedlogger-guards.patch. No filesystem install, so
+ * nothing else on the path needs the missing jar. */
+class JniNoSlf4jTest : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        const char *mode = getenv("TAKJNI_TEST_MODE");
+        if(!mode || strcmp(mode, "noslf4j") != 0)
+            GTEST_SKIP() << "noslf4j suite: run via dev/g1/jni-tests/run.sh "
+                            "(TAKJNI_TEST_MODE=noslf4j, kernel jars minus slf4j-api)";
+        if(!jnitest::launcher_env())
+            GTEST_SKIP() << "noslf4j suite runs under the java launcher "
+                            "(dev/g1/jni-tests/run.sh noslf4j leg)";
     }
 };
 
