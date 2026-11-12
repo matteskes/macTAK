@@ -60,6 +60,11 @@ if [[ -z "${MACTAK_HOME:-}" ]]; then
   trap 'rm -rf "$SCRATCH"' EXIT
 fi
 
+# The in-process JVM is the JDK that compiled the classes (env.sh's JDK 21):
+# jni_boot.c boots $JAVA_HOME's libjli, and an inherited JDK 8 there would
+# refuse the --release 21 classes.
+export JAVA_HOME="$JDK"
+
 # Not exec: the EXIT trap above must still run to remove the scratch
 # MACTAK_HOME. The shell's exit status (WindowApp's code) becomes ours.
 set +e

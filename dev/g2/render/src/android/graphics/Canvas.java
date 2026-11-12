@@ -14,9 +14,14 @@ public class Canvas {
 
     public Canvas() { }
 
-    public Canvas(Bitmap bitmap) { setBitmap(bitmap); }
+    // attach, not setBitmap(): Android's Canvas is subclassable, and an
+    // override called from a constructor runs before the subclass is
+    // initialized (javac 21's this-escape lint).
+    public Canvas(Bitmap bitmap) { attach(bitmap); }
 
-    public void setBitmap(Bitmap bitmap) {
+    public void setBitmap(Bitmap bitmap) { attach(bitmap); }
+
+    private void attach(Bitmap bitmap) {
         if (g != null) g.dispose();
         this.bitmap = bitmap;
         g = bitmap == null ? null : bitmap.image.createGraphics();

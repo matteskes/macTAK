@@ -12,7 +12,7 @@
 #   → libcommoncommo.dylib   (core/impl Makefile; 2016 code pinned -std=c++11,
 #                             protobuf objects precompiled -std=c++17 because
 #                             brew protoc ≥27 no longer emits C++11)
-#   → libcommoncommojni.dylib (jni/native Makefile TARGET=macos, Zulu 8 javah;
+#   → libcommoncommojni.dylib (jni/native Makefile TARGET=macos, JDK 8 javah;
 #                             classes are seeded with javac first so the
 #                             Makefile's ant hook never fires)
 #   → jcommoncommo.jar       (com.atakmap.commoncommo API classes)
@@ -74,9 +74,16 @@ for f in openssl@3 libxml2 protobuf libmicrohttpd curl; do
     || die "brew formula missing: $f
        → brew install openssl@3 libxml2 protobuf libmicrohttpd curl"
 done
-JDK="${JAVA_HOME:-$( /usr/libexec/java_home -v 1.8 2>/dev/null || true )}"
+# Two JDKs until the 5.5 re-pin (dev/jdk.sh): JDK 8 builds commo (4.6's
+# JNI Makefile calls $(JAVA_HOME)/bin/javah, gone since JDK 10), JDK 21
+# runs the canary, as every other JVM macTAK starts.
+# shellcheck source=SCRIPTDIR/../jdk.sh
+source "$DEV/jdk.sh"
+JDK="$(mactak_jdk_home 8 || true)"
 [[ -n "$JDK" && -x "$JDK/bin/javah" ]] \
-  || die "Zulu 8 (JDK 1.8) with javah required — JAVA_HOME or /usr/libexec/java_home -v 1.8"
+  || die "JDK 8 with javah required to build 4.6 commo (dev/jdk.sh: MACTAK_JDK8_HOME or java_home -v 1.8)"
+RUNTIME_JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$RUNTIME_JDK" ]] || die "JDK 21 required to run the canary (dev/jdk.sh)"
 PROTOC="$(command -v protoc)"
 CURL_CONF="$HB/opt/curl/bin/curl-config"
 [[ -x "$CURL_CONF" ]] || CURL_CONF="$(command -v curl-config)"
@@ -162,7 +169,7 @@ make -C "$WORK/commo/core/impl" -j"$JOBS" all \
   TAKTHIRDPARTYDIR="$WORK/shim" PROTOC="$PROTOC" CXXFLAGS="$CORE_CXXFLAGS"
 
 # --- Java API (seeded classes so the Makefile's ant hook never fires) -----
-log "compiling com.atakmap.commoncommo API (Zulu 8)"
+log "compiling com.atakmap.commoncommo API (JDK 8, javah's build)"
 mkdir -p "$WORK/commo/jni/classes"
 # Only the public API package; InternalNativeInitializer is the ant-selected
 # alternative to ExternalNativeInitializer (both declare NativeInitializer) —
@@ -252,9 +259,9 @@ public class CommoLoadSmoke {
     }
 }
 JAVA
-"$JDK/bin/javac" -cp "$OUT/jcommoncommo.jar" -d "$WORK/canary" "$WORK/canary/CommoLoadSmoke.java"
+"$RUNTIME_JDK/bin/javac" -cp "$OUT/jcommoncommo.jar" -d "$WORK/canary" "$WORK/canary/CommoLoadSmoke.java"
 # to a file, then grep: grep -q at a pipe's end under pipefail (G1 trap 2)
-if ! "$JDK/bin/java" -cp "$OUT/jcommoncommo.jar:$WORK/canary" CommoLoadSmoke \
+if ! "$RUNTIME_JDK/bin/java" -cp "$OUT/jcommoncommo.jar:$WORK/canary" CommoLoadSmoke \
        "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib" \
        >"$WORK/canary/out.txt" \
    || ! grep -q COMMO-LOAD-OK "$WORK/canary/out.txt"; then

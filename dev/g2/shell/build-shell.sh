@@ -14,16 +14,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dev/g2/shell
 G2="$(cd "$HERE/.." && pwd)"
 OUT="$G2/build/mactak-shell"
 
-# JAVA_HOME wins when the caller pins a JDK (CI's setup-java exports it);
-# /usr/libexec/java_home -v 1.8 otherwise, loudly when neither has one.
-if [[ -n "${JAVA_HOME:-}" ]]; then
-  JDK="$JAVA_HOME"
-  [[ -d "$JDK/include" ]] \
-    || { echo "build-shell.sh: JAVA_HOME=$JDK has no include/ — JNI headers missing" >&2; exit 2; }
-else
-  JDK="$(/usr/libexec/java_home -v 1.8 2>/dev/null || true)"
-  [[ -n "$JDK" ]] || { echo "build-shell.sh: JDK 1.8 not found (set JAVA_HOME)" >&2; exit 2; }
-fi
+# JDK 21's JNI headers (dev/jdk.sh: MACTAK_JDK21_HOME, a JDK 21 JAVA_HOME,
+# setup-java's JAVA_HOME_21_AARCH64, then java_home), loudly when none.
+# shellcheck source=SCRIPTDIR/../../jdk.sh
+source "$G2/../jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" ]] || { echo "build-shell.sh: JDK 21 not found (dev/jdk.sh)" >&2; exit 2; }
+[[ -d "$JDK/include" ]] \
+  || { echo "build-shell.sh: $JDK has no include/ — JNI headers missing" >&2; exit 2; }
 
 command -v swiftc >/dev/null 2>&1 \
   || { echo "build-shell.sh: swiftc not on PATH — Xcode command line tools required" >&2; exit 2; }

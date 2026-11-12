@@ -55,11 +55,15 @@ jobs:
           brew install cmake rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
           openssl@3 libxml2 protobuf libmicrohttpd curl
 
-      - name: Set up Zulu 8 (arm64) — javah for the JNI glue + load canary
+      - name: Set up Zulu 21 + Zulu 8 (arm64) — javah builds the JNI glue, 21 runs the clients
+        # JDK 8 for 4.6 commo's javah until the 5.5 re-pin; 21 is last, so
+        # JAVA_HOME and PATH are JDK 21 (dev/jdk.sh)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: zulu
-          java-version: '8'
+          java-version: |
+            8
+            21
           architecture: aarch64
 
       - name: Build engine + canary (dev/g1/build-native.sh, verbatim)

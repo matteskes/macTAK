@@ -10,7 +10,7 @@
 # hills: east of the camera frame, which RenderSmoke fits to the
 # sf-landmarks layer (lon -122.52 .. -122.38 at the default 512x512).
 #
-# Needs what dev/g2/render/run.sh needs (ANGLE-linked engine, JDK 8, GDAL CLI).
+# Needs what dev/g2/render/run.sh needs (ANGLE-linked engine, JDK 21, GDAL CLI).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g2/render/test

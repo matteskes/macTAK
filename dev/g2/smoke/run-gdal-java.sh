@@ -16,14 +16,16 @@ DIST="${1:-$G2/gdal-java-dist}"
   || { echo "FATAL: GDAL Java bindings not staged at $DIST — run dev/g2/fetch-gdal-java.sh first" >&2; exit 1; }
 DIST="$(cd "$DIST" && pwd)"
 
-JDK="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8 2>/dev/null || true)}"
-[[ -n "$JDK" ]] || { echo "FATAL: JDK 1.8 not found (set JAVA_HOME)" >&2; exit 2; }
+# shellcheck source=SCRIPTDIR/../../jdk.sh
+source "$G2/../jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" ]] || { echo "run-gdal-java: JDK 21 not found (dev/jdk.sh)" >&2; exit 2; }
 command -v gdal-config >/dev/null || { echo "FATAL: gdal-config not found" >&2; exit 2; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-"$JDK/bin/javac" -source 8 -target 8 -Xlint:all -Werror -encoding UTF-8 \
+"$JDK/bin/javac" --release 21 -Xlint:all -Werror -encoding UTF-8 \
   -classpath "$DIST/gdal.jar" -d "$WORK" "$HERE/GdalJavaSmoke.java"
 
 # -Djava.library.path: org.gdal.gdal.gdalJNI's static init System.loadLibrary("gdalalljni")

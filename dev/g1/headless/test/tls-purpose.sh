@@ -20,7 +20,7 @@
 # and a user certificate, which every enrolled user holds, must be refused.
 #
 # Needs the staged engine + comms stack (build-native.sh + build-commo.sh),
-# a JDK 8, python3 and openssl (any; macOS LibreSSL is fine).
+# JDK 21 (atak-headless finds it), python3 and openssl (any; macOS LibreSSL is fine).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g1/headless/test

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # G2.1 render smoke: the engine's native renderer (GLGlobe via GLMapView)
-# draws into an EGL pbuffer on ANGLE/Metal from a Zulu 8 JVM.
+# draws into an EGL pbuffer on ANGLE/Metal from a JDK 21 JVM.
 #
 # Requires: MACTAK_GLES=angle bash dev/g1/build-native.sh (engine linked
 # against ANGLE's libGLESv2, libEGL/libGLESv2 staged in native-dist).

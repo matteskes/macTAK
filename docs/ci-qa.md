@@ -100,6 +100,12 @@ How the plan above actually materialized once G1 closed:
   rebase iterations add their gates to it as jobs; they move into
   `ci.yml` at the re-pin.
 - **Lint** gained `dev/check-pipefail-grep.sh` (g55 trap 3).
+- **JDK 21** (2026-11-11): every job that starts a JVM installs Zulu 21,
+  and `JAVA_HOME`/`PATH` point at it. The jobs that build 4.6 commo
+  (`javah`) or run 4.6's Gradle 6.9.1 install Zulu 8 beside it until the
+  re-pin; the Gradle step pins `JAVA_HOME` to it. The required check
+  keeps its name, `JVM tests (Zulu 8, macOS arm64)`, because renaming it
+  would leave the ruleset waiting for a check that never reports.
 
 ## 5. Self-hosted pattern — VMPal golden VMs
 

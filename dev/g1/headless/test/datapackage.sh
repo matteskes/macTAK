@@ -3,7 +3,7 @@
 # Pure Java (DataPackage.java + ConnectOptions.java are JDK-only), so this
 # needs no natives and no server: build the synthetic fixture, compile the
 # importer, the flag/package precedence merge and DataPackageSelfTest.java,
-# run the assertions. Runs on Zulu 8 (CI) and any JDK >= 8.
+# run the assertions. Runs on JDK 21 (CI) and any JDK >= 8.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

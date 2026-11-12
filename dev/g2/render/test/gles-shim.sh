@@ -5,7 +5,7 @@
 # does, because GL keeps the pointer past the call; glBufferData must still
 # take one. Runs on a 16x16 ANGLE pbuffer.
 #
-# Needs what dev/g2/render/run.sh needs (ANGLE-linked engine, JDK 8).
+# Needs what dev/g2/render/run.sh needs (ANGLE-linked engine, JDK 21).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g2/render/test

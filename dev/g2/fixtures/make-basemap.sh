@@ -21,8 +21,10 @@ trap 'rm -rf "$WORK"' EXIT
 for t in gdal_translate gdaladdo gdalwarp; do
   command -v "$t" >/dev/null 2>&1 || { echo "make-basemap: missing $t (brew install gdal)" >&2; exit 1; }
 done
-JDK="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8 2>/dev/null || true)}"
-[[ -n "$JDK" ]] || { echo "make-basemap: JDK 1.8 not found" >&2; exit 1; }
+# shellcheck source=SCRIPTDIR/../../jdk.sh
+source "$G2/../jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" ]] || { echo "make-basemap: JDK 21 not found (dev/jdk.sh)" >&2; exit 1; }
 
 # sf-landmarks.geojson bounds + margin; 16000 px/deg ≈ 7 m/px at 37.8°N (≈ zoom 14)
 WEST="${2:--122.56}"; SOUTH="${3:-37.72}"; EAST="${4:--122.34}"; NORTH="${5:-37.87}"; PPD=16000

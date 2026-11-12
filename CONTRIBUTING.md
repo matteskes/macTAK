@@ -35,9 +35,16 @@ brew bundle install              # Brewfile = the union of every workflow's brew
 make hooks                       # install the pre-commit gate (core.hooksPath .githooks)
 ```
 
-- **Zulu 8 (arm64)** on `PATH` for all JVM work — the engine modules publish
-  to mavenLocal and `JNI_CreateJavaVM` boots it in-process for the shell.
-  CI pins its own copy; any Zulu 8 arm64 build works locally.
+- **JDK 21 (arm64)** for all JVM work: every JVM macTAK starts (canaries,
+  `atak-headless`, the render harness, `jni-tests`, the shell's in-process
+  `JNI_CreateJavaVM`) and the `javac` for macTAK's own Java
+  (`--release 21`). `brew install --cask zulu@21`; any JDK 21 arm64 works.
+- **JDK 8 (arm64)** beside it, as a 4.6 build tool only until the 5.5
+  re-pin: upstream's Gradle 6.9.1 runs on JDK 16 at most, and 4.6 commo's
+  JNI Makefile calls `javah`, which JDK 10 removed. `brew install --cask
+  zulu@8`. `dev/jdk.sh` finds both and checks each one's version; set
+  `MACTAK_JDK21_HOME` or `MACTAK_JDK8_HOME` to pick a specific one. CI
+  installs both with `setup-java`.
 - **`src/` is populated by you, never committed** (gitignored): the read-only
   upstream pin is `deptofdefense/AndroidTacticalAssaultKit-CIV` @
   `889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc` (v4.6.0.5, recursive submodules).

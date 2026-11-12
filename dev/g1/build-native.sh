@@ -306,7 +306,7 @@ endif()
     #     proxy behaves on real files (the getFileCount isDirectory fix)
     #     and Java failures surface as TE_Err with a clean JNIEnv.
     # Needs no JDK to build — dev/g1/jni-tests/run.sh skips when none is
-    # present (CI's native job installs Zulu 8 before this script).
+    # present (CI's native job installs JDK 21 before this script).
     # ---------------------------------------------------------------
     add_executable(takengine-jni-tests
         ${SRC}/dev/g1/jni-tests/jni_test_env.hpp

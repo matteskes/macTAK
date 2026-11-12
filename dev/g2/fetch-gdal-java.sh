@@ -18,10 +18,10 @@
 #   - swig -java for gdalconst (C) + gdal ogr osr gnm (C++), exactly as
 #     swig/java/CMakeLists.txt does (-Wall, -package org.gdal.<pkg>)
 #   - clang++ → libgdalalljni.dylib (install name @rpath/…, adhoc-signed)
-#   - javac -source 8 → gdal.jar
+#   - javac --release 21 → gdal.jar
 #   - PROVENANCE.txt: versions, tarball sha256, artifact sha256s
 #
-# Requires: brew swig gdal; a JDK 8 (JAVA_HOME or /usr/libexec/java_home -v 1.8).
+# Requires: brew swig gdal; JDK 21 (dev/jdk.sh finds it).
 # Usage: dev/g2/fetch-gdal-java.sh [dest-dir]
 set -euo pipefail
 
@@ -45,8 +45,10 @@ pinned_sha256() {
 
 command -v swig >/dev/null || die "swig not found (brew install swig)"
 command -v gdal-config >/dev/null || die "gdal-config not found (brew install gdal)"
-JDK="${JAVA_HOME:-$("/usr/libexec/java_home" -v 1.8 2>/dev/null || true)}"
-[[ -n "$JDK" && -x "$JDK/bin/javac" ]] || die "JDK 1.8 not found (set JAVA_HOME)"
+# shellcheck source=SCRIPTDIR/../jdk.sh
+source "$ROOT/dev/jdk.sh"
+JDK="$(mactak_jdk_home 21 || true)"
+[[ -n "$JDK" && -x "$JDK/bin/javac" ]] || die "JDK 21 not found (dev/jdk.sh)"
 
 VER="$(gdal-config --version)"
 SHA="$(pinned_sha256 "$VER")"
@@ -127,8 +129,8 @@ nm -gU "$JNI_LIB" | grep ' T _Java_org_gdal_gdal_gdalJNI_AllRegister$' >/dev/nul
 # --- jar -------------------------------------------------------------------
 CLASSES="$WORK/classes"
 rm -rf "$CLASSES"; mkdir -p "$CLASSES"
-log "javac org.gdal.* (source/target 8)"
-find "$GEN/org" -name '*.java' -print0 | xargs -0 "$JDK/bin/javac" -source 8 -target 8 -nowarn -encoding UTF-8 \
+log "javac org.gdal.* (--release 21)"
+find "$GEN/org" -name '*.java' -print0 | xargs -0 "$JDK/bin/javac" --release 21 -nowarn -encoding UTF-8 \
   -d "$CLASSES" > "$WORK/javac.log" 2>&1 || { tail -40 "$WORK/javac.log" >&2; die "javac failed (full log: $WORK/javac.log)"; }
 printf 'Manifest-Version: 1.0\nImplementation-Title: GDAL Java bindings\nImplementation-Version: %s\nImplementation-Vendor: OSGeo (built by macTAK dev/g2/fetch-gdal-java.sh)\n' "$VER" > "$WORK/MANIFEST.MF"
 "$JDK/bin/jar" cfm "$DEST/gdal.jar" "$WORK/MANIFEST.MF" -C "$CLASSES" org

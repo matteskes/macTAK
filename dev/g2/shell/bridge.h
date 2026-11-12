@@ -10,9 +10,9 @@
 #include <stddef.h>
 
 /* Locate, dlopen and bind JNI_CreateJavaVM from libjli.dylib.
- * Probes (NOTES §M3, verified 2026-11-05): $JAVA_HOME or
- * /usr/libexec/java_home -v 1.8, then — relative to that home — the JDK 8
- * layout jre/lib/jli/libjli.dylib (Zulu 8), its bundle copy
+ * Probes (NOTES §M3, verified 2026-11-05): $JAVA_HOME (run.sh sets JDK 21)
+ * or /usr/libexec/java_home -v 21, then — relative to that home — the JDK 8
+ * layout jre/lib/jli/libjli.dylib, its bundle copy
  * Contents/MacOS/libjli.dylib, and the JDK 9+ layout lib/libjli.dylib.
  * Returns the path that loaded (static storage), or NULL with err filled. */
 const char *mactak_find_libjli(char *err, size_t errLen);

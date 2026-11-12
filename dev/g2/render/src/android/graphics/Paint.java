@@ -50,9 +50,14 @@ public class Paint {
 
     public Paint(int flags) { this.flags = flags; }
 
-    public Paint(Paint src) { set(src); }
+    // copyFrom, not set(): Android's Paint is subclassable, and an override
+    // called from a constructor runs before the subclass is initialized
+    // (javac 21's this-escape lint).
+    public Paint(Paint src) { copyFrom(src); }
 
-    public void set(Paint src) {
+    public void set(Paint src) { copyFrom(src); }
+
+    private void copyFrom(Paint src) {
         flags = src.flags; color = src.color; style = src.style; align = src.align; strokeWidth = src.strokeWidth;
         textSize = src.textSize; textSkewX = src.textSkewX; typeface = src.typeface; cap = src.cap; join = src.join;
     }
