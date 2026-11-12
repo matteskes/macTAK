@@ -112,6 +112,14 @@ final class CotXml {
     }
 
     /**
+     * Every outgoing event's {@code access}. MIL-STD-6090 requires it; early
+     * CoT left it optional, and 5.5's takproto/cotevent.proto asks new clients
+     * to populate it on every outgoing message, "Undefined" when there is no
+     * real value.
+     */
+    private static final String ACCESS = " access='Undefined'";
+
+    /**
      * Self-SA as ATAK sends it (a-f-G-U-C + contact/__group/takv/uid): this is
      * what registers the EUD on a TAK server — OpenTAKServer only starts the
      * per-client fan-out consumer once a parseable self-SA with uid, callsign
@@ -120,7 +128,7 @@ final class CotXml {
     static String presence(String rawUid, String rawCallsign) {
         final String uid = xmlEscape(rawUid), callsign = xmlEscape(rawCallsign);
         String t = now(0), stale = now(30000L);
-        return "<event version='2.0' uid='" + uid + "' type='a-f-G-U-C'"
+        return "<event version='2.0' uid='" + uid + "' type='a-f-G-U-C'" + ACCESS
                 + " time='" + t + "' start='" + t + "' stale='" + stale + "' how='m-g'>"
                 + "<point lat='0.0' lon='0.0' ce='9999999' le='9999999' hae='0.0'/>"
                 + "<detail>"
@@ -137,7 +145,7 @@ final class CotXml {
         // lat/lon were validated as plain numbers at argument parsing
         final String uid = xmlEscape(rawUid), callsign = xmlEscape(rawCallsign);
         String t = now(0), stale = now(120000L);
-        return "<event version='2.0' uid='" + uid + "-m1' type='a-f-G-U-C'"
+        return "<event version='2.0' uid='" + uid + "-m1' type='a-f-G-U-C'" + ACCESS
                 + " time='" + t + "' start='" + t + "' stale='" + stale + "' how='m-g'>"
                 + "<point lat='" + lat + "' lon='" + lon + "' ce='10.0' le='10.0' hae='0.0'/>"
                 + "<detail>"

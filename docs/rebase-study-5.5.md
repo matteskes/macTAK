@@ -121,6 +121,9 @@ there is no real value. macTAK's CoT builder
 ([CotXml.java](../dev/g1/headless/src/mactak/headless/CotXml.java))
 never emits it. TAK servers accept CoT without it today; adding
 `access="Undefined"` is a small fix that does not depend on the rebase.
+**Done 2026-11-11:** both outgoing events (presence and marker) carry
+`access='Undefined'`, pinned by `CotEventSelfTest`, and it survives
+commo and the hermetic round-trip.
 
 ## Next steps
 

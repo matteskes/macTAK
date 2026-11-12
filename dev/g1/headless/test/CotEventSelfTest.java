@@ -37,6 +37,13 @@ public final class CotEventSelfTest {
         }
     }
 
+    /** The {@code <event>} root's attribute, "" when absent (our own XML, parsed plainly). */
+    private static String eventAttribute(String xml, String name) throws Exception {
+        return javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(new org.xml.sax.InputSource(new java.io.StringReader(xml)))
+                .getDocumentElement().getAttribute(name);
+    }
+
     private static final String TIME_RE =
             "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z";
 
@@ -229,6 +236,9 @@ public final class CotEventSelfTest {
                 "presence time/start/stale are CoT UTC times, stale after time");
         check(xml.contains("<__group name='Cyan' role='Team Member'/>"),
                 "presence carries the __group OpenTAKServer needs to register");
+        check("Undefined".equals(eventAttribute(xml, "access")),
+                "presence carries access='Undefined' (MIL-STD-6090, 5.5 cotevent.proto): '"
+                        + eventAttribute(xml, "access") + "'");
 
         String ctlCs = "TAB\tNL\nBEL\u0007";
         CotEvent c = CotEvent.parse(CotXml.presence("u-ctl", ctlCs));
@@ -245,5 +255,8 @@ public final class CotEventSelfTest {
         check(mk.lat == 37.7749 && mk.lon == -122.4194,
                 "marker point comes from the event, not precisionlocation");
         check(mk.stale.compareTo(mk.time) > 0, "marker stale after time");
+        check("Undefined".equals(eventAttribute(m, "access")),
+                "marker carries access='Undefined' (MIL-STD-6090, 5.5 cotevent.proto): '"
+                        + eventAttribute(m, "access") + "'");
     }
 }
