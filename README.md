@@ -29,6 +29,12 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 
 ## Project documents
 
+All of these, plus the engineering notes under `dev/` (the G1 and G2
+records and the spike notes), are also published as one browsable site,
+with a sidebar, search and a table of contents on every page:
+`https://matteskes.github.io/macTAK/`. It is built from these same files
+on every merge to `main` (`dev/docs-site/`, `make docs-site`).
+
 | Doc | Contents |
 |---|---|
 | [`docs/feasibility-report.md`](docs/feasibility-report.md) | Founding feasibility study: measured effort, decisive findings, risk — start here for the numbers behind every claim |
@@ -37,7 +43,7 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 | [`docs/roadmap.md`](docs/roadmap.md) | Gate-gated plan G0–G6 with exit criteria and fallback decision points |
 | [`docs/ci-qa.md`](docs/ci-qa.md) | CI/QA plan: inherited test corpus, CI tiers, golden fixtures, runner strategy |
 | [`docs/pathway-a.md`](docs/pathway-a.md) | WinTAK golden VM: build record, FreeTAKServer round-trip verification, gotchas |
-| [`docs/atak-feature-coverage.md`](docs/atak-feature-coverage.md) | ATAK-CIV's feature set mapped to what macTAK supports today, and the open reuse-or-rewrite decision for the app layer |
+| [`docs/atak-feature-coverage.md`](docs/atak-feature-coverage.md) | ATAK-CIV's feature set mapped to what macTAK supports today, and the app-layer decision (rewrite in Swift) |
 | [`docs/rebase-study-5.5.md`](docs/rebase-study-5.5.md) | Measured cost of moving the upstream baseline from 4.6.0.5 to 5.5.1.10; the staged rebase plan |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: setup, the gate ladder, where changes land (patches/shadows/shim), CI contract, house style |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening |

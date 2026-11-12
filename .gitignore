@@ -22,3 +22,5 @@
 # Python bytecode from the dev/g1 tooling
 __pycache__/
 *.pyc
+# docs site: staged pages, built site and the MkDocs venv (dev/docs-site/build.sh)
+/dev/docs-site/build/

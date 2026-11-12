@@ -1,4 +1,4 @@
-.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window lint clean
+.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -34,6 +34,7 @@ help:
 	@echo "  test-render-window - M3.1 window-surface exercise: engine into a CAMetalLayer window surface, --resize via the host's drawableSize (off-screen; CI runs it too)"
 	@echo "  smoke-window   - G2 M3.0 manual gate: NSWindow -> CAMetalLayer -> eglCreateWindowSurface on ANGLE; opens a window ~3 s, writes dev/g2/build/window-smoke.ppm (needs a GUI session)"
 	@echo "  lint           - shellcheck + bash -n over dev/**/*.sh; markdownlint/actionlint if installed"
+	@echo "  docs-site      - build the docs site (MkDocs, strict) into dev/docs-site/build/site"
 	@echo "  clean          - remove build outputs"
 
 hooks:
@@ -179,5 +180,8 @@ lint:
 		echo "[lint] skip: actionlint not installed"; \
 	fi
 
+docs-site:
+	@bash dev/docs-site/build.sh
+
 clean:
-	rm -rf dev/g1/native-dist dev/g1/build-commo dev/g1/build-ngtcp2 dev/g1/kernel-dist dev/g1/kernel/build dev/g1/headless/build dev/g2/angle-dist dev/g2/build
+	rm -rf dev/g1/native-dist dev/g1/build-commo dev/g1/build-ngtcp2 dev/g1/kernel-dist dev/g1/kernel/build dev/g1/headless/build dev/g2/angle-dist dev/g2/build dev/docs-site/build
