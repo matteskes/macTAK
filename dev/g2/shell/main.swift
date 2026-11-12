@@ -56,6 +56,7 @@ struct ShellOptions {
     var liveMs: Int64 = 0
     var resizeTo: (Int, Int)?
     var frameLog: String?
+    var gestures = false
 }
 
 let USAGE = """
@@ -63,7 +64,7 @@ usage: \(SHELL) --classpath CP --lib PATH [--lib PATH ...] --egl PATH --gles PAT
                    [--prop JVM_OPTION ...] [--size WxH] [--frames N] [--settle MS]
                    [--linger MS | --wait] [--out FILE.png] [--layer FILE ...]
                    [--basemap FILE ...] [--layer-db DIR] [--res M] [--at LAT,LON]
-                   [--live MS [--resize-to WxH]] [--frame-log FILE.csv]
+                   [--live MS [--resize-to WxH | --gestures]] [--frame-log FILE.csv]
   --classpath CP  the JVM classpath (built by dev/g2/shell/run.sh; the JVM
                   starts with -Djava.class.path=CP)
   --lib PATH      native library to System.load, in order (libtakengine,
@@ -88,6 +89,10 @@ usage: \(SHELL) --classpath CP --lib PATH [--lib PATH ...] --egl PATH --gles PAT
                   gate checks presents, GL errors, resizes and content
   --resize-to WxH resize the window to WxH points halfway through --live
   --frame-log F   CSV of the live phase's frame times
+  --gestures      during --live, post a scripted sequence of real input events
+                  into the window (drag, scroll, wheel, option-drag,
+                  double-click) instead of the automatic pan; the live gate
+                  checks each reached the camera (M3.4)
 """
 
 func parseSize(_ s: String, _ what: String) -> (Int, Int) {
@@ -137,6 +142,7 @@ while i < argv.count {
     case "--live": o.liveMs = Int64(optionValue()) ?? -1
     case "--resize-to": o.resizeTo = parseSize(optionValue(), "resize-to")
     case "--frame-log": o.frameLog = optionValue()
+    case "--gestures": o.gestures = true
     case "--at":
         let at = optionValue()
         let ll = at.split(separator: ",", maxSplits: 1).map(String.init)
@@ -155,6 +161,7 @@ guard o.frames >= 1 else { fputs("\(SHELL): --frames must be >= 1\n", stderr); e
 guard o.settleMs >= 0, o.lingerMs >= 0 else { fputs("\(SHELL): --settle/--linger must be >= 0\n", stderr); exit(2) }
 guard o.liveMs >= 0 else { fputs("\(SHELL): --live must be >= 0\n", stderr); exit(2) }
 guard o.resizeTo == nil || o.liveMs > 0 else { fputs("\(SHELL): --resize-to needs --live\n", stderr); exit(2) }
+guard !o.gestures || o.liveMs > 0 else { fputs("\(SHELL): --gestures needs --live\n", stderr); exit(2) }
 // the scripted phase runs inside the linger: keep the window up past it
 if o.liveMs > 0 { o.lingerMs = max(o.lingerMs, o.liveMs + 2000) }
 
@@ -253,18 +260,26 @@ func jniCallVoid(_ mid: jmethodID, _ args: [jvalue] = []) {
 // start(long layerPtr, int w, int h, String[] libs, String egl, String gles,
 //       String[] layers, String[] basemaps, String layerDb, String out,
 //       double res, double atLat, double atLon, int frames, long settleMs,
-//       double dpi, long liveMs, int expectResizes, String frameLog)
+//       double dpi, long liveMs, int expectResizes, String frameLog,
+//       boolean scriptedPan, int gestureKinds)
 let SIG_START = "(JII[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
     + "[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;DDDIJ"
-    + "DJILjava/lang/String;)V"
+    + "DJILjava/lang/String;ZI)V"
 
 guard let midStart = jniStaticMethod(gWindowApp, "start", SIG_START),
       let midPoll = jniStaticMethod(gWindowApp, "pollStatus", "()I"),
       let midExit = jniStaticMethod(gWindowApp, "exitCode", "()I"),
       let midStop = jniStaticMethod(gWindowApp, "stop", "()V"),
       let midResize = jniStaticMethod(gWindowApp, "resize", "(IID)V"),
-      let midVisible = jniStaticMethod(gWindowApp, "setVisible", "(Z)V")
+      let midVisible = jniStaticMethod(gWindowApp, "setVisible", "(Z)V"),
+      let midInput = jniStaticMethod(gWindowApp, "input", "(IFFFFD)V")
 else { exit(2) }
+
+/// InputBridge's gesture kinds (mactak.render.InputBridge), sent across JNI.
+enum Gesture: Int32 {
+    case drag = 0, scroll, wheel, magnify, rotate, optionDrag, doubleClick
+    var bit: Int32 { 1 << rawValue }
+}
 
 // No Metal device (headless Mac, VM without a GPU): the CAMetalLayer below
 // would get no device and eglCreateWindowSurface would misreport that as an
@@ -333,6 +348,136 @@ final class MetalView: NSView {
         super.viewDidChangeBackingProperties()
         syncBacking()
     }
+
+    // ---- M3.4: input → WindowApp.input (InputBridge on the render thread) ----
+    //
+    // Every event goes over as surface pixels from the upper left; the
+    // gesture meaning (Apple Maps style) is InputBridge's, JVM-side.
+
+    /// Called with (kind, x, y, dx, dy, amount) once the render thread exists.
+    var onGesture: ((Gesture, Float, Float, Float, Float, Double) -> Void)?
+    private var lastDrag: (x: CGFloat, y: CGFloat)?
+
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// The event's position in surface pixels, upper-left origin. A
+    /// synthesized scroll event has no window: its location is in screen
+    /// coordinates then.
+    private func pixels(_ e: NSEvent) -> (x: CGFloat, y: CGFloat) {
+        let inWindow = e.window != nil ? e.locationInWindow
+                                       : (window?.convertPoint(fromScreen: e.locationInWindow) ?? e.locationInWindow)
+        let p = convert(inWindow, from: nil)
+        let s = backingScale
+        return (p.x * s, (bounds.height - p.y) * s)
+    }
+
+    private func send(_ g: Gesture, _ p: (x: CGFloat, y: CGFloat), dx: CGFloat = 0, dy: CGFloat = 0, amount: Double = 0) {
+        onGesture?(g, Float(p.x), Float(p.y), Float(dx), Float(dy), amount)
+    }
+
+    override func mouseDown(with e: NSEvent) {
+        let p = pixels(e)
+        lastDrag = p
+        if e.clickCount == 2 { send(.doubleClick, p) }
+    }
+
+    override func mouseDragged(with e: NSEvent) {
+        let p = pixels(e)
+        defer { lastDrag = p }
+        guard let last = lastDrag else { return }
+        send(e.modifierFlags.contains(.option) ? .optionDrag : .drag, p, dx: p.x - last.x, dy: p.y - last.y)
+    }
+
+    override func mouseUp(with e: NSEvent) { lastDrag = nil }
+
+    /// Trackpad (precise deltas): pan, the content following the fingers.
+    /// Mouse wheel (line deltas): zoom about the pointer, positive = in.
+    override func scrollWheel(with e: NSEvent) {
+        let p = pixels(e)
+        if e.hasPreciseScrollingDeltas {
+            let s = backingScale
+            send(.scroll, p, dx: e.scrollingDeltaX * s, dy: e.scrollingDeltaY * s)
+        } else if e.scrollingDeltaY != 0 {
+            send(.wheel, p, amount: Double(e.scrollingDeltaY))
+        }
+    }
+
+    override func magnify(with e: NSEvent) { send(.magnify, pixels(e), amount: Double(e.magnification)) }
+
+    override func rotate(with e: NSEvent) { send(.rotate, pixels(e), amount: Double(e.rotation)) }
+}
+
+/// M3.4 --gestures: real input events, posted in-process into the shell's
+/// own window during the live phase (no Accessibility permission needed).
+/// Mouse events go through NSApp's event queue, so AppKit dispatches them
+/// to the view; a synthesized scroll has no window to dispatch by, so it is
+/// handed to the view's scrollWheel. Magnify and rotate have no public
+/// event constructor: InputBridgeSelfTest covers their mapping, and a real
+/// trackpad covers the handlers.
+final class GestureScript {
+    static let kinds: Int32 = Gesture.drag.bit | Gesture.scroll.bit | Gesture.wheel.bit
+        | Gesture.optionDrag.bit | Gesture.doubleClick.bit
+    private var steps: [(at: TimeInterval, run: () -> Void)] = []
+    private let start = Date()
+    private let window: NSWindow
+    private let view: MetalView
+
+    init(window: NSWindow, view: MetalView) {
+        self.window = window
+        self.view = view
+        let c = NSPoint(x: view.bounds.midX, y: view.bounds.midY)   // window coordinates: the view fills it
+        drag(from: c, by: NSPoint(x: 160, y: 0), at: 1.0, flags: [])            // pan east
+        for n in 0..<30 { steps.append((2.0 + Double(n) / 60, { self.scroll(c, dx: 0, dy: -6, units: .pixel) })) }
+        for n in 0..<3 { steps.append((3.0 + Double(n) / 10, { self.scroll(NSPoint(x: c.x + 60, y: c.y + 40), dx: 0, dy: 1, units: .line) })) }
+        drag(from: c, by: NSPoint(x: 0, y: 100), at: 3.6, flags: .option)       // tilt
+        drag(from: c, by: NSPoint(x: 100, y: 0), at: 4.5, flags: .option)       // turn
+        steps.append((5.6, { self.mouse(.leftMouseDown, c, clicks: 1) }))
+        steps.append((5.62, { self.mouse(.leftMouseUp, c, clicks: 1) }))
+        steps.append((5.70, { self.mouse(.leftMouseDown, c, clicks: 2) }))
+        steps.append((5.72, { self.mouse(.leftMouseUp, c, clicks: 2) }))
+        steps.sort { $0.at < $1.at }
+    }
+
+    /// Run every step that is due; true once the script is done.
+    func tick() -> Bool {
+        let t = Date().timeIntervalSince(start)
+        while let first = steps.first, first.at <= t {
+            steps.removeFirst()
+            first.run()
+        }
+        return steps.isEmpty
+    }
+
+    private func drag(from p: NSPoint, by d: NSPoint, at t: TimeInterval, flags: NSEvent.ModifierFlags) {
+        let n = 30
+        steps.append((t, { self.mouse(.leftMouseDown, p, flags: flags) }))
+        for i in 1...n {
+            let f = CGFloat(i) / CGFloat(n)
+            let q = NSPoint(x: p.x + d.x * f, y: p.y + d.y * f)
+            steps.append((t + Double(i) / 60, { self.mouse(.leftMouseDragged, q, flags: flags) }))
+        }
+        steps.append((t + Double(n + 1) / 60, { self.mouse(.leftMouseUp, NSPoint(x: p.x + d.x, y: p.y + d.y), flags: flags) }))
+    }
+
+    private func mouse(_ type: NSEvent.EventType, _ p: NSPoint, flags: NSEvent.ModifierFlags = [], clicks: Int = 1) {
+        guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: flags,
+                                         timestamp: ProcessInfo.processInfo.systemUptime,
+                                         windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                         clickCount: clicks, pressure: type == .leftMouseUp ? 0 : 1)
+        else { return }
+        NSApp.postEvent(e, atStart: false)
+    }
+
+    private func scroll(_ p: NSPoint, dx: Int32, dy: Int32, units: CGScrollEventUnit) {
+        guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: units, wheelCount: 2,
+                               wheel1: dy, wheel2: dx, wheel3: 0) else { return }
+        let onScreen = window.convertPoint(toScreen: p)
+        let top = NSScreen.screens.first?.frame.height ?? 0        // CG's global space is top-left
+        cg.location = CGPoint(x: onScreen.x, y: top - onScreen.y)
+        guard let e = NSEvent(cgEvent: cg) else { return }
+        view.scrollWheel(with: e)
+    }
 }
 
 final class Shell: NSObject, NSApplicationDelegate {
@@ -348,6 +493,9 @@ final class Shell: NSObject, NSApplicationDelegate {
     var lastSt = -1
     var scriptedResizeAt: Date?
     var midVisible: jmethodID?          // WindowApp.setVisible, set after start
+    var view: MetalView?
+    var gestureScript: GestureScript?
+    var gestureTimer: Timer?
 
     init(window: NSWindow, opt: ShellOptions, midPoll: jmethodID, midExit: jmethodID, midStop: jmethodID) {
         self.window = window
@@ -365,6 +513,16 @@ final class Shell: NSObject, NSApplicationDelegate {
         }
         if st == 1 && !frameDoneLogged {                       // PHASE_FRAME_DONE
             frameDoneLogged = true
+            if opt.gestures, let v = view {
+                let script = GestureScript(window: window, view: v)
+                gestureScript = script
+                print("\(SHELL): live script: posting gestures into the window")
+                let t = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] tm in
+                    if script.tick() { tm.invalidate(); self?.gestureScript = nil; print("\(SHELL): gestures posted") }
+                }
+                RunLoop.main.add(t, forMode: .common)
+                gestureTimer = t
+            }
             if let (rw, rh) = opt.resizeTo {
                 scriptedResizeAt = Date().addingTimeInterval(Double(opt.liveMs) / 2000.0)
                 print("\(SHELL): live script: resizing the window to \(rw)x\(rh) pt in \(Double(opt.liveMs) / 2000.0) s")
@@ -482,7 +640,7 @@ let (pxW, pxH) = view.pixelSize
 let startDpi = 72.0 * Double(view.backingScale)
 print("\(SHELL): CAMetalLayer @ 0x\(String(layerPtr, radix: 16)) window=\(o.w)x\(o.h) pt drawable=\(pxW)x\(pxH) px contentsScale=\(view.backingScale) dpi=\(startDpi)")
 
-var startArgs = [jvalue](repeating: jvalue(), count: 19)
+var startArgs = [jvalue](repeating: jvalue(), count: 21)
 startArgs[0].j = jlong(bitPattern: layerPtr)
 startArgs[1].i = jint(pxW)
 startArgs[2].i = jint(pxH)
@@ -502,6 +660,8 @@ startArgs[15].d = jdouble(startDpi)
 startArgs[16].j = jlong(o.liveMs)
 startArgs[17].i = jint(o.resizeTo == nil ? 0 : 1)
 startArgs[18].l = o.frameLog.flatMap { jniNewString($0) }
+startArgs[19].z = jboolean(o.gestures ? JNI_FALSE : JNI_TRUE)        // the automatic pan
+startArgs[20].i = jint(o.gestures ? GestureScript.kinds : 0)
 // 3..7 must exist (libs, egl, gles, layers, basemaps); 8 (layerDb) and
 // 9 (out) are nullable by contract — WindowApp substitutes a temp dir and
 // skips the frame write respectively.
@@ -521,6 +681,14 @@ view.onBackingChange = { w, h, dpi in
     jniCallVoid(midResize, a)
 }
 shell.midVisible = midVisible
+shell.view = view
+view.onGesture = { kind, x, y, dx, dy, amount in
+    var a = [jvalue](repeating: jvalue(), count: 6)
+    a[0].i = jint(kind.rawValue); a[1].f = jfloat(x); a[2].f = jfloat(y)
+    a[3].f = jfloat(dx); a[4].f = jfloat(dy); a[5].d = jdouble(amount)
+    jniCallVoid(midInput, a)
+}
+window.makeFirstResponder(view)
 NotificationCenter.default.addObserver(shell, selector: #selector(Shell.occlusionChanged(_:)),
                                        name: NSWindow.didChangeOcclusionStateNotification,
                                        object: window)

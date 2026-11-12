@@ -105,6 +105,7 @@ test-quic:
 
 test-render:
 	bash dev/g2/render/test/gles-shim.sh
+	bash dev/g2/render/test/input-bridge.sh
 	bash dev/g2/render/run.sh --out dev/g2/build/render-smoke.png
 	bash dev/g2/render/test/asset-icons.sh dev/g2/build/render-layer.png
 	bash dev/g2/fixtures/make-basemap.sh
@@ -149,6 +150,7 @@ test-shell: build-shell
 	bash dev/g2/shell/run.sh --out dev/g2/build/shell-frame.png
 	bash dev/g2/shell/test/exit-code.sh
 	bash dev/g2/shell/test/live.sh
+	bash dev/g2/shell/test/gestures.sh
 
 # M3.0 manual gate (dev Mac, GUI session): `angle` stages the ANGLE pair and
 # runs the headless pbuffer canary first, then the window opens for ~3 s and

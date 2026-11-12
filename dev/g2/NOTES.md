@@ -1,5 +1,21 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (M3.4 — 2026-11-12): gestures drive the map; R4 verdict: the in-process host holds
+
+The map takes Apple Maps–style input: drag and trackpad scroll pan, wheel,
+pinch and double-click zoom about the pointer, the rotate gesture and
+⌥-drag turn, ⌥-drag up tilts. AppKit's events go from the shell's
+`MetalView` across JNI to `InputBridge` on the render thread, which calls
+the engine's own `CameraController.Interactive`. Two gates:
+`render/test/input-bridge.sh` (CI) checks where every gesture lands on
+screen, and `shell/test/gestures.sh` (`make test-shell`'s fourth leg) posts
+real input events through AppKit and checks each reached the camera, with
+exact amounts (zoom 2.66× for 1.1³ × 2, tilt and heading 25.0° for 100 pt
+× 0.25°). **R4 is retired:** AppKit and the JVM share the process without
+conflict, so the split-process design stays shelved (section "M3.4", R4
+verdict). G2 now owes G2.4 b.1 (imagery), G2.6 (elevation) and the exit
+run. Traps #64–#66.
+
 ## State (M3.3 — 2026-11-12): the window is live — continuous loop, live resize, Retina, generational ZGC
 
 After the first frame the render thread keeps rendering and presenting
@@ -34,7 +50,7 @@ georeferenced images to the addressable `[0, w-1]` pixels:
 `GdalProjectionSmoke` accepts exactly 4.6's and 5.5's conventions
 (`(63,63)`/`(31.5,31.5)` now), and the basemap frame covers 262 036 px
 where 4.6 covered 262 144. Details: `dev/spike/g55/NOTES.md`. New G2
-traps continue this file's numbering (#57 next; #62 since M3.3).
+traps continue this file's numbering (#57 next; #62 since M3.3; #67 since M3.4).
 
 ## State (M3.2 — 2026-11-07): the Swift/AppKit shell boots the JVM in-process and hosts the window; `make test-shell` is green
 
@@ -577,7 +593,7 @@ layout (`lib/libjli.dylib`) via `/usr/libexec/java_home -v 1.8`; Swift
 | M3.1 | window natives + dynamic-size `EglRenderContext` (exercised headlessly; pbuffer still in CI) | pbuffer canary stays green |
 | M3.2 | shell + static frame (`WindowApp.java` lifts Globe/layers setup from `RenderSmoke`) | static frame on screen; readback PNG passes |
 | M3.3 | loop + live resize + Retina (occlusion pauses the loop) — **done 2026-11-12** | resize during pan without glitches; 60 fps logged |
-| M3.4 | `InputBridge` gestures (drag→panBy, scroll/pinch→zoomBy with focus point, two-finger rotate→rotateBy); fps log; **R4 verdict recorded here and in the roadmap** | gesture-driven pan/zoom/rotate at 60 fps — G2's exit criterion |
+| M3.4 | `InputBridge` gestures (drag→panBy, scroll/pinch→zoomBy with focus point, two-finger rotate→rotateBy); fps log; **R4 verdict recorded here and in the roadmap** — **done 2026-11-12** | gesture-driven pan/zoom/rotate at 60 fps — G2's exit criterion |
 
 CI: the pbuffer canary stays the automated gate; a compile-only job keeps
 the Swift from rotting; the window gate is manual on the dev Mac with the
@@ -1420,7 +1436,7 @@ starts. The M3 architecture above ("M3 design") is unchanged.
 | Step | What | Exit gate |
 |---|---|---|
 | M3.3 (**done**) | `WindowApp` runs a continuous render loop (dirty-flag `requestRefresh`, frame-rate clamp, paused while occluded), live resize through `adoptSurfaceSize`, Retina (`getDpi()` = 72 × backing scale); fixes `WindowApp.teardown`'s skipped EGL destroy (G2.5 #7); the shell's JVM runs generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) from here on | resize during a pan without glitches; frame times logged; `make test-shell` green |
-| M3.4 | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
+| M3.4 (**done**) | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
 | G2.4 b.1 | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
 | G2.6 | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
 | Exit | the full stack (imagery + vector + elevation) under the scripted gesture run | the 60 fps gate below; G2 closes |
@@ -1592,3 +1608,103 @@ lint` and the shell's args canary stay green.
   Android `asset:` URI the stand-ins do not serve, fails, and retries. The
   icons do not draw (labels do). It costs threads every frame; it belongs
   with G2.4's stand-in work or its own fix.
+
+## M3.4 — gestures, and the R4 verdict (2026-11-12, branch `g2/m3.4-gestures`)
+
+### What changed
+
+- **`InputBridge`** (`render/src/mactak/render`): a `Gesture` record (kind,
+  pointer in surface pixels from the upper left, content delta, amount)
+  and the Apple Maps mapping onto `CameraController.Interactive`, with
+  upstream `AtakMapController`'s conventions (zoom and rotate about the
+  ground under the pointer via a ray-cast `inverse`; `Abort` on collision
+  when zooming in). Motion is immediate (`animate = false`).
+- **`WindowApp.input(kind, x, y, dx, dy, amount)`**: the shell's entry,
+  AppKit main thread; queues the gesture for the render thread
+  (`queueEvent`) and asks for a frame. `start` gains `scriptedPan` and
+  `gestureKinds`: in gesture mode the live phase is driven by injected
+  input, and `gestureGate` requires each kind to have been applied and to
+  have moved the camera (centre, resolution, heading, tilt).
+- **The shell's `MetalView`** handles `mouseDown/Dragged/Up` (drag,
+  ⌥-drag, double-click), `scrollWheel` (precise deltas: pan; line deltas:
+  zoom), `magnify` and `rotate`, converts to surface pixels and calls
+  `WindowApp.input`. `--gestures` (with `--live`) runs `GestureScript`:
+  real `NSEvent`s posted into the window at 60 Hz (mouse events through
+  `NSApp.postEvent`, so AppKit dispatches them; a synthesized scroll has no
+  window, so it is handed to `scrollWheel`).
+- The live loop's render-CPU figure now includes the queued work, so a
+  gesture's cost is counted.
+
+### The gesture map, as built
+
+| Input | Camera | Amount |
+|---|---|---|
+| drag, two-finger scroll | pan; the ground under the pointer follows it | 1:1 |
+| mouse wheel | zoom about the pointer | 1.1× per notch, up = in |
+| pinch | zoom about the pointer | 1 + magnification |
+| two-finger rotate | turn about the pointer | the gesture's angle, counter-clockwise positive |
+| ⌥-drag up / right | tilt toward the horizon / turn clockwise (like a dial), about the centre | 0.25° per point |
+| double-click | zoom in about the pointer | 2× |
+
+### Gates and results (dev Mac, M5 Max, 2× display)
+
+| Gate | Result |
+|---|---|
+| `render/test/input-bridge.sh` (CI's render job, `make test-render`) | 11 checks pass on a 512² pbuffer at 2× dpi: drag and scroll land the ground under the pointer within 1.5 px; wheel 1.331×, pinch 1.500×, double-click 2.000×, each keeping the pointer's ground in place; rotate +30° and ⌥-drag right 5° land the test point at its rotated position; ⌥-drag up tilts 5.00° |
+| `shell/test/gestures.sh` (`make test-shell`, 4th leg) | drag 30, scroll 30, wheel 3, ⌥-drag 60, double-click 1 events reached the camera; centre moved 412 px, zoom **2.66×** (1.1³ × 2), heading **25.0°** and tilt **+25.0°** (100 pt × 0.25°); `glErrors=0`; live: PASS, gestures: PASS |
+| frame times, 3 gesture runs | 60.2 fps each; dropped frames 1, 0, 0 (the one: trap #66); render CPU p95 2.3–2.5 ms, max 6–7 ms at gesture starts (new tiles) |
+
+The test caught a real error on its way in: ⌥-drag right first turned the
+content counter-clockwise (the bridge passed `dx` with the rotate gesture's
+sign); fixed to turn clockwise.
+
+**Not covered by an automated gate:** magnify and rotate have no public
+`NSEvent` constructor, so `gestures.sh` cannot post them; their mapping is
+`input-bridge.sh`'s, their handlers need a real trackpad. Likewise the
+direction AppKit reports for a real two-finger scroll (natural scrolling)
+is only checked by hand: the shell treats `scrollingDeltaX/Y` as "the
+content moves by this much", as `NSScrollView` does.
+
+### The R4 verdict: the in-process host holds
+
+R4 asked whether AppKit and the JVM fight over threads in one process
+(roadmap risk table; the fallback was a split process: a headless engine
+plus a native UI over IPC with shared-memory textures). After M3.0–M3.4 the
+answer is no, on this evidence:
+
+- **One owner per thread, never waiting on each other.** AppKit's main
+  thread owns the window, the layer and all input; it never touches EGL
+  and calls into Java only through quick, non-blocking statics
+  (`pollStatus`, `resize`, `setVisible`, `input`, `stop`). The render
+  thread owns the EGL context end to end and takes everything from the
+  main thread through `queueEvent`/`pump`.
+- **The interactions all work at display rate:** live resize (M3.3,
+  6 of 6 scripted resizes), occlusion pause and resume, backing-scale
+  changes, and now every gesture kind through AppKit's own dispatch, at
+  60.2 fps with render CPU p95 about 2.5 ms.
+- **Lifecycle is clean:** startup through `libjli`, teardown on the render
+  thread, the terminate handshake and exit codes (M3.2's traps #43–#47 and
+  trap #56) hold across every run.
+
+The conditions it depends on stay recorded where they were found: AWT must
+not initialize in the shell's process (#43), the main thread must never
+block on the render thread (the `terminateLater` wedge), and the JVM is
+never destroyed. The split-process design stays shelved; it would come
+back only if a later feature needs AppKit to wait on the engine.
+
+### Traps found on the way (#64–#66)
+
+- **#64 — `GLMapView.forward()` is an upstream stub.** Its body is
+  `// XXX - return false`, so a screen position projected through it
+  comes back unset. Project through the scene model instead:
+  `getMapSceneModel(false, UpperLeft).forward(geo, point)`.
+- **#65 — even an immediate camera move eases over a few frames.**
+  `lookAt(..., animate = false)` reached its target on the third rendered
+  frame; gestures likewise. A test that reads the camera after one frame
+  reads a point on the way; `InputBridgeSelfTest` renders until the centre
+  and resolution repeat.
+- **#66 — one 47 ms frame at the first tilt, in the first run after a
+  rebuild.** Its render CPU was 2.3 ms, so the time went outside the
+  engine's thread; it did not recur in the next two runs. Most likely Metal
+  compiling the pipeline the first tilted view needs, which macOS then
+  caches on disk (not proven). The exit run should start warm.

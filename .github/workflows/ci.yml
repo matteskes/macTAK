@@ -287,6 +287,13 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/gles-shim.sh
 
+      - name: Gesture canary (Apple Maps gestures on the engine camera, M3.4)
+        # InputBridgeSelfTest on a pbuffer: drag/scroll keep the ground under
+        # the pointer, wheel/pinch/double-click zoom about it, rotate and
+        # option-drag turn and tilt by the right amounts (dev/g2/NOTES.md §M3.4)
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/input-bridge.sh
+
       - name: RenderSmoke argument canary (bad arguments are exit 2, not a stack trace)
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/args.sh

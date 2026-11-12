@@ -77,12 +77,12 @@ gate passes, the artifact was really produced this run.
 | `make test-roundtrip` | CoT in/out, hermetically: two headless clients vs `dev/g1/headless/fake-cot-server.py` (no external TAK server) | CI (on `dev/g1/**` changes) + local |
 | `make test-jni` | the wave-5/6 JNI guards and the Java-backed `IOProviderFactory` proxy on a real desktop JVM: guards 7 pins (neutral bailouts, clean `JNI_OnLoad` failure) + kernel 6 pins (real files through the proxy) | CI (native job) + local; skips (exit 0) when no JDK 21 is installed |
 | `make test-quic` | commo streams over QUIC (ngtcp2's `ossl` backend) to a hash-pinned aioquic stand-in, refuses a clientAuth-only impostor certificate, and logs a failed handshake's cause (`ECONNREFUSED` from a closed port) | CI (comms job) + local |
-| `make test-render` | a GeoJSON layer over MBTiles renders through the engine into an EGL pbuffer, zero GL errors, every `asset:` icon resolved, PNG artifact | CI + local |
+| `make test-render` | a GeoJSON layer over MBTiles renders through the engine into an EGL pbuffer, zero GL errors, every `asset:` icon resolved, PNG artifact; the gesture canary lands every Apple Maps gesture where it belongs on screen | CI + local |
 | `make test-render-resize` / `test-render-window` | the window surface survives mid-run `drawableSize` changes | CI + local |
 | `make check-gen-gles-shim` | committed GLES shim matches its generator's output | CI + local |
 | `make build-shell` | the Swift/C shell compiles | CI + local |
 | `make docs-site` | the docs site builds in MkDocs strict mode: every link and anchor between the documents resolves | CI (`docs-site.yml`) + local |
-| `make smoke-window` / `make test-shell` | a real window opens and presents frames; `test-shell`'s live leg keeps it rendering through a scripted pan and resize (Retina, frame times logged) | **dev Mac only** — needs a GUI session; CI runners have no WindowServer, so CI compiles the shell but the last mile of every window milestone is a local gate |
+| `make smoke-window` / `make test-shell` | a real window opens and presents frames; `test-shell`'s live leg keeps it rendering through a scripted pan and resize (Retina, frame times logged), and its gestures leg drives the camera with real input events through AppKit | **dev Mac only** — needs a GUI session; CI runners have no WindowServer, so CI compiles the shell but the last mile of every window milestone is a local gate |
 
 Run the affected gates before pushing; CI will re-run the ones it can.
 
