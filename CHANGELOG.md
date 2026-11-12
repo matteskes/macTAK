@@ -22,10 +22,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   anti-aliased line shader declared `in int a_pattern` but is fed
   unsigned shorts, so Metal refused every line draw
   (`GL_INVALID_OPERATION`); the series is now 38 patches.
-  `GdalProjectionSmoke` now derives the expected centre from the
-  image's own SE corner, because 5.5 maps the geo extent to the
-  addressable `[0, w-1]` pixels (4.6: `[0, w]`); 4.6 still reads
-  exactly (32, 32). `GLBatchGeometryRenderer4` needs no attribute
+  `GdalProjectionSmoke` accepts exactly two pixel conventions for the
+  image's SE corner, 4.6's `[0, w]` (SE `(w, h)`) and 5.5's addressable
+  `[0, w-1]` (SE `(w-1, h-1)`), and requires the centre at exactly half
+  of it, so 4.6 still reads exactly (32, 32). `GLBatchGeometryRenderer4` needs no attribute
   guards. The steps also showed that 5.5 deprecates the
   `FeatureDataStore` APIs `LayerStore` uses, and that JDK 21's javac
   adds a `this-escape` lint.

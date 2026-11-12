@@ -102,16 +102,20 @@ public final class GdalProjectionSmoke {
                 "image(0,0) != (" + north + ", " + west + ")");
 
         // ground(centre) → the midpoint of image(0,0) and ground(SE corner)'s
-        // image. Where the SE corner lands is upstream's pixel convention:
-        // 4.6 maps the extent to [0, w] (centre 32), 5.5 to the addressable
-        // [0, w-1] (GdalDatasetProjection2.GeoTransform's pixelScale, centre
-        // 31.5). Either way it lies in [w-1, w] on both axes; an axis swap or
-        // a non-linear mapping fails here or at image(0,0) above.
+        // image. Where the SE corner lands is upstream's pixel convention,
+        // one of exactly two: 4.6 maps the extent to [0, w] (SE (w, h),
+        // centre 32), 5.5 to the addressable [0, w-1]
+        // (GdalDatasetProjection2.GeoTransform's pixelScale, SE (w-1, h-1),
+        // centre 31.5). Anything else fails, so 4.6 still has to read
+        // exactly (32, 32); an axis swap or a non-linear mapping fails here
+        // or at image(0,0) above.
         final PointD se = new PointD(0, 0);
         check(proj.groundToImage(new GeoPoint(north - h * dy, west + w * dx), se), "groundToImage(SE) returned false");
         System.out.println(String.format("gdal-projection-smoke: ground(SE corner) → image(%.6f, %.6f)", se.x, se.y));
-        check(se.x >= w - 1 - 1e-6 && se.x <= w + 1e-6 && se.y >= h - 1 - 1e-6 && se.y <= h + 1e-6,
-                "ground(SE corner) outside image [" + (w - 1) + ", " + w + "]");
+        final boolean extentConvention = Math.abs(se.x - w) < 1e-6 && Math.abs(se.y - h) < 1e-6;
+        final boolean addressableConvention = Math.abs(se.x - (w - 1)) < 1e-6 && Math.abs(se.y - (h - 1)) < 1e-6;
+        check(extentConvention || addressableConvention,
+                "ground(SE corner) is neither image(" + w + ", " + h + ") nor image(" + (w - 1) + ", " + (h - 1) + ")");
 
         final PointD p = new PointD(0, 0);
         check(proj.groundToImage(new GeoPoint(north - 32 * dy, west + 32 * dx), p), "groundToImage returned false");

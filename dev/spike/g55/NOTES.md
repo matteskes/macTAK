@@ -13,6 +13,16 @@ top, and its traps continue this file's numbering (the g55 lineage).
 After the re-pin this record stays as history, and new traps go back to
 the G1 and G2 lineages.
 
+## State (render gates — 2026-11-11): the G2 render gates pass on 5.5 with ANGLE/Metal
+
+The nine steps of `ci.yml`'s `render-angle` job run green on the 5.5
+build linked against ANGLE, each with `glErrors=0` and `KHR_debug` on,
+through `dev/g2/render/env.sh`'s `MACTAK_RENDER_ENV` override (#100).
+One new patch, `antialiased-lines-pattern-uint`, makes the series 38.
+`GdalProjectionSmoke` accepts exactly two pixel conventions, 4.6's
+`[0, w]` and 5.5's `[0, w-1]`, so 4.6 still reads exactly `(32, 32)`.
+No new traps. Next: commo on 5.5. Details in §Render gates below.
+
 ## State (JNI glue — 2026-11-11): the 5.5 glue loads in a JVM and passes G1's jni-tests
 
 `libtakenginejni` builds beside the 5.5 engine; the G1 load canary
