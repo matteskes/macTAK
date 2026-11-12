@@ -304,7 +304,9 @@ Findings:
   `127.51.68.120` on macOS, so a loopback UDP inbound hears nothing.
   `hwifscanner.cpp` is identical in 4.6, and macTAK has never used the
   mesh path (the headless app streams over TCP). Worth its own look
-  before mesh networking is on the roadmap.
+  before mesh networking is on the roadmap. *Later (2026-11-12): does
+  not reproduce on `main`; peer QUIC works on `lo0` and `en0`, and
+  `make test-quic` now has a peer leg (`dev/g1/NOTES.md` G1.18).*
 - **5.5 deprecates `Commo.addStreamingInterface` without a transport.**
   `HeadlessCLI` calls it, and the launcher compiles with `-Werror`.
   The re-pin moves it to the `StreamingTransport` overload, which 4.6
@@ -561,8 +563,8 @@ passes the G1 comms gates. What remains before the re-pin (study step
    canary, which waits for the launcher's move off Java 8.
 3. ~~**Spike 2, commo on 5.5**~~ **Done** (§Commo): ngtcp2's `ossl`
    backend over `openssl@3`. Carried forward: `HeadlessCLI` onto the
-   `StreamingTransport` overload; peer-to-peer QUIC, after the
-   pre-existing interface-scanner bug; and whether ngtcp2 is built in CI
+   `StreamingTransport` overload; ~~peer-to-peer QUIC, after the
+   pre-existing interface-scanner bug~~ done (G1.18); and whether ngtcp2 is built in CI
    as here or committed.
 4. ~~**The Java 8 → 21 move**~~ **Done** (§State, JDK 21): every JVM
    on JDK 21. Carried forward to the re-pin: JDK 8 itself, kept for
@@ -581,6 +583,7 @@ passes the G1 comms gates. What remains before the re-pin (study step
 
 Carried forward past the rebase: ~~`:shared`'s tests (trap 11)~~ done (G1.15), ~~commo's
 QUIC failure cause (trap 8)~~ done (G1.16), ~~the `ManagedFeatureDefinition` consumer
-guards and pins for the two new JNI patches~~ done (G1.17), peer-to-peer
-QUIC after the interface-scanner bug, and 3D Tiles (cesium-native and
+guards and pins for the two new JNI patches~~ done (G1.17), ~~peer-to-peer
+QUIC after the interface-scanner bug~~ done (G1.18; the bug does not
+reproduce), and 3D Tiles (cesium-native and
 draco) when it is needed.
