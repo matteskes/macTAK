@@ -20,7 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   New fixture `fixtures/make-imagery.sh` (synthetic, UTM 10N, tiled, with
   overviews), `RenderSmoke --expect LAT,LON,RRGGBB`, and gate
   `render/test/geotiff.sh` (make test-render, CI): the right colour over
-  known ground points; off-frame and misregistered imagery fail.
+  known ground points; off-frame and misregistered imagery fail. The exit
+  run's real data is chosen: NAIP 2024 (60 cm) and USGS 3DEP 1/3″, a 4 km
+  window over Golden Gate Park to Twin Peaks, pinned by pixel checksums.
 - G2 M3.4, gestures (`dev/g2/NOTES.md` §M3.4): the map takes Apple
   Maps–style input. The shell's AppKit handlers send each event across JNI
   (`WindowApp.input`) to the new `InputBridge`, which applies it on the

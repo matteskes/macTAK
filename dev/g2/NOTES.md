@@ -1475,7 +1475,33 @@ proves a GeoTIFF DEM and DTED; the other formats are G4 import parity.
   script with a pinned SHA256 and provenance noted, not committed. Real
   data covers what the synthetic set cannot: dark imagery (the open
   `countNonClear` threshold note in "Follow-ups"), no-data holes, real
-  relief. The dataset is chosen at b.1.
+  relief. The dataset was chosen at b.1 (below).
+
+### The exit run's real data (decided 2026-11-12, at G2.4 b.1)
+
+Both sources were tested from the dev Mac with plain anonymous HTTPS, and
+GDAL reads only the window it needs (`/vsicurl/`, both are Cloud-Optimized
+GeoTIFFs), so no 200–460 MB source file is downloaded.
+
+| | Imagery | Elevation |
+|---|---|---|
+| Product | USDA NAIP, May 2024 flight, 60 cm, RGB + NIR | USGS 3DEP 1/3 arc-second (~10 m), "current" |
+| Where | Microsoft Planetary Computer: item `ca_m_3712213_sw_10_060_20240529` (found through its public STAC search), blob `naipeuwest/naip/v002/ca/2024/ca_060cm_2024/37122/` | The National Map: `prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/current/n38w123/USGS_13_n38w123.tif` |
+| Format | COG, NAD83 / UTM 10N, DEFLATE, 512² blocks, 5 overviews | COG, NAD83, Float32, LZW, 512² blocks, 5 overviews |
+| Licence | public domain (USDA) | public domain (USGS) |
+
+- **Area:** 4 km × 4 km from Golden Gate Park to Twin Peaks; imagery
+  resampled to 1.2 m, RGB only (about 40 MB), so the scripted pan, zoom
+  and rotate have room and the elevation layer has real relief.
+- **Pin: per-band pixel checksums** (`gdalinfo -checksum`) of each clip,
+  with the source URL and flight date; the fetch fails if they differ.
+  Not a file SHA-256: providers re-encode (the NAIP file was rewritten on
+  2026-10-30, with a new `Last-Modified`), and a pixel checksum changes
+  only when the pixels do. Two independent fetches of a trial 2 km window
+  gave identical checksums (NAIP 52678/29412/40414/40180, 3DEP 33735).
+- **Fetched by a script at the exit run, not committed.** Ruled out: NAIP
+  on AWS (requester pays: needs an AWS account), 3DEP via OpenTopography
+  (needs an API key).
 
 ### The 60 fps gate
 
@@ -1804,8 +1830,9 @@ world file.
   non-deprecated path) drew nothing for the same GeoTIFF; not chased.
   `DatasetRasterLayer2` is marked deprecated for removal at 5.5 but is
   present at the pin and draws.
-- **The exit run's real-data clip** (public-domain USGS imagery, fetched
-  with a pinned hash) is still to be chosen.
+- **The exit run's real-data clip:** chosen (NAIP 2024 and 3DEP 1/3″, 4 km
+  over Golden Gate Park to Twin Peaks, pinned by pixel checksums; "The
+  exit run's real data" above). The fetch script comes with the exit run.
 - **G2.5 #7's rest** (`BitmapRegionDecoder`'s stream, `Canvas` clip, GLES
   shim bounds) is not on the GDAL path (it reads through GDAL, not
   `BitmapRegionDecoder`/`Canvas`), so b.1 did not reach it; still open.
