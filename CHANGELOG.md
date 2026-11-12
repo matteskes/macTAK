@@ -9,6 +9,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G2 M3.4, gestures (`dev/g2/NOTES.md` §M3.4): the map takes Apple
+  Maps–style input. The shell's AppKit handlers send each event across JNI
+  (`WindowApp.input`) to the new `InputBridge`, which applies it on the
+  render thread through the engine's `CameraController.Interactive`: drag
+  and trackpad scroll pan; wheel, pinch and double-click zoom about the
+  pointer; the rotate gesture and ⌥-drag turn; ⌥-drag up tilts. New gates:
+  `render/test/input-bridge.sh` (CI, `make test-render`) checks where each
+  gesture lands on screen; `shell/test/gestures.sh` (`make test-shell`)
+  posts real input events through AppKit and checks each moved the camera
+  by the exact amount. R4 (AppKit/JVM threading) is retired: the
+  in-process host holds.
 - G2 M3.3, the live window (`dev/g2/NOTES.md` §M3.3): after the first
   frame `WindowApp` keeps rendering until the shell stops it, applies live
   resizes (the shell sets the layer's drawableSize; the render thread

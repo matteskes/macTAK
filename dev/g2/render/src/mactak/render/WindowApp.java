@@ -70,6 +70,14 @@ import java.util.zip.DeflaterOutputStream;
  * camera pans every frame for {@code liveMs} while the shell resizes the
  * window, then the live gate checks presents, GL errors, the resizes and the
  * content at the new size (writes {@code <out>-live.png}).
+ *
+ * <p>M3.4, gestures: the shell forwards AppKit input through {@link #input}
+ * to the {@link InputBridge}, which applies it on the render thread. With
+ * {@code gestureKinds != 0} the scripted phase is driven by the gestures the
+ * shell injects instead of the automatic pan, and the live gate also
+ * requires each injected kind to have been applied and to have moved the
+ * camera (pan: the centre; zoom: the resolution; rotate and option-drag:
+ * the heading; option-drag: the tilt).
  */
 public final class WindowApp {
 
@@ -90,6 +98,8 @@ public final class WindowApp {
     private static boolean visible = true;
     // Where the first frame put the camera: the scripted pan's anchor.
     private static double camLat = Double.NaN, camLon = Double.NaN, camRes = Double.NaN;
+    /** Set once the view exists; read by the AppKit main thread in {@link #input}. */
+    private static volatile InputBridge bridge;
 
     // Teardown bookkeeping: whatever the render body built, for the render
     // thread to release in reverse order once the shell asks for shutdown.
@@ -117,6 +127,9 @@ public final class WindowApp {
      * @param liveMs scripted live phase after the first frame (0: none)
      * @param expectResizes resizes the shell will drive during that phase
      * @param frameLog CSV of the live phase's frame intervals, or null
+     * @param scriptedPan pan the camera automatically during the live phase
+     * @param gestureKinds bitmask (1 << InputBridge kind) of the gestures the
+     *        shell injects during the live phase; the live gate checks them
      */
     public static synchronized void start(long layerPtr, int w, int h,
                                           String[] libs, String eglPath, String glesPath,
@@ -125,7 +138,7 @@ public final class WindowApp {
                                           double res, double atLat, double atLon,
                                           int frames, long settleMs,
                                           double dpi, long liveMs, int expectResizes,
-                                          String frameLog) {
+                                          String frameLog, boolean scriptedPan, int gestureKinds) {
         if (renderThread != null)
             throw new IllegalStateException(TAG + ": start called twice");
         if (layerPtr == 0)
@@ -146,7 +159,7 @@ public final class WindowApp {
         stopRequested = false;
         renderThread = new Thread(() -> render(layerPtr, w, h, libs, eglPath, glesPath,
                 layerList, basemapList, layerDb, outPath, res, atLat, atLon, frames, settleMs,
-                dpi, liveMs, expectResizes, frameLog),
+                dpi, liveMs, expectResizes, frameLog, scriptedPan, gestureKinds),
                 "mactak-render");
         renderThread.start();
     }
@@ -181,6 +194,16 @@ public final class WindowApp {
         WindowApp.class.notifyAll();
     }
 
+    /**
+     * One AppKit input event, already in surface pixels from the upper left
+     * ({@link InputBridge.Gesture}). Queued for the render thread; dropped
+     * before the view exists. Non-blocking, AppKit main thread.
+     */
+    public static void input(int kind, float x, float y, float dx, float dy, double amount) {
+        final InputBridge b = bridge;
+        if (b != null) b.post(new InputBridge.Gesture(kind, x, y, dx, dy, amount));
+    }
+
     /** The window's occlusion state; the loop pauses while it is hidden. */
     public static synchronized void setVisible(boolean isVisible) {
         visible = isVisible;
@@ -198,7 +221,8 @@ public final class WindowApp {
                                String layerDb, String outPath,
                                double res, double atLat, double atLon,
                                int frames, long settleMs,
-                               double dpi, long liveMs, int expectResizes, String frameLog) {
+                               double dpi, long liveMs, int expectResizes, String frameLog,
+                               boolean scriptedPan, int gestureKinds) {
         int code = 1;   // default when stop() arrives before the frame is done
         try {
             for (String lib : libs) System.load(lib);
@@ -259,6 +283,7 @@ public final class WindowApp {
             view = new GLMapView(ctx, globe, 0, 0, w, h);
             ctx.setGLMapView(view);
             view.start();
+            bridge = new InputBridge(view, ctx);
 
             // --basemap: MBTiles through the raster stack (TilesetLayerInfoSpi ->
             // MBTilesTileReader -> BitmapFactory -> texture). Added first so it
@@ -431,7 +456,7 @@ public final class WindowApp {
             synchronized (WindowApp.class) { phase = PHASE_FRAME_DONE; }
             try {
                 code = live(outPath, layers.length > 0, basemaps.length > 0,
-                        liveMs, expectResizes, frameLog);
+                        liveMs, expectResizes, frameLog, scriptedPan, gestureKinds);
             } catch (Throwable t) {
                 System.err.println(TAG + ": FAIL: uncaught in the live loop");
                 t.printStackTrace();
@@ -466,7 +491,9 @@ public final class WindowApp {
      * live and the exit code stays 0. Returns the exit code.
      */
     private static int live(String outPath, boolean hasLayers, boolean hasBasemaps,
-                            long liveMs, int expectResizes, String frameLog) throws IOException {
+                            long liveMs, int expectResizes, String frameLog,
+                            boolean scriptedPan, int gestureKinds) throws IOException {
+        final Camera before = Camera.now();
         final FrameTimes times = new FrameTimes();
         final long t0 = System.nanoTime();
         final boolean scripted = liveMs > 0;
@@ -513,10 +540,11 @@ public final class WindowApp {
                 continue;
             }
 
+            // CPU from here: the queued work (gestures included) and the render
+            final long renderCpuStart = CPU.getCurrentThreadCpuTime();
             ctx.pump();
             final long now = System.nanoTime();
-            if (scriptRunning) panStep((now - t0) / 1e9);
-            final long renderCpuStart = CPU.getCurrentThreadCpuTime();
+            if (scriptRunning && scriptedPan) panStep((now - t0) / 1e9);
             view.render();
             int err;
             while ((err = NativeEgl.getGlError()) != 0) {
@@ -536,8 +564,9 @@ public final class WindowApp {
             if (scriptRunning && presentedAt - t0 >= liveMs * 1_000_000L) {
                 scriptDone = true;
                 times.report(TAG + ": live", frameLog);
-                final int verdict = liveGate(outPath, hasLayers, hasBasemaps, glErrors, presented,
+                int verdict = liveGate(outPath, hasLayers, hasBasemaps, glErrors, presented,
                         swapFails, resizes, expectResizes);
+                if (gestureKinds != 0 && gestureGate(gestureKinds, before, Camera.now()) != 0) verdict = 1;
                 if (verdict != 0) return verdict;
             }
         }
@@ -547,6 +576,67 @@ public final class WindowApp {
         }
         if (!scripted) times.report(TAG + ": live", frameLog);
         return 0;
+    }
+
+    /** The camera, as the gesture gate compares it. Render thread. */
+    private record Camera(GeoPoint centre, double gsd, double azimuth, double tilt) {
+        static Camera now() {
+            final com.atakmap.map.MapSceneModel sm =
+                    view.getMapSceneModel(false, com.atakmap.map.MapRenderer3.DisplayOrigin.UpperLeft);
+            final InputBridge b = bridge;
+            final GeoPoint c = b == null ? null : b.groundAt(ctx.getWidth() / 2f, ctx.getHeight() / 2f);
+            return new Camera(c, sm.gsd, sm.camera.azimuth, 90d + sm.camera.elevation);
+        }
+    }
+
+    /** Equirectangular distance: exact enough for "did the centre move" at map scales. */
+    private static double groundMetres(GeoPoint a, GeoPoint b) {
+        final double mPerDeg = 111320d;
+        final double dy = (b.getLatitude() - a.getLatitude()) * mPerDeg;
+        final double dx = (b.getLongitude() - a.getLongitude()) * mPerDeg * Math.cos(Math.toRadians(a.getLatitude()));
+        return Math.hypot(dx, dy);
+    }
+
+    /** Smallest camera change the gesture gate counts as "moved". */
+    private static final double GATE_MIN_DEGREES = 1d, GATE_MIN_ZOOM = 0.05, GATE_MIN_PAN_PX = 5d;
+
+    /**
+     * M3.4: every gesture kind the shell injected reached the camera
+     * through AppKit, the JNI hop and the render thread, and moved it.
+     * Returns 0 or 1.
+     */
+    private static int gestureGate(int kinds, Camera before, Camera after) {
+        final InputBridge b = bridge;
+        boolean pass = b != null;
+        final StringBuilder counts = new StringBuilder();
+        for (int k = 0; k < InputBridge.KINDS; k++) {
+            if ((kinds & (1 << k)) == 0) continue;
+            final int n = b == null ? 0 : b.applied(k);
+            counts.append(' ').append(InputBridge.NAMES[k]).append('=').append(n);
+            if (n == 0) {
+                System.err.println(TAG + ": FAIL: no " + InputBridge.NAMES[k] + " gesture reached the camera");
+                pass = false;
+            }
+        }
+        final double panPx = before.centre() == null || after.centre() == null ? 0d
+                : groundMetres(before.centre(), after.centre()) / before.gsd();
+        final double zoom = before.gsd() / after.gsd();
+        final double turn = Math.abs(((after.azimuth() - before.azimuth()) % 360d + 540d) % 360d - 180d);
+        final double tilt = after.tilt() - before.tilt();
+        System.out.printf(TAG + ": gestures:%s; camera: centre moved %.0f px, zoom %.2fx, heading %.1f deg, tilt %+.1f deg%n",
+                counts, panPx, zoom, turn, tilt);
+        final int pan = (1 << InputBridge.DRAG) | (1 << InputBridge.SCROLL);
+        final int zooms = (1 << InputBridge.WHEEL) | (1 << InputBridge.MAGNIFY) | (1 << InputBridge.DOUBLE_CLICK);
+        final int turns = (1 << InputBridge.ROTATE) | (1 << InputBridge.OPTION_DRAG);
+        if ((kinds & pan) != 0 && panPx < GATE_MIN_PAN_PX) { System.err.println(TAG + ": FAIL: the pan gestures did not move the centre"); pass = false; }
+        if ((kinds & zooms) != 0 && Math.abs(zoom - 1d) < GATE_MIN_ZOOM) { System.err.println(TAG + ": FAIL: the zoom gestures did not change the resolution"); pass = false; }
+        if ((kinds & turns) != 0 && turn < GATE_MIN_DEGREES) { System.err.println(TAG + ": FAIL: the rotate gestures did not turn the heading"); pass = false; }
+        if ((kinds & (1 << InputBridge.OPTION_DRAG)) != 0 && Math.abs(tilt) < GATE_MIN_DEGREES) {
+            System.err.println(TAG + ": FAIL: option-drag did not tilt the camera");
+            pass = false;
+        }
+        System.out.println(pass ? TAG + ": gestures: PASS" : TAG + ": gestures: FAIL");
+        return pass ? 0 : 1;
     }
 
     /** One step of the scripted pan: the camera swings east and west of where the first frame put it. */
@@ -614,7 +704,8 @@ public final class WindowApp {
     /**
      * Frame times of the live loop: the interval between presents (what a
      * viewer sees; the display paces it) and the render thread's CPU time in
-     * {@code view.render()} plus the GL error drain (what the engine costs on
+     * the queued work (gestures), {@code view.render()} and the GL error
+     * drain (what the engine costs on
      * the CPU; GPU time and the wait for a drawable are not in it).
      * {@link #report} prints mean/p50/p95/max and the dropped frames
      * (intervals past {@link #DROPPED_NS}) and, given a path, writes CSV.
@@ -685,6 +776,7 @@ public final class WindowApp {
 
     /** Release what the render body built, in reverse order — render thread only. */
     private static void teardown() {
+        bridge = null;   // no more input once the view goes
         if (view != null) {
             view.stop();
             view.release();
