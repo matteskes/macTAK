@@ -182,6 +182,7 @@ smoke-window: angle
 lint:
 	@git ls-files -z 'dev/**/*.sh' 'dev/g1/headless/atak-headless' | xargs -0 -n1 bash -n
 	@bash dev/check-trap-exec.sh
+	@bash dev/check-pipefail-grep.sh
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		git ls-files -z 'dev/**/*.sh' 'dev/g1/headless/atak-headless' | xargs -0 -n1 shellcheck -x; \
 	else \

@@ -576,6 +576,12 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/check-trap-exec.sh
 
+      - name: No early-exit grep under pipefail (dev/check-pipefail-grep.sh)
+        # grep -q / -m quits on the first match, the writer takes SIGPIPE,
+        # and pipefail turns a match into a failure.
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/check-pipefail-grep.sh
+
       - name: python + powershell syntax (dev/reference/tools)
         # Post-G0-audit coverage gap: lint covered dev/**/*.sh only, so a
         # syntax error in the committed CoT witness rig surfaced mid-

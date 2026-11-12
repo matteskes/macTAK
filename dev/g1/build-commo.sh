@@ -235,10 +235,14 @@ public class CommoLoadSmoke {
 }
 JAVA
 "$JDK/bin/javac" -cp "$OUT/jcommoncommo.jar" -d "$WORK/canary" "$WORK/canary/CommoLoadSmoke.java"
-"$JDK/bin/java" -cp "$OUT/jcommoncommo.jar:$WORK/canary" CommoLoadSmoke \
-  "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib" \
-  | tee "$WORK/canary/out.txt" | grep -q COMMO-LOAD-OK \
-  || { cat "$WORK/canary/out.txt" >&2 || true; die "JVM Commo canary failed"; }
+# to a file, then grep: grep -q at a pipe's end under pipefail (G1 trap 2)
+if ! "$JDK/bin/java" -cp "$OUT/jcommoncommo.jar:$WORK/canary" CommoLoadSmoke \
+       "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib" \
+       >"$WORK/canary/out.txt" \
+   || ! grep -q COMMO-LOAD-OK "$WORK/canary/out.txt"; then
+  cat "$WORK/canary/out.txt" >&2 || true
+  die "JVM Commo canary failed"
+fi
 
 log "G1.2 comms stack OK — dylibs + jar staged in g1/native-dist/"
 file "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib"

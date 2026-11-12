@@ -192,6 +192,7 @@ by path, gets `@loader_path` in its rpath, and `native-dist/` receives
    `EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE` (0x3489) — defined locally.
 8. **`strings | grep -m1` under `pipefail`** → SIGPIPE false failure (G1
    trap 2 again, different pipeline). `awk … {print; exit}`-style instead.
+   **Guard (2026-11-11):** `dev/check-pipefail-grep.sh`, as G1 trap 2.
 9. **ANGLE's `libEGL` is a thin loader**: it `dlopen`s `libGLESv2` from its
    own directory, so the pair must be staged side by side. `install_name_tool`
    invalidates Electron's signature — ad-hoc re-sign or dyld refuses to load.
@@ -1070,7 +1071,7 @@ fixed on its own branch, in this order.
 | 4 | Low | `Uri.getQueryParameter` leaves `+` as `+`; Android decodes it to a space | **Fixed** (branch `g2/uri-query-plus`), guarded by `render/test/uri.sh` |
 | 5 | Low | `shell/run.sh` leaks its scratch `MACTAK_HOME` every run: the `EXIT` trap never fires after `exec` | **Fixed** (branch `g2/shell-run-scratch-cleanup`): no `exec`, guarded by `dev/check-trap-exec.sh` |
 | 6 | Low | A value option given last crashes the Swift shell (array index out of range); `RenderSmoke` dies with a stack trace instead of usage | **Fixed** (branch `g2/cli-missing-value`), guarded by `shell/test/args.sh` and `render/test/args.sh` |
-| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; `fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents); the GLES shim does not bounds-check array offsets | Open |
+| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; ~~`fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents)~~ (fixed on branch `chore/rebase-guards`, with `lipo` twice more, guarded by `dev/check-pipefail-grep.sh`); the GLES shim does not bounds-check array offsets | Open |
 | 8 | High | The Swift shell exited 0 whatever the render did: AppKit's `terminate` ends the process itself, so the code that read `WindowApp`'s exit code never ran and `make test-shell` could not fail | **Fixed** (branch `g2/shell-exit-code`): `applicationWillTerminate` exits with the code, guarded by `shell/test/exit-code.sh` (manual gate) |
 
 Settled on the bench (2026-11-10): the reading left open whether the
