@@ -2,7 +2,7 @@
 """Build the 5.5 android-port compile substitute (android-port-3.1.0-g55).
 
 The G0 transplant (dev/spike/g0/transplants/android-port-3.1.0.jar) plus
-the compile stubs in dev/spike/g55/android-port/src, which replace or add
+the compile stubs in dev/g1/kernel/android-port/src, which replace or add
 classes the 5.5 kernel needs. Compile-time only, like its base: the stub
 bodies return defaults.
 
@@ -32,7 +32,7 @@ POM = """<?xml version="1.0" encoding="UTF-8"?>
   <artifactId>android-port</artifactId>
   <version>{version}</version>
   <packaging>jar</packaging>
-  <description>macTAK 5.5 spike transplant: the G0 android-port-3.1.0 substitute (android.jar API-33 framework signatures + TAK classes from the public ATAK-CIV 5.5.1.8 apk) plus the compile stubs in dev/spike/g55/android-port/src. Compile-time substitute for the TAK-artifactory-only artifact; not for runtime use.</description>
+  <description>macTAK compile substitute: the G0 android-port-3.1.0 substitute (android.jar API-33 framework signatures + TAK classes from the public ATAK-CIV 5.5.1.8 apk) plus the compile stubs in dev/g1/kernel/android-port/src. Compile-time substitute for the TAK-artifactory-only artifact; not for runtime use.</description>
   <dependencies>
     <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>1.7.30</version></dependency>
   </dependencies>
@@ -40,11 +40,13 @@ POM = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def java8_tool(name):
-    home = os.environ.get("G55_JDK8_HOME") or subprocess.run(
-        ["/usr/libexec/java_home", "-v", "1.8"],
-        check=True, capture_output=True, text=True).stdout.strip()
-    return os.path.join(home, "bin", name)
+def javac():
+    """$JAVAC (build-kernel-jars.sh passes dev/jdk.sh's JDK 21), else java_home -v 21."""
+    if os.environ.get("JAVAC"):
+        return os.environ["JAVAC"]
+    home = subprocess.run(["/usr/libexec/java_home", "-v", "21"],
+                          check=True, capture_output=True, text=True).stdout.strip()
+    return os.path.join(home, "bin", "javac")
 
 
 def stub_sources():
@@ -58,7 +60,9 @@ def compile_stubs(classes_dir):
     sources = stub_sources()
     if not sources:
         sys.exit(f"no stub sources under {STUB_SRC}")
-    subprocess.run([java8_tool("javac"), "-nowarn", "-source", "8", "-target", "8",
+    # --release 8: Java 8 bytecode like the base jar's classes; -Xlint:-options
+    # silences javac 21's "release 8 is obsolete" notice
+    subprocess.run([javac(), "-nowarn", "-Xlint:-options", "--release", "8",
                     "-cp", BASE_JAR, "-d", classes_dir] + sources, check=True)
 
 
@@ -106,7 +110,7 @@ def main():
         count = write_jar(out_jar, classes_dir)
     with open(os.path.join(out_dir, f"android-port-{VERSION}.pom"), "w") as pom:
         pom.write(POM.format(version=VERSION))
-    print(f"[g55-android-port] {out_jar}: base + {count} stub class files")
+    print(f"[g1-android-port] {out_jar}: base + {count} stub class files")
 
 
 if __name__ == "__main__":

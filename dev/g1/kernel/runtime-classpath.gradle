@@ -1,6 +1,6 @@
-// Gradle init script (kernel/build-kernel-jars.sh): copies the engine's
+// Gradle init script (dev/g1/kernel/build-kernel-jars.sh): copies the engine's
 // resolved runtime classpath (the kernel jars, android-port and the Maven
-// dependencies) to -PmacTakRuntimeDir, so the 5.5 canaries load exactly
+// dependencies) to -PmacTakRuntimeDir, so the canaries load exactly
 // what Gradle compiled against.
 allprojects {
     afterEvaluate { project ->

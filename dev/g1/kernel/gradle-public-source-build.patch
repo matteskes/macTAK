@@ -102,7 +102,7 @@ index 143fcf6..326c118 100644
      // general dependencies
 -    androidPortVersion = '6.1.2'
 +    // macTAK: 6.1.2 is only on the TAK artifactory; 3.1.0-g55 is the public-source, compile-only
-+    // substitute built by macTAK's dev/spike/g55/android-port (Android SDK + the public CIV 5.5.1.8 apk)
++    // substitute built by macTAK's dev/g1/kernel/android-port (Android SDK + the public CIV 5.5.1.8 apk)
 +    androidPortVersion = '3.1.0-g55'
      assertjVersion = '3.6.1'
      bouncyCastleVersion = '1.78.1'

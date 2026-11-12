@@ -2,6 +2,9 @@
 # ./build-native.sh — never commit either)
 build/
 native-dist/
+# the 5.5 kernel jars + their runtime classpath (kernel/build-kernel-jars.sh)
+kernel-dist/
+kernel/build/
 build.log
 hs_err_pid*.log
 

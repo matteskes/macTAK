@@ -1,6 +1,10 @@
 {
   // macTAK markdown config (Tier 0, docs/ci-qa.md) — intentional and minimal.
   // No "globs" here: the workflow passes '**/*.md' explicitly.
+  // gitignore: skip what .gitignore skips, so `make lint` never lints the
+  // third-party docs a build unpacks (dev/g1/build: 5.5's style-asset
+  // LICENSE.md files, the tinygltf tarball's examples)
+  "gitignore": true,
   "config": {
     "MD013": false, // line length: prose and tables run long by design
     "MD033": false, // inline HTML: tables use markup/symbols deliberately
