@@ -482,6 +482,13 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: make test-quic
 
+      - name: Swift comms (make test-app-comms)
+        # G3.1: CommoClient over commo through CCommoShim, built against the
+        # commo above; two clients through fake-cot-server.py see each other
+        # (dev/g3/NOTES.md). The shell job builds the package without commo.
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-app-comms
+
       - name: Upload comms artifacts
         # Guarded: if-no-files-found is error, which would fail a no-op run.
         if: always() && needs.changes.outputs.changed == 'true'
