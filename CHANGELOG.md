@@ -19,6 +19,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A's presence), in CI's comms job. The package builds without commo
   unless `MACTAK_COMMO_LIB` names `app/stage-commo.sh`'s copy.
 
+### Changed
+
+- The app's supported floor is macOS 27, not the macOS 14 that G3.0 set
+  without a decision (`Package.swift`, `Info.plist`; G3 trap 3). CI's
+  `shell compile` and `comms stack` jobs, which run the Swift package, move
+  to GitHub's macOS 27 image (`xcode-27`, a preview).
+
 ## [0.3.2] - 2026-11-13 — G2: the shell, gestures, imagery, terrain and the exit run (gate open on trap 77) + G3.0 app skeleton
 
 G2's gate stays open: the exit run's zero-dropped-frames gate still fails

@@ -192,9 +192,20 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
   `app/.build/commo` with the install name `@rpath/libcommoncommo.dylib`
   (signed again: `install_name_tool` breaks the signature), and the shim's
   target adds that directory as an rpath. G1's copy is left as it is.
-- **3 — commo is built for the build machine's macOS.** The linker warns
-  that the package targets macOS 14 but commo was built for 27.2:
-  `build-commo.sh` sets no deployment target, so commo may use newer APIs
-  than the app claims to need. That's harmless on the build machine and
-  matters only when the app runs on an older macOS: G5's self-contained
-  bundle has to build commo (and the engine) for the app's minimum.
+- **3 — the app claimed macOS 14; its floor is macOS 27.** G3.0 set
+  macOS 14 in `Package.swift` and `Info.plist` without a decision behind
+  it, while every native library the app loads was built for the build
+  machine's macOS: commo and the engine for 27.2, Homebrew's GDAL for
+  27.0 (ANGLE's pair for 12.0). The owner's floor is macOS 27, so both
+  now say 27.0 (2026-11-13). Two consequences:
+  - **CI:** a package built for 27 doesn't launch on 26, so the two jobs
+    that run it, `shell compile` and `comms stack`, moved from `macos-26`
+    to `xcode-27`, GitHub's macOS 27 image. It's a preview: GitHub warns
+    it can be unstable and queue longer. actionlint doesn't know the label
+    yet, so `.github/actionlint.yaml` lists it. The other jobs never
+    launch the app and stay on `macos-26`.
+  - **The libraries:** the linker still warns, because commo is built for
+    27.2, newer than the floor. `build-commo.sh` and `build-native.sh` set
+    no deployment target, so the libraries need whatever macOS built them.
+    G5's self-contained bundle has to build commo, the engine and the
+    Homebrew libraries for 27.0.

@@ -32,7 +32,7 @@ let commoInclude = repo.appendingPathComponent("src/commoncommo/core/include").p
 
 let package = Package(
     name: "MacTAK",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("27.0")],   // the supported floor (dev/g3/NOTES.md, trap 3)
     products: [
         .executable(name: "MacTAK", targets: ["MacTAK"]),
         .executable(name: "mactak-shell", targets: ["mactak-shell"]),
