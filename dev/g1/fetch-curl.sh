@@ -82,7 +82,8 @@ fi
 
 [[ -f "$PREFIX/lib/libcurl.a" && -f "$PREFIX/include/curl/curl.h" && -x "$PREFIX/bin/curl-config" ]] \
   || die "libcurl.a, its headers or curl-config missing from $PREFIX"
-"$PREFIX/bin/curl-config" --ssl-backends | grep -q '^OpenSSL' \
-  || die "curl's TLS backend is not OpenSSL: $("$PREFIX/bin/curl-config" --ssl-backends)"
+# capture, then grep: grep -q at a pipe's end under pipefail (g55 trap 3)
+backends="$("$PREFIX/bin/curl-config" --ssl-backends)"
+grep -q '^OpenSSL' <<<"$backends" || die "curl's TLS backend is not OpenSSL: $backends"
 touch "$STAMP"
 log "PASS: curl $VERSION static on openssl@3 $openssl_version in $PREFIX ($("$PREFIX/bin/curl-config" --protocols | tr '\n' ' '))"
