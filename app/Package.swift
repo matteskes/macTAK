@@ -30,27 +30,27 @@ let package = Package(
     targets: [
         .target(
             name: "CJavaBoot",
-            cSettings: [.unsafeFlags(["-I", jniInclude, "-Wall", "-Wextra"])]
+            cSettings: [.unsafeFlags(["-I\(jniInclude)", "-Wall", "-Wextra"])]
         ),
         .target(
             name: "MacTAKCore",
             dependencies: ["CJavaBoot"],
-            swiftSettings: [.unsafeFlags(["-Xcc", "-I", "-Xcc", jniInclude])]
+            swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])]
         ),
         .executableTarget(
             name: "mactak-shell",
             dependencies: ["MacTAKCore", "CJavaBoot"],
-            swiftSettings: [.unsafeFlags(["-Xcc", "-I", "-Xcc", jniInclude])]
+            swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])]
         ),
         .executableTarget(
             name: "MacTAK",
             dependencies: ["MacTAKCore", "CJavaBoot"],
-            swiftSettings: [.unsafeFlags(["-Xcc", "-I", "-Xcc", jniInclude])]
+            swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])]
         ),
         .testTarget(
             name: "MacTAKCoreTests",
             dependencies: ["MacTAKCore"],
-            swiftSettings: [.unsafeFlags(["-Xcc", "-I", "-Xcc", jniInclude])]
+            swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])]
         ),
     ]
 )
