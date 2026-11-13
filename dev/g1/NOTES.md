@@ -130,7 +130,8 @@ JDK; the smoke does). `build-native.sh` still runs verbatim.
 - c3dt rejoins at the ttp-dist rung (the VSI TU already has, G2.4 b.1a);
   SQLCipher at the encryption
   rung; core install_name stays build-absolute (native-dist is built and
-  consumed on the same machine — revisit if dylibs ever ship cross-machine).
+  consumed on the same machine — revisit if dylibs ever ship cross-machine;
+  [issue #152](https://github.com/matteskes/macTAK/issues/152)).
 
 ## G1.2 — atak-headless: CoT round-trip (commoncommo build + streaming iface)
 
@@ -456,14 +457,15 @@ exit 2.
   deliberately liberal (`addressN`/`callsign` wherever they appear, firecrypt
   by substring), but the first live-package run must confirm the
   `cot_streams`/`location_units`/`plugin_firecrypt` spellings before this
-  replaces flag plumbing at a demo.
+  replaces flag plumbing at a demo ([issue #143](https://github.com/matteskes/macTAK/issues/143)).
 
 ## Follow-ups (G1 done)
 
 - OTS upstream: `auto_delete` per-EUD queues; silent drop on callsign
-  collision. Worth filing.
+  collision. Worth filing ([issue #145](https://github.com/matteskes/macTAK/issues/145)).
 - The `[commo-diag]` WARNING probes (patch 0001) are loud on every run; demote
-  or gate behind `MACTAK_COMMO_DIAG` once the stack has been quiet for a while.
+  or gate behind `MACTAK_COMMO_DIAG` once the stack has been quiet for a while
+  ([issue #144](https://github.com/matteskes/macTAK/issues/144)).
 
 ## G1.6 — wave 4: JNI exception hygiene + attrib-location guards (engine C++)
 
@@ -752,7 +754,7 @@ corrected to the tool's own output.)
   the sweep's own F16/F17 entry gates closed 2 — the `GeoPoint` and
   `NativeProjection` clinit locals in core `Interop` are read now).
   Gating the remaining consumers is the wave-7 item now that the init
-  bodies themselves report failure honestly.
+  bodies themselves report failure honestly ([issue #142](https://github.com/matteskes/macTAK/issues/142)).
 - F-1, recorded 2026-11-08, deliberately untouched: `MapRenderer3_init`
   binds the `setFocusPointOffset` slot from `GetMethodID(…, "isAnimating",
   "(FF)V")` (`jni-class-init-guards.patch` line 51; pristine
@@ -766,7 +768,7 @@ corrected to the tool's own output.)
   modern `MapRenderer3` path, a guaranteed hard-fail of `MapRenderer3_init`
   the moment G2/G4 wires it. Wave-7 fix: delete the slot (struct member +
   binding + guard), or bind `"setFocusPointOffset" "(FF)V"` instead if
-  that path turns out to need it.
+  that path turns out to need it ([issue #141](https://github.com/matteskes/macTAK/issues/141)).
 - The wave-5 residuals list shrinks by three: scalar getters ×6 (done),
   `Interop_wrap` `NewObject` ×2 (done), systemic class-init masking
   (done); `jnativegllayer3` stays clean.
@@ -1171,14 +1173,14 @@ and its password. Six findings; each lands as its own focused PR.
 | 1 | High | commo accepts any server cert that chains to the truststore CA: no TLS-server purpose check, and no hostname check (deliberate upstream, per ATAK) | **Fixed** (branch `g1/commo-tls-server-purpose`): `patches/commo/0002-sslcertchecker-require-server-purpose.patch`, guarded by `test/tls-purpose.sh` |
 | 2 | Medium | Transplant jars not fully integrity-checked: slf4j jars unlisted, CI never verified hashes | **Fixed here** |
 | 3 | Low | Inbound CoT printed raw to the terminal: escape-sequence injection, and forged `headless:` lines | **Fixed** (branch `g1/sanitize-inbound-log`): `CotXml.printable`, guarded by `CotEventSelfTest` |
-| 4 | Low (dormant) | commo's curl paths (file transfer, mission packages, URL requests) skip the hostname check always, and the chain check when the caller passes no CA or the transfer is peer-hosted | Recorded below (narrowed in pass 2: a caller rule, not a patch); unused by atak-headless today |
-| 5 | Note | `NativeSsl` loads OpenSSL's legacy provider process-wide, not only for the RC2-40 PKCS#12 read | Recorded |
+| 4 | Low (dormant) | commo's curl paths (file transfer, mission packages, URL requests) skip the hostname check always, and the chain check when the caller passes no CA or the transfer is peer-hosted | Recorded below (narrowed in pass 2: a caller rule, not a patch); unused by atak-headless today; [issue #146](https://github.com/matteskes/macTAK/issues/146) |
+| 5 | Note | `NativeSsl` loads OpenSSL's legacy provider process-wide, not only for the RC2-40 PKCS#12 read | Recorded; [issue #149](https://github.com/matteskes/macTAK/issues/149) |
 | 6 | Note | Reviewed, no issue: data-package importer (Zip-Slip, size caps, XXE, no password in logs, 0700 cert dir), `CotEvent` (XXE + §G1.11 validation), `TrackStore` (bound parameters), fake server (loopback only); deep pass: commo's stream framing (fixed 64 KiB buffer, protobuf length capped at it, overflow discards rather than overruns), its XML parse (`XML_PARSE_NONET`, no entity substitution or external DTD), and no listening socket (the mission-package web server starts only after `setupMissionPackageIO`, which atak-headless never calls); native-code read: the 34 engine patches, 2 commo patches and `jni-extra` add only null/exception guards, GL attribute guards and three upstream memory-bug fixes, and touch no buffer except `vsi_jfile` Read/Write, which keeps upstream's 32-bit length (a read over 2 GB comes back short, never past the buffer); CI workflow pass: every workflow is `contents: read`, triggers on `pull_request` (never `pull_request_target`), uses no repository secrets, pins every action and the upstream checkout by commit, and passes PR-controlled values to scripts through `env`, never inline | — |
 | 7 | Low | `--db` tracks DB created under the default umask (0644 on macOS): other local accounts can read every received position | **Fixed** (pass 2, branch `g1/security-audit-pass-2`): `TrackStore` creates it 0600, guarded by `run.sh` |
-| 8 | Note | `TrackStore` appends one row per received CoT with no cap or retention: a chatty or hostile server grows the file for as long as the client runs | Recorded; atak-headless runs bounded by `--duration`, G6 needs retention |
-| 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | Recorded; only the same user can write `~/.m2`, so no boundary is crossed |
-| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | Recorded (deep pass, owner's call: no code change now); G6 must restrict drivers before importing overlays it did not choose |
-| 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | Recorded |
+| 8 | Note | `TrackStore` appends one row per received CoT with no cap or retention: a chatty or hostile server grows the file for as long as the client runs | Recorded; atak-headless runs bounded by `--duration`, G6 needs retention; [issue #148](https://github.com/matteskes/macTAK/issues/148) |
+| 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | Recorded; only the same user can write `~/.m2`, so no boundary is crossed; [issue #150](https://github.com/matteskes/macTAK/issues/150) |
+| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | Recorded (deep pass, owner's call: no code change now); G6 must restrict drivers before importing overlays it did not choose; [issue #147](https://github.com/matteskes/macTAK/issues/147) |
+| 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | Recorded; [issue #151](https://github.com/matteskes/macTAK/issues/151) |
 | 12 | Low | CI: 14 of the 16 checkouts in `ci.yml`, `cot-roundtrip.yml` and `docs.yml` left the job token in `.git/config` while build scripts and Homebrew-installed tools ran | **Fixed** (CI workflow pass, branch `ci/checkout-persist-credentials`): `persist-credentials: false` on each; the two `changes` jobs keep the token for their `git fetch` |
 
 Trust model: a data package chooses the server you connect to, so a
@@ -1278,7 +1280,7 @@ Traps found on the way (do not rediscover these):
   peer-hosted transfers. atak-headless calls none of them today.
   **Guard:** none yet. Whoever wires data-package or mission sync (G6
   rung 5) must always pass the truststore's CA certs to these calls;
-  this entry is the reminder.
+  this entry is the reminder ([issue #146](https://github.com/matteskes/macTAK/issues/146)).
 - **The tracks DB was readable by every local account** (pass 2, #7).
   `--db` handed the path to the engine's sqlite open, which created the
   file under the default umask: 0644 on macOS. The file holds every
@@ -1307,7 +1309,7 @@ Traps found on the way (do not rediscover these):
   GPKG, KML, LIBKML, ESRI Shapefile, GPX, FlatGeobuf; the first four are
   what `layer.sh` proves), in `dev/g1/jni-extra/mactak_gdal.cpp`, with no
   engine patch. A denylist (`OGR_VRT`, `GML`, `GMLAS`, `WFS`, `OAPIF`)
-  is the weaker alternative.
+  is the weaker alternative ([issue #147](https://github.com/matteskes/macTAK/issues/147)).
 
 Evidence for #1 (CI, `cot-roundtrip.yml` dispatch runs). Before: the
 test alone on `8b38d91`, unpatched commo (run 42741415679):
