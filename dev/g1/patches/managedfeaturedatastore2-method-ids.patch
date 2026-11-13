@@ -1,0 +1,31 @@
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataStore2.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataStore2.cpp
+@@ -220,10 +220,12 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeaturesCount(int *value) NOTHROWS
+ {
+-    if(!FeatureDataStore2_class.queryFeatureSetsCount)
++    // macTAK (issue 142): upstream called queryFeatureSetsCount here, so the
++    // unfiltered feature count was the feature-set count
++    if(!FeatureDataStore2_class.queryFeaturesCount)
+         return TE_Err;
+     LocalJNIEnv env;
+-    *value = env->CallIntMethod(impl, FeatureDataStore2_class.queryFeatureSetsCount, nullptr);
++    *value = env->CallIntMethod(impl, FeatureDataStore2_class.queryFeaturesCount, nullptr);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeaturesCount(int *value, const FeatureQueryParameters &cparams) NOTHROWS
+@@ -807,8 +809,11 @@
+         FeatureDataStore2_class.setFeatureSetVisible = env.GetMethodID(FeatureDataStore2_class.id, "setFeatureSetVisible", "(JZ)V");
+         if(!FeatureDataStore2_class.setFeatureSetVisible)
+             return false;
+-        FeatureDataStore2_class.setFeatureSetVisible = env.GetMethodID(FeatureDataStore2_class.id, "setFeatureSetsVisible", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters;Z)V");
+-        if(!FeatureDataStore2_class.setFeatureSetVisible)
++        // macTAK (issue 142): upstream stored this lookup in
++        // setFeatureSetVisible, overwriting the (JZ)V method with the
++        // (params, Z) one and leaving setFeatureSetsVisible NULL
++        FeatureDataStore2_class.setFeatureSetsVisible = env.GetMethodID(FeatureDataStore2_class.id, "setFeatureSetsVisible", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters;Z)V");
++        if(!FeatureDataStore2_class.setFeatureSetsVisible)
+             return false;
+         FeatureDataStore2_class.hasTimeReference = env.GetMethodID(FeatureDataStore2_class.id, "hasTimeReference", "()Z");
+         if(!FeatureDataStore2_class.hasTimeReference)

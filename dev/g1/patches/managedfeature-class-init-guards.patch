@@ -1,0 +1,997 @@
+--- a/tmp/takeng-src/jni/interop/feature/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/feature/Interop.cpp
+@@ -449,7 +449,11 @@
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mfeature, JNIEnv &env, FeaturePtr &&cfeature) NOTHROWS
+ {
+-    checkInit(env);
++    // macTAK (issue 142): checkInit's result was ignored here and in the
++    // marshals below, which then call through the NULL IDs of a failed
++    // init; they bail like the ones above that already checked it
++    if(!checkInit(env))
++        return TE_IllegalState;
+     Java::JNILocalRef mfeaturePtr(env, NewPointer(&env, std::move(cfeature)));
+     mfeature = Java::JNILocalRef(env, env.NewObject(Feature_class.id, Feature_class.ctor__LPointer, mfeaturePtr.get(), nullptr));
+     return TE_Ok;
+@@ -458,7 +462,8 @@
+ {
+     if(!mfeature)
+         return TE_InvalidArg;
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     Java::JNILocalRef mpointer(env, env.GetObjectField(mfeature, Feature_class.pointer));
+     if(!mpointer)
+         return TE_IllegalState;
+@@ -480,7 +485,8 @@
+ 
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mfeatureset, JNIEnv &env, const FeatureSet2 &cfeatureset) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     int64_t fsid = cfeatureset.getId();
+     if(fsid == FeatureDataStore2::FEATURESET_ID_NONE)
+         fsid = com_atakmap_map_layer_feature_FeatureDataStore2_FEATURESET_ID_NONE;
+@@ -510,7 +516,8 @@
+ {
+     if(!mfeatureset)
+         return TE_InvalidArg;
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     jlong fsid = env.GetLongField(mfeatureset, FeatureSet_class.fsid);
+     if(fsid == com_atakmap_map_layer_feature_FeatureDataStore2_FEATURESET_ID_NONE)
+         fsid = FeatureDataStore2::FEATURESET_ID_NONE;
+@@ -547,7 +554,8 @@
+ 
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mparams, JNIEnv &env, const FeatureDataStore2::FeatureQueryParameters &cparams) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     mparams = Java::JNILocalRef(env, env.NewObject(FeatureQueryParameters_class.id, FeatureQueryParameters_class.ctor));
+     if(!cparams.featureSetIds->empty() || !cparams.featureSets->empty() || !cparams.providers->empty() || !cparams.types->empty() || !TE_ISNAN(cparams.minResolution) || !TE_ISNAN(cparams.maxResolution)) {
+         Java::JNILocalRef mfeatureSetFilter(env, env.NewObject(FeatureSetQueryParameters_class.id, FeatureSetQueryParameters_class.ctor));
+@@ -655,7 +663,8 @@
+ {
+     if(!mparams)
+         return TE_Ok;
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     Java::JNILocalRef mfeatureSetFilter(env, env.GetObjectField(mparams, FeatureQueryParameters_class.featureSetFilter));
+     if(mfeatureSetFilter) {
+         addAllIfNotNull(*cparams->featureSetIds, env, mfeatureSetFilter, FeatureSetQueryParameters_class.ids);
+@@ -754,6 +763,10 @@
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mparams, JNIEnv &env, const FeatureDataStore2::FeatureSetQueryParameters &cparams) NOTHROWS
+ {
++    // macTAK (issue 142): upstream never ran the init here, so a process
++    // whose first feature interop call was this marshal crashed in NewObject
++    if(!checkInit(env))
++        return TE_IllegalState;
+     mparams = Java::JNILocalRef(env, env.NewObject(FeatureSetQueryParameters_class.id, FeatureSetQueryParameters_class.ctor));
+     if(!cparams.ids->empty()) {
+         Java::JNILocalRef mids = Java::JNICollection_create(env, Java::JNICollectionClass::HashSet);
+@@ -784,7 +797,8 @@
+ {
+     if(!mparams)
+         return TE_Ok;
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     Java::JNILocalRef mids(env, env.GetObjectField(mparams, FeatureSetQueryParameters_class.ids));
+     if(mids)
+         Java::JNICollection_addAll(cparams->ids, env, mids);
+@@ -805,7 +819,8 @@
+ 
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(FeatureDataStore2 **cdatastore, JNIEnv &env, jobject mdatastore) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     TAKErr code(TE_Ok);
+     const auto isWrapper = FeatureDataStore2_interop.isWrapper(env, mdatastore);
+     if(!isWrapper) {
+@@ -820,34 +835,40 @@
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(std::shared_ptr<FeatureDataStore2> &cdatastore, JNIEnv &env, jobject mdatastore) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     return FeatureDataStore2_interop.marshal<ManagedFeatureDataStore2>(cdatastore, env, mdatastore);
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(FeatureDataStore2Ptr &cdatastore, JNIEnv &env, jobject mdatastore) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     return FeatureDataStore2_interop.marshal<ManagedFeatureDataStore2>(cdatastore, env, mdatastore);
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mdatastore, JNIEnv &env, const FeatureDataStore2 &cdatastore) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     return FeatureDataStore2_interop.marshal<ManagedFeatureDataStore2>(mdatastore, env, cdatastore);
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mdatastore, JNIEnv &env, const std::shared_ptr<FeatureDataStore2> &cdatastore) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     return FeatureDataStore2_interop.marshal<ManagedFeatureDataStore2>(mdatastore, env, cdatastore);
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mdatastore, JNIEnv &env, FeatureDataStore2Ptr &&cdatastore) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     return FeatureDataStore2_interop.marshal<ManagedFeatureDataStore2>(mdatastore, env, std::move(cdatastore));
+ }
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Traits &ctraits, JNIEnv &env, jobject mtraits) NOTHROWS
+ {
+     if(!mtraits)
+         return TE_InvalidArg;
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     Java::JNILocalRef maltitudeMode(env, env.GetObjectField(mtraits, Feature_Traits_class.altitudeMode));
+     TAKErr code = Interop_marshal(ctraits.altitudeMode, env, maltitudeMode);
+     TE_CHECKRETURN_CODE(code)
+@@ -862,7 +883,8 @@
+ 
+ TAKErr TAKEngineJNI::Interop::Feature::Interop_marshal(Java::JNILocalRef &mtraits, JNIEnv &env, const TAK::Engine::Feature::Traits &ctraits) NOTHROWS
+ {
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     mtraits = Java::JNILocalRef(env, env.NewObject(Feature_Traits_class.id, Feature_Traits_class.ctor));
+     Java::JNILocalRef maltitudeMode(env, nullptr);
+     Interop_marshal(maltitudeMode, env, ctraits.altitudeMode);
+@@ -880,7 +902,8 @@
+ {
+     if(!moptions)
+         return TE_InvalidArg;
+-    checkInit(env);
++    if(!checkInit(env))
++        return TE_IllegalState;
+     coptions.labelsEnabled = env.GetBooleanField(moptions, GLBatchGeometryFeatureDataStoreRenderer2_Options_class.labelsEnabled);
+     Java::JNILocalRef mfilter(env, env.GetObjectField(moptions, GLBatchGeometryFeatureDataStoreRenderer2_Options_class.filter));
+ 
+@@ -994,73 +1017,197 @@
+     }
+     bool Feature_interop_init(JNIEnv &env) NOTHROWS
+     {
++        // macTAK (issue 142): every lookup guarded, as jni-class-init-guards
++        // does for the inits that predate 5.5
+         Feature_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/Feature");
++        if(!Feature_class.id)
++            return false;
+         Feature_class.pointer = env.GetFieldID(Feature_class.id, "pointer", "Lcom/atakmap/interop/Pointer;");
++        if(!Feature_class.pointer)
++            return false;
+         Feature_class.ctor__LPointer = env.GetMethodID(Feature_class.id, "<init>", "(Lcom/atakmap/interop/Pointer;)V");
++        if(!Feature_class.ctor__LPointer)
++            return false;
+ 
+         FeatureSet_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureSet");
++        if(!FeatureSet_class.id)
++            return false;
+         FeatureSet_class.fsid = env.GetFieldID(FeatureSet_class.id, "id", "J");
++        if(!FeatureSet_class.fsid)
++            return false;
+         FeatureSet_class.provider = env.GetFieldID(FeatureSet_class.id, "provider", "Ljava/lang/String;");
++        if(!FeatureSet_class.provider)
++            return false;
+         FeatureSet_class.type = env.GetFieldID(FeatureSet_class.id, "type", "Ljava/lang/String;");
++        if(!FeatureSet_class.type)
++            return false;
+         FeatureSet_class.name = env.GetFieldID(FeatureSet_class.id, "name", "Ljava/lang/String;");
++        if(!FeatureSet_class.name)
++            return false;
+         FeatureSet_class.minGsd = env.GetFieldID(FeatureSet_class.id, "minGsd", "D");
++        if(!FeatureSet_class.minGsd)
++            return false;
+         FeatureSet_class.maxGsd = env.GetFieldID(FeatureSet_class.id, "maxGsd", "D");
++        if(!FeatureSet_class.maxGsd)
++            return false;
+         FeatureSet_class.version = env.GetFieldID(FeatureSet_class.id, "version", "J");
++        if(!FeatureSet_class.version)
++            return false;
+         FeatureSet_class.ctor__JLStringLStringLStringDDJ = env.GetMethodID(FeatureSet_class.id, "<init>", "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;DDJ)V");
++        if(!FeatureSet_class.ctor__JLStringLStringLStringDDJ)
++            return false;
+ 
+         FeatureQueryParameters_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters");
++        if(!FeatureQueryParameters_class.id)
++            return false;
+         FeatureQueryParameters_class.featureSetFilter = env.GetFieldID(FeatureQueryParameters_class.id, "featureSetFilter", "Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters;");
++        if(!FeatureQueryParameters_class.featureSetFilter)
++            return false;
+         FeatureQueryParameters_class.ids = env.GetFieldID(FeatureQueryParameters_class.id, "ids", "Ljava/util/Set;");
++        if(!FeatureQueryParameters_class.ids)
++            return false;
+         FeatureQueryParameters_class.names = env.GetFieldID(FeatureQueryParameters_class.id, "names", "Ljava/util/Set;");
++        if(!FeatureQueryParameters_class.names)
++            return false;
+         FeatureQueryParameters_class.geometryTypes = env.GetFieldID(FeatureQueryParameters_class.id, "geometryTypes", "Ljava/util/Set;");
++        if(!FeatureQueryParameters_class.geometryTypes)
++            return false;
+         FeatureQueryParameters_class.attributeFilters = env.GetFieldID(FeatureQueryParameters_class.id, "attributeFilters", "Ljava/util/Set;");
++        if(!FeatureQueryParameters_class.attributeFilters)
++            return false;
+         FeatureQueryParameters_class.visibleOnly = env.GetFieldID(FeatureQueryParameters_class.id, "visibleOnly", "Z");
++        if(!FeatureQueryParameters_class.visibleOnly)
++            return false;
+         FeatureQueryParameters_class.spatialFilter = env.GetFieldID(FeatureQueryParameters_class.id, "spatialFilter", "Lcom/atakmap/map/layer/feature/geometry/Geometry;");
++        if(!FeatureQueryParameters_class.spatialFilter)
++            return false;
+         FeatureQueryParameters_class.minimumTimestamp = env.GetFieldID(FeatureQueryParameters_class.id, "minimumTimestamp", "J");
++        if(!FeatureQueryParameters_class.minimumTimestamp)
++            return false;
+         FeatureQueryParameters_class.maximumTimestamp = env.GetFieldID(FeatureQueryParameters_class.id, "maximumTimestamp", "J");
++        if(!FeatureQueryParameters_class.maximumTimestamp)
++            return false;
+         FeatureQueryParameters_class.altitudeMode = env.GetFieldID(FeatureQueryParameters_class.id, "altitudeMode", "Lcom/atakmap/map/layer/feature/Feature$AltitudeMode;");
++        if(!FeatureQueryParameters_class.altitudeMode)
++            return false;
+         FeatureQueryParameters_class.extrudedOnly = env.GetFieldID(FeatureQueryParameters_class.id, "extrudedOnly", "Z");
++        if(!FeatureQueryParameters_class.extrudedOnly)
++            return false;
+         FeatureQueryParameters_class.ignoredFeatureProperties = env.GetFieldID(FeatureQueryParameters_class.id, "ignoredFeatureProperties", "I");
++        if(!FeatureQueryParameters_class.ignoredFeatureProperties)
++            return false;
+         FeatureQueryParameters_class.spatialOps = env.GetFieldID(FeatureQueryParameters_class.id, "spatialOps", "Ljava/util/Collection;");
++        if(!FeatureQueryParameters_class.spatialOps)
++            return false;
+         FeatureQueryParameters_class.order = env.GetFieldID(FeatureQueryParameters_class.id, "order", "Ljava/util/Collection;");
++        if(!FeatureQueryParameters_class.order)
++            return false;
+         FeatureQueryParameters_class.limit = env.GetFieldID(FeatureQueryParameters_class.id, "limit", "I");
++        if(!FeatureQueryParameters_class.limit)
++            return false;
+         FeatureQueryParameters_class.offset = env.GetFieldID(FeatureQueryParameters_class.id, "offset", "I");
++        if(!FeatureQueryParameters_class.offset)
++            return false;
+         FeatureQueryParameters_class.timeout = env.GetFieldID(FeatureQueryParameters_class.id, "timeout", "J");
++        if(!FeatureQueryParameters_class.timeout)
++            return false;
+         FeatureQueryParameters_class.ctor = env.GetMethodID(FeatureQueryParameters_class.id, "<init>", "()V");
++        if(!FeatureQueryParameters_class.ctor)
++            return false;
+ 
+         FeatureQueryParameters_class.Order_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters$Order");
++        if(!FeatureQueryParameters_class.Order_class.id)
++            return false;
+         FeatureQueryParameters_class.Order_class.Name_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters$Order$Name");
++        if(!FeatureQueryParameters_class.Order_class.Name_class.id)
++            return false;
+         FeatureQueryParameters_class.Order_class.Name_class.ctor = env.GetMethodID(FeatureQueryParameters_class.Order_class.Name_class.id, "<init>", "()V");
++        if(!FeatureQueryParameters_class.Order_class.Name_class.ctor)
++            return false;
+         FeatureQueryParameters_class.Order_class.ID_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters$Order$ID");
++        if(!FeatureQueryParameters_class.Order_class.ID_class.id)
++            return false;
+         FeatureQueryParameters_class.Order_class.ID_class.ctor = env.GetMethodID(FeatureQueryParameters_class.Order_class.ID_class.id, "<init>", "()V");
++        if(!FeatureQueryParameters_class.Order_class.ID_class.ctor)
++            return false;
+         FeatureQueryParameters_class.Order_class.Distance_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters$Order$Distance");
++        if(!FeatureQueryParameters_class.Order_class.Distance_class.id)
++            return false;
+         FeatureQueryParameters_class.Order_class.Distance_class.point = env.GetFieldID(FeatureQueryParameters_class.Order_class.Distance_class.id, "point", "Lcom/atakmap/coremap/maps/coords/GeoPoint;");
++        if(!FeatureQueryParameters_class.Order_class.Distance_class.point)
++            return false;
+         FeatureQueryParameters_class.Order_class.Distance_class.ctor__LGeoPoint = env.GetMethodID(FeatureQueryParameters_class.Order_class.Distance_class.id, "<init>", "(Lcom/atakmap/coremap/maps/coords/GeoPoint;)V");
++        if(!FeatureQueryParameters_class.Order_class.Distance_class.ctor__LGeoPoint)
++            return false;
+ 
+         FeatureQueryParameters_class.SpatialOp_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters$SpatialOp");
++        if(!FeatureQueryParameters_class.SpatialOp_class.id)
++            return false;
+         FeatureQueryParameters_class.SpatialOp_class.Buffer_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters$SpatialOp$Buffer");
++        if(!FeatureQueryParameters_class.SpatialOp_class.Buffer_class.id)
++            return false;
+         FeatureQueryParameters_class.SpatialOp_class.Buffer_class.distance = env.GetFieldID(FeatureQueryParameters_class.SpatialOp_class.Buffer_class.id, "distance", "D");
++        if(!FeatureQueryParameters_class.SpatialOp_class.Buffer_class.distance)
++            return false;
+         FeatureQueryParameters_class.SpatialOp_class.Buffer_class.ctor__D = env.GetMethodID(FeatureQueryParameters_class.SpatialOp_class.Buffer_class.id, "<init>", "(D)V");
++        if(!FeatureQueryParameters_class.SpatialOp_class.Buffer_class.ctor__D)
++            return false;
+         FeatureQueryParameters_class.SpatialOp_class.Simplify_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters$SpatialOp$Simplify");
++        if(!FeatureQueryParameters_class.SpatialOp_class.Simplify_class.id)
++            return false;
+         FeatureQueryParameters_class.SpatialOp_class.Simplify_class.distance = env.GetFieldID(FeatureQueryParameters_class.SpatialOp_class.Simplify_class.id, "distance", "D");
++        if(!FeatureQueryParameters_class.SpatialOp_class.Simplify_class.distance)
++            return false;
+         FeatureQueryParameters_class.SpatialOp_class.Simplify_class.ctor__D = env.GetMethodID(FeatureQueryParameters_class.SpatialOp_class.Simplify_class.id, "<init>", "(D)V");
++        if(!FeatureQueryParameters_class.SpatialOp_class.Simplify_class.ctor__D)
++            return false;
+ 
+         FeatureSetQueryParameters_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters");
++        if(!FeatureSetQueryParameters_class.id)
++            return false;
+         FeatureSetQueryParameters_class.ids = env.GetFieldID(FeatureSetQueryParameters_class.id, "ids", "Ljava/util/Set;");
++        if(!FeatureSetQueryParameters_class.ids)
++            return false;
+         FeatureSetQueryParameters_class.names = env.GetFieldID(FeatureSetQueryParameters_class.id, "names", "Ljava/util/Set;");
++        if(!FeatureSetQueryParameters_class.names)
++            return false;
+         FeatureSetQueryParameters_class.types = env.GetFieldID(FeatureSetQueryParameters_class.id, "types", "Ljava/util/Set;");
++        if(!FeatureSetQueryParameters_class.types)
++            return false;
+         FeatureSetQueryParameters_class.providers = env.GetFieldID(FeatureSetQueryParameters_class.id, "providers", "Ljava/util/Set;");
++        if(!FeatureSetQueryParameters_class.providers)
++            return false;
+         FeatureSetQueryParameters_class.minResolution = env.GetFieldID(FeatureSetQueryParameters_class.id, "minResolution", "D");
++        if(!FeatureSetQueryParameters_class.minResolution)
++            return false;
+         FeatureSetQueryParameters_class.maxResolution = env.GetFieldID(FeatureSetQueryParameters_class.id, "maxResolution", "D");
++        if(!FeatureSetQueryParameters_class.maxResolution)
++            return false;
+         FeatureSetQueryParameters_class.visibleOnly = env.GetFieldID(FeatureSetQueryParameters_class.id, "visibleOnly", "Z");
++        if(!FeatureSetQueryParameters_class.visibleOnly)
++            return false;
+         FeatureSetQueryParameters_class.limit = env.GetFieldID(FeatureSetQueryParameters_class.id, "limit", "I");
++        if(!FeatureSetQueryParameters_class.limit)
++            return false;
+         FeatureSetQueryParameters_class.offset = env.GetFieldID(FeatureSetQueryParameters_class.id, "offset", "I");
++        if(!FeatureSetQueryParameters_class.offset)
++            return false;
+         FeatureSetQueryParameters_class.ctor = env.GetMethodID(FeatureSetQueryParameters_class.id, "<init>", "()V");
++        if(!FeatureSetQueryParameters_class.ctor)
++            return false;
+ 
+         Point_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/geometry/Point");
++        if(!Point_class.id)
++            return false;
+         LineString_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/geometry/LineString");
++        if(!LineString_class.id)
++            return false;
+         Polygon_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/geometry/Polygon");
++        if(!Polygon_class.id)
++            return false;
+         GeometryCollection_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/geometry/GeometryCollection");
++        if(!GeometryCollection_class.id)
++            return false;
+ 
+         Envelope_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/geometry/Envelope");
+         if(!Envelope_class.id)
+@@ -1088,10 +1235,20 @@
+             return false;
+ 
+         Feature_Traits_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/Feature$Traits");
++        if(!Feature_Traits_class.id)
++            return false;
+         Feature_Traits_class.ctor = env.GetMethodID(Feature_Traits_class.id, "<init>", "()V");
++        if(!Feature_Traits_class.ctor)
++            return false;
+         Feature_Traits_class.altitudeMode = env.GetFieldID(Feature_Traits_class.id, "altitudeMode", "Lcom/atakmap/map/layer/feature/Feature$AltitudeMode;");
++        if(!Feature_Traits_class.altitudeMode)
++            return false;
+         Feature_Traits_class.extrude = env.GetFieldID(Feature_Traits_class.id, "extrude", "D");
++        if(!Feature_Traits_class.extrude)
++            return false;
+         Feature_Traits_class.lineMode = env.GetFieldID(Feature_Traits_class.id, "lineMode", "Lcom/atakmap/map/layer/feature/Feature$LineMode;");
++        if(!Feature_Traits_class.lineMode)
++            return false;
+ 
+         {
+             Java::JNILocalRef enumValue(env, nullptr);
+@@ -1119,8 +1276,14 @@
+         }
+ 
+         GLBatchGeometryFeatureDataStoreRenderer2_Options_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureLayer3$Options");
++        if(!GLBatchGeometryFeatureDataStoreRenderer2_Options_class.id)
++            return false;
+         GLBatchGeometryFeatureDataStoreRenderer2_Options_class.labelsEnabled = env.GetFieldID(GLBatchGeometryFeatureDataStoreRenderer2_Options_class.id, "labelsEnabled", "Z");
++        if(!GLBatchGeometryFeatureDataStoreRenderer2_Options_class.labelsEnabled)
++            return false;
+         GLBatchGeometryFeatureDataStoreRenderer2_Options_class.filter = env.GetFieldID(GLBatchGeometryFeatureDataStoreRenderer2_Options_class.id, "filter", "Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters;");
++        if(!GLBatchGeometryFeatureDataStoreRenderer2_Options_class.filter)
++            return false;
+ 
+         struct
+         {
+@@ -1130,8 +1293,14 @@
+         } NativeFeatureDataStore2_class;
+ 
+         NativeFeatureDataStore2_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/NativeFeatureDataStore2");
++        if(!NativeFeatureDataStore2_class.id)
++            return false;
+         NativeFeatureDataStore2_class.pointer = env.GetFieldID(NativeFeatureDataStore2_class.id, "pointer", "Lcom/atakmap/interop/Pointer;");
++        if(!NativeFeatureDataStore2_class.pointer)
++            return false;
+         NativeFeatureDataStore2_class.ctor = env.GetMethodID(NativeFeatureDataStore2_class.id, "<init>", "(Lcom/atakmap/interop/Pointer;Ljava/lang/Object;)V");
++        if(!NativeFeatureDataStore2_class.ctor)
++            return false;
+ 
+         FeatureDataStore2_interop.init(env, NativeFeatureDataStore2_class.id, NativeFeatureDataStore2_class.pointer, NativeFeatureDataStore2_class.ctor);
+         return true;
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureCursor.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureCursor.cpp
+@@ -93,18 +93,26 @@
+ }
+ TAKErr ManagedFeatureCursor::getId(int64_t *value) NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!FeatureCursor_class.getId)
++        return TE_Err;
+     LocalJNIEnv env;
+     *value = env->CallLongMethod(cimpl.impl, FeatureCursor_class.getId);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureCursor::getFeatureSetId(int64_t *value) NOTHROWS
+ {
++    if(!FeatureCursor_class.getFeatureSetId)
++        return TE_Err;
+     LocalJNIEnv env;
+     *value = env->CallLongMethod(cimpl.impl, FeatureCursor_class.getFeatureSetId);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureCursor::getVersion(int64_t *value) NOTHROWS
+ {
++    if(!FeatureCursor_class.getVersion)
++        return TE_Err;
+     LocalJNIEnv env;
+     *value = env->CallLongMethod(cimpl.impl, FeatureCursor_class.getVersion);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+@@ -121,10 +129,20 @@
+ {
+     bool FeatureCursor_init(JNIEnv &env) NOTHROWS
+     {
++        // macTAK (issue 142): every lookup guarded, as jni-class-init-guards
++        // does for the inits that predate 5.5
+         FeatureCursor_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureCursor");
++        if(!FeatureCursor_class.id)
++            return false;
+         FeatureCursor_class.getId = env.GetMethodID(FeatureCursor_class.id, "getId", "()J");
++        if(!FeatureCursor_class.getId)
++            return false;
+         FeatureCursor_class.getFeatureSetId = env.GetMethodID(FeatureCursor_class.id, "getFsid", "()J");
++        if(!FeatureCursor_class.getFeatureSetId)
++            return false;
+         FeatureCursor_class.getVersion = env.GetMethodID(FeatureCursor_class.id, "getVersion", "()J");
++        if(!FeatureCursor_class.getVersion)
++            return false;
+ 
+         return true;
+     }
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataSource2.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataSource2.cpp
+@@ -84,6 +84,10 @@
+     impl(env_->NewGlobalRef(impl_))
+ {
+     static bool clinit = FeatureDataSource2_class_init(env_);
++    // macTAK (issue 142): a failed init leaves getName NULL; the name stays
++    // unset and every consumer below bails
++    if(!clinit)
++        return;
+ 
+     Java::JNILocalRef mname(*env_, env_->CallObjectMethod(impl, FeatureDataSource2_class.getName));
+     JNIStringUTF jname(*env_, mname);
+@@ -98,6 +102,10 @@
+ }
+ TAKErr ManagedFeatureDataSource2::parse(ContentPtr &content, const char *file) NOTHROWS
+ {
++    // macTAK (issue 142): parse is the only way to a ManagedContent, so
++    // checking the last Content lookup too keeps NULL IDs out of its methods
++    if(!FeatureDataSource2_class.parse || !FeatureDataSource_Content_class.ContentPointer_enum.FEATURE_SET)
++        return TE_Err;
+     LocalJNIEnv env;
+     jclass File_class = ATAKMapEngineJNI_findClass(env, "java/io/File");
+     if(!File_class)
+@@ -133,6 +141,8 @@
+ 
+ int ManagedFeatureDataSource2::parseVersion() const NOTHROWS
+ {
++    if(!FeatureDataSource2_class.parseVersion)
++        return 0;
+     LocalJNIEnv env;
+     return env->CallIntMethod(impl, FeatureDataSource2_class.parseVersion);
+ }
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataStore2.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataStore2.cpp
+@@ -99,6 +99,10 @@
+     version(2u)
+ {
+     static bool clinit = FeatureDataStore2_init(env_);
++    // macTAK (issue 142): IsInstanceOf, NewObject and the listener call
++    // below all go through the IDs a failed init leaves NULL
++    if(!clinit)
++        return;
+     if(env_.IsInstanceOf(impl, FeatureDataStore2_class.v4.id))
+         version = 4u;
+     std::unique_ptr<FeatureDataStore2::OnDataStoreContentChangedListener, void(*)(const FeatureDataStore2::OnDataStoreContentChangedListener *)> ccb(new CallbackForwarder(callbackForwarder.listeners, callbackForwarder.mutex), Memory_deleter_const<FeatureDataStore2::OnDataStoreContentChangedListener, CallbackForwarder>);
+@@ -166,6 +170,10 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatures(TAK::Engine::Feature::FeatureCursorPtr &ccursor) NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!FeatureDataStore2_class.queryFeatures)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mcursor(*env, env->CallObjectMethod(impl, FeatureDataStore2_class.queryFeatures, nullptr));
+     if(env->ExceptionCheck())
+@@ -175,6 +183,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatures(TAK::Engine::Feature::FeatureCursorPtr &ccursor, const FeatureQueryParameters &cparams) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatures)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mparams(*env, nullptr);
+     Interop::Feature::Interop_marshal(mparams, *env, cparams);
+@@ -186,6 +196,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatures(FeatureCursor3Ptr &cursor) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatures)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mcursor(*env, env->CallObjectMethod(impl, FeatureDataStore2_class.queryFeatures, nullptr));
+     if(env->ExceptionCheck())
+@@ -195,6 +207,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatures(FeatureCursor3Ptr &cursor, const FeatureDataStore2::FeatureQueryParameters &params) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatures)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mparams(*env, nullptr);
+     Interop::Feature::Interop_marshal(mparams, *env, params);
+@@ -206,12 +220,16 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeaturesCount(int *value) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatureSetsCount)
++        return TE_Err;
+     LocalJNIEnv env;
+     *value = env->CallIntMethod(impl, FeatureDataStore2_class.queryFeatureSetsCount, nullptr);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeaturesCount(int *value, const FeatureQueryParameters &cparams) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeaturesCount)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mparams(*env, nullptr);
+     Interop::Feature::Interop_marshal(mparams, *env, cparams);
+@@ -239,6 +257,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatureSets(TAK::Engine::Feature::FeatureSetCursorPtr &ccursor) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatureSets)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mcursor(*env, env->CallObjectMethod(impl, FeatureDataStore2_class.queryFeatureSets, nullptr));
+     if(env->ExceptionCheck())
+@@ -248,6 +268,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatureSets(TAK::Engine::Feature::FeatureSetCursorPtr &ccursor, const FeatureSetQueryParameters &cparams) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatureSets)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mparams(*env, nullptr);
+     Interop::Feature::Interop_marshal(mparams, *env, cparams);
+@@ -259,12 +281,16 @@
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatureSetsCount(int *value) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatureSetsCount)
++        return TE_Err;
+     LocalJNIEnv env;
+     *value = env->CallIntMethod(impl, FeatureDataStore2_class.queryFeatureSetsCount, nullptr);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureDataStore2::queryFeatureSetsCount(int *value, const FeatureSetQueryParameters &cparams) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatureSetsCount)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mparams(*env, nullptr);
+     Interop::Feature::Interop_marshal(mparams, *env, cparams);
+@@ -273,6 +299,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::getModificationFlags(int *value) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.getModificationFlags)
++        return TE_Err;
+     LocalJNIEnv env;
+     const auto mflags = env->CallIntMethod(impl, FeatureDataStore2_class.getModificationFlags);
+     if(env->ExceptionCheck())
+@@ -321,6 +349,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::insertFeatureSet(TAK::Engine::Feature::FeatureSetPtr_const *featureSet, const char *provider, const char *type, const char *name, const double minResolution, const double maxResolution) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.insertFeatureSet)
++        return TE_Err;
+     LocalJNIEnv env;
+     FeatureSet2 cfeatureset(FeatureDataStore2::FEATURESET_ID_NONE, provider, type, name, minResolution, maxResolution, FeatureDataStore2::FEATURESET_VERSION_NONE);
+     Interop::Java::JNILocalRef mfeatureset(*env, nullptr);
+@@ -332,6 +362,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeatureSet(const int64_t fsid, const char *name) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeatureSet__JLString)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mname(*env, env->NewStringUTF(name));
+     env->CallVoidMethod(impl, FeatureDataStore2_class.updateFeatureSet__JLString, (jlong)fsid, mname.get());
+@@ -339,12 +371,16 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeatureSet(const int64_t fsid, const double minResolution, const double maxResolution) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeatureSet__JDD)
++        return TE_Err;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, FeatureDataStore2_class.updateFeatureSet__JDD, (jlong)fsid, minResolution, maxResolution);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeatureSet(const int64_t fsid, const char *name, const double minResolution, const double maxResolution) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeatureSet__JLStringDD)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mname(*env, env->NewStringUTF(name));
+     env->CallVoidMethod(impl, FeatureDataStore2_class.updateFeatureSet__JLStringDD, (jlong)fsid, mname.get(), minResolution, maxResolution);
+@@ -352,6 +388,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::deleteFeatureSet(const int64_t fsid) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.deleteFeatureSet)
++        return TE_Err;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, FeatureDataStore2_class.deleteFeatureSet, (jlong)fsid);
+     if(env->ExceptionCheck()) {
+@@ -363,6 +401,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::deleteAllFeatureSets() NOTHROWS
+ {
++    if(!FeatureDataStore2_class.deleteFeatureSets)
++        return TE_Err;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, FeatureDataStore2_class.deleteFeatureSets, nullptr);
+     if(env->ExceptionCheck()) {
+@@ -386,6 +426,8 @@
+                                                const atakmap::util::AttributeSet &attributes,
+                                                const Traits &traits) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.insertFeature__LFeature)
++        return TE_Err;
+     LocalJNIEnv env;
+     Feature2 cfeature(FeatureDataStore2::FEATURE_ID_NONE, fsid, name, geom, style, attributes, traits, 0, FeatureDataStore2::FEATURE_VERSION_NONE);
+     Interop::Java::JNILocalRef mfeature(*env, nullptr);
+@@ -397,6 +439,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeature(const int64_t fid, const Traits &traits) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.v4.updateFeature)
++        return TE_Err;
+     if (version >= 4) {
+         LocalJNIEnv env;
+         Java::JNILocalRef mtraits(*env, nullptr);
+@@ -419,6 +463,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeature(const int64_t fid, const char *name) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeature)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mname(*env, env->NewStringUTF(name));
+     env->CallVoidMethod(impl, FeatureDataStore2_class.updateFeature,
+@@ -433,6 +479,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeature(const int64_t fid, const atakmap::feature::Geometry &geom) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeature)
++        return TE_Err;
+     LocalJNIEnv env;
+     Geometry2Ptr geom2(nullptr, nullptr);
+     LegacyAdapters_adapt(geom2, geom);
+@@ -458,6 +506,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeature(const int64_t fid, const atakmap::feature::Style *style) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeature)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mstyle(*env, nullptr);
+     if(style)
+@@ -474,6 +524,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeature(const int64_t fid, const atakmap::util::AttributeSet &attributes) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeature)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mattrs(*env, nullptr);
+     Interop::Feature::Interop_marshal(mattrs, *env, attributes);
+@@ -489,6 +541,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::updateFeature(const int64_t fid, const char *name, const atakmap::feature::Geometry &geom, const atakmap::feature::Style *style, const atakmap::util::AttributeSet &attributes) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.updateFeature)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mname(*env, env->NewStringUTF(name));
+     Geometry2Ptr geom2(nullptr, nullptr);
+@@ -515,6 +569,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::deleteFeature(const int64_t fid) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.deleteFeature)
++        return TE_Err;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, FeatureDataStore2_class.deleteFeature, (jlong)fid);
+     if(env->ExceptionCheck()) {
+@@ -526,6 +582,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::deleteAllFeatures(const int64_t fsid) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.deleteFeatures)
++        return TE_Err;
+     LocalJNIEnv env;
+     FeatureDataStore2::FeatureQueryParameters cparams;
+     cparams.featureSetIds->add(fsid);
+@@ -536,6 +594,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::getVisibilitySettingsFlags(int *value) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.getVisibilityFlags)
++        return TE_Err;
+     LocalJNIEnv env;
+     const auto mflags = env->CallIntMethod(impl, FeatureDataStore2_class.getVisibilityFlags);
+     if(env->ExceptionCheck())
+@@ -549,12 +609,16 @@
+ }
+ TAKErr ManagedFeatureDataStore2::setFeatureVisible(const int64_t fid, const bool visible) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.setFeatureVisible)
++        return TE_Err;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, FeatureDataStore2_class.setFeatureVisible, fid, visible);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureDataStore2::setFeaturesVisible(const FeatureQueryParameters &cparams, const bool visible) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.setFeaturesVisible)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mparams(*env, nullptr);
+     Interop::Feature::Interop_marshal(mparams, *env, cparams);
+@@ -563,6 +627,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::isFeatureVisible(bool *value, const int64_t fid) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeaturesCount)
++        return TE_Err;
+     LocalJNIEnv env;
+     FeatureDataStore2::FeatureQueryParameters cparams;
+     cparams.featureIds->add(fid);
+@@ -574,12 +640,16 @@
+ }
+ TAKErr ManagedFeatureDataStore2::setFeatureSetVisible(const int64_t setId, const bool visible) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.setFeatureSetVisible)
++        return TE_Err;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, FeatureDataStore2_class.setFeatureSetVisible, setId, visible);
+     return env->ExceptionCheck() ? TE_Err : TE_Ok;
+ }
+ TAKErr ManagedFeatureDataStore2::setFeatureSetsVisible(const FeatureSetQueryParameters &cparams, const bool visible) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.setFeatureSetsVisible)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef mparams(*env, nullptr);
+     Interop::Feature::Interop_marshal(mparams, *env, cparams);
+@@ -593,6 +663,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::isFeatureSetVisible(bool *value, const int64_t setId) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.queryFeatureSetsCount)
++        return TE_Err;
+     LocalJNIEnv env;
+     FeatureDataStore2::FeatureSetQueryParameters cparams;
+     cparams.ids->add(setId);
+@@ -632,6 +704,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::getUri(TAK::Engine::Port::String &value) NOTHROWS
+ {
++    if(!FeatureDataStore2_class.getUri)
++        return TE_Err;
+     LocalJNIEnv env;
+     Interop::Java::JNILocalRef muri(*env, env->CallObjectMethod(impl, FeatureDataStore2_class.getUri));
+     Interop::JNIStringUTF_get(value, *env, muri);
+@@ -639,6 +713,8 @@
+ }
+ TAKErr ManagedFeatureDataStore2::close() NOTHROWS
+ {
++    if(!FeatureDataStore2_class.dispose)
++        return TE_Err;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, FeatureDataStore2_class.dispose);
+     if(env->ExceptionCheck()) {
+@@ -666,49 +742,133 @@
+ 
+     bool FeatureDataStore2_init(JNIEnv &env) NOTHROWS
+     {
++        // macTAK (issue 142): every lookup guarded, as jni-class-init-guards
++        // does for the inits that predate 5.5
+         FeatureDataStore2_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore2");
++        if(!FeatureDataStore2_class.id)
++            return false;
+         FeatureDataStore2_class.queryFeatures = env.GetMethodID(FeatureDataStore2_class.id, "queryFeatures", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters;)Lcom/atakmap/map/layer/feature/FeatureCursor;");
++        if(!FeatureDataStore2_class.queryFeatures)
++            return false;
+         FeatureDataStore2_class.queryFeaturesCount = env.GetMethodID(FeatureDataStore2_class.id, "queryFeaturesCount", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters;)I");
++        if(!FeatureDataStore2_class.queryFeaturesCount)
++            return false;
+         FeatureDataStore2_class.queryFeatureSets = env.GetMethodID(FeatureDataStore2_class.id, "queryFeatureSets", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters;)Lcom/atakmap/map/layer/feature/FeatureSetCursor;");
++        if(!FeatureDataStore2_class.queryFeatureSets)
++            return false;
+         FeatureDataStore2_class.queryFeatureSetsCount = env.GetMethodID(FeatureDataStore2_class.id, "queryFeatureSetsCount", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters;)I");
++        if(!FeatureDataStore2_class.queryFeatureSetsCount)
++            return false;
+         FeatureDataStore2_class.insertFeature__JJLFeatureDefinition2J = env.GetMethodID(FeatureDataStore2_class.id, "insertFeature", "(JJLcom/atakmap/map/layer/feature/FeatureDefinition2;J)J");
++        if(!FeatureDataStore2_class.insertFeature__JJLFeatureDefinition2J)
++            return false;
+         FeatureDataStore2_class.insertFeature__LFeature = env.GetMethodID(FeatureDataStore2_class.id, "insertFeature", "(Lcom/atakmap/map/layer/feature/Feature;)J");
++        if(!FeatureDataStore2_class.insertFeature__LFeature)
++            return false;
+         FeatureDataStore2_class.insertFeatures = env.GetMethodID(FeatureDataStore2_class.id, "insertFeatures", "(Lcom/atakmap/map/layer/feature/FeatureCursor;)V");
++        if(!FeatureDataStore2_class.insertFeatures)
++            return false;
+         FeatureDataStore2_class.insertFeatureSet = env.GetMethodID(FeatureDataStore2_class.id, "insertFeatureSet", "(Lcom/atakmap/map/layer/feature/FeatureSet;)J");
++        if(!FeatureDataStore2_class.insertFeatureSet)
++            return false;
+         FeatureDataStore2_class.insertFeatureSets = env.GetMethodID(FeatureDataStore2_class.id, "insertFeatureSets", "(Lcom/atakmap/map/layer/feature/FeatureSetCursor;)V");
++        if(!FeatureDataStore2_class.insertFeatureSets)
++            return false;
+         FeatureDataStore2_class.updateFeature = env.GetMethodID(FeatureDataStore2_class.id, "updateFeature", "(JILjava/lang/String;Lcom/atakmap/map/layer/feature/geometry/Geometry;Lcom/atakmap/map/layer/feature/style/Style;Lcom/atakmap/map/layer/feature/AttributeSet;I)V");
++        if(!FeatureDataStore2_class.updateFeature)
++            return false;
+         FeatureDataStore2_class.updateFeatureSet__JLStringDD = env.GetMethodID(FeatureDataStore2_class.id, "updateFeatureSet", "(JLjava/lang/String;DD)V");
++        if(!FeatureDataStore2_class.updateFeatureSet__JLStringDD)
++            return false;
+         FeatureDataStore2_class.updateFeatureSet__JLString = env.GetMethodID(FeatureDataStore2_class.id, "updateFeatureSet", "(JLjava/lang/String;)V");
++        if(!FeatureDataStore2_class.updateFeatureSet__JLString)
++            return false;
+         FeatureDataStore2_class.updateFeatureSet__JDD = env.GetMethodID(FeatureDataStore2_class.id, "updateFeatureSet", "(JDD)V");
++        if(!FeatureDataStore2_class.updateFeatureSet__JDD)
++            return false;
+         FeatureDataStore2_class.deleteFeature = env.GetMethodID(FeatureDataStore2_class.id, "deleteFeature", "(J)V");
++        if(!FeatureDataStore2_class.deleteFeature)
++            return false;
+         FeatureDataStore2_class.deleteFeatures = env.GetMethodID(FeatureDataStore2_class.id, "deleteFeatures", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters;)V");
++        if(!FeatureDataStore2_class.deleteFeatures)
++            return false;
+         FeatureDataStore2_class.deleteFeatureSet = env.GetMethodID(FeatureDataStore2_class.id, "deleteFeatureSet", "(J)V");
++        if(!FeatureDataStore2_class.deleteFeatureSet)
++            return false;
+         FeatureDataStore2_class.deleteFeatureSets = env.GetMethodID(FeatureDataStore2_class.id, "deleteFeatureSets", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters;)V");
++        if(!FeatureDataStore2_class.deleteFeatureSets)
++            return false;
+         FeatureDataStore2_class.setFeatureVisible = env.GetMethodID(FeatureDataStore2_class.id, "setFeatureVisible", "(JZ)V");
++        if(!FeatureDataStore2_class.setFeatureVisible)
++            return false;
+         FeatureDataStore2_class.setFeaturesVisible = env.GetMethodID(FeatureDataStore2_class.id, "setFeaturesVisible", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureQueryParameters;Z)V");
++        if(!FeatureDataStore2_class.setFeaturesVisible)
++            return false;
+         FeatureDataStore2_class.setFeatureSetVisible = env.GetMethodID(FeatureDataStore2_class.id, "setFeatureSetVisible", "(JZ)V");
++        if(!FeatureDataStore2_class.setFeatureSetVisible)
++            return false;
+         FeatureDataStore2_class.setFeatureSetVisible = env.GetMethodID(FeatureDataStore2_class.id, "setFeatureSetsVisible", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$FeatureSetQueryParameters;Z)V");
++        if(!FeatureDataStore2_class.setFeatureSetVisible)
++            return false;
+         FeatureDataStore2_class.hasTimeReference = env.GetMethodID(FeatureDataStore2_class.id, "hasTimeReference", "()Z");
++        if(!FeatureDataStore2_class.hasTimeReference)
++            return false;
+         FeatureDataStore2_class.getMinimumTimestamp = env.GetMethodID(FeatureDataStore2_class.id, "getMinimumTimestamp", "()J");
++        if(!FeatureDataStore2_class.getMinimumTimestamp)
++            return false;
+         FeatureDataStore2_class.getMaximumTimestamp = env.GetMethodID(FeatureDataStore2_class.id, "getMaximumTimestamp", "()J");
++        if(!FeatureDataStore2_class.getMaximumTimestamp)
++            return false;
+         FeatureDataStore2_class.getUri = env.GetMethodID(FeatureDataStore2_class.id, "getUri", "()Ljava/lang/String;");
++        if(!FeatureDataStore2_class.getUri)
++            return false;
+         FeatureDataStore2_class.supportsExplicitIDs = env.GetMethodID(FeatureDataStore2_class.id, "supportsExplicitIDs", "()Z");
++        if(!FeatureDataStore2_class.supportsExplicitIDs)
++            return false;
+         FeatureDataStore2_class.getModificationFlags = env.GetMethodID(FeatureDataStore2_class.id, "getModificationFlags", "()I");
++        if(!FeatureDataStore2_class.getModificationFlags)
++            return false;
+         FeatureDataStore2_class.getVisibilityFlags = env.GetMethodID(FeatureDataStore2_class.id, "getVisibilityFlags", "()I");
++        if(!FeatureDataStore2_class.getVisibilityFlags)
++            return false;
+         FeatureDataStore2_class.hasCache = env.GetMethodID(FeatureDataStore2_class.id, "hasCache", "()Z");
++        if(!FeatureDataStore2_class.hasCache)
++            return false;
+         FeatureDataStore2_class.clearCache = env.GetMethodID(FeatureDataStore2_class.id, "clearCache", "()V");
++        if(!FeatureDataStore2_class.clearCache)
++            return false;
+         FeatureDataStore2_class.getCacheSize = env.GetMethodID(FeatureDataStore2_class.id, "getCacheSize", "()J");
++        if(!FeatureDataStore2_class.getCacheSize)
++            return false;
+         FeatureDataStore2_class.acquireModifyLock = env.GetMethodID(FeatureDataStore2_class.id, "acquireModifyLock", "(Z)V");
++        if(!FeatureDataStore2_class.acquireModifyLock)
++            return false;
+         FeatureDataStore2_class.releaseModifyLock = env.GetMethodID(FeatureDataStore2_class.id, "releaseModifyLock", "()V");
++        if(!FeatureDataStore2_class.releaseModifyLock)
++            return false;
+         FeatureDataStore2_class.addOnDataStoreContentChangedListener = env.GetMethodID(FeatureDataStore2_class.id, "addOnDataStoreContentChangedListener", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$OnDataStoreContentChangedListener;)V");
++        if(!FeatureDataStore2_class.addOnDataStoreContentChangedListener)
++            return false;
+         FeatureDataStore2_class.removeOnDataStoreContentChangedListener = env.GetMethodID(FeatureDataStore2_class.id, "removeOnDataStoreContentChangedListener", "(Lcom/atakmap/map/layer/feature/FeatureDataStore2$OnDataStoreContentChangedListener;)V");
++        if(!FeatureDataStore2_class.removeOnDataStoreContentChangedListener)
++            return false;
+         FeatureDataStore2_class.dispose = env.GetMethodID(FeatureDataStore2_class.id, "dispose", "()V");
++        if(!FeatureDataStore2_class.dispose)
++            return false;
+ 
+         FeatureDataStore2_class.v4.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureDataStore4");
++        if(!FeatureDataStore2_class.v4.id)
++            return false;
+         FeatureDataStore2_class.v4.updateFeature = env.GetMethodID(FeatureDataStore2_class.v4.id, "updateFeature", "(JILjava/lang/String;Lcom/atakmap/map/layer/feature/geometry/Geometry;Lcom/atakmap/map/layer/feature/style/Style;Lcom/atakmap/map/layer/feature/AttributeSet;ILcom/atakmap/map/layer/feature/Feature$Traits;)V");
++        if(!FeatureDataStore2_class.v4.updateFeature)
++            return false;
+ 
+         NativeDataStoreContentChangedListener_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/NativeDataStoreContentChangedListener");
++        if(!NativeDataStoreContentChangedListener_class.id)
++            return false;
+         NativeDataStoreContentChangedListener_class.ctor = env.GetMethodID(NativeDataStoreContentChangedListener_class.id, "<init>", "(Lcom/atakmap/interop/Pointer;Ljava/lang/Object;J)V");
++        if(!NativeDataStoreContentChangedListener_class.ctor)
++            return false;
+ 
+         return true;
+     }
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureSetCursor.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureSetCursor.cpp
+@@ -45,6 +45,10 @@
+ }
+ TAKErr ManagedFeatureSetCursor::get(const FeatureSet2 **featureSet) NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!FeatureSetCursor_class.getId || !FeatureSetCursor_class.getProvider || !FeatureSetCursor_class.getType || !FeatureSetCursor_class.getName || !FeatureSetCursor_class.getMinResolution || !FeatureSetCursor_class.getMaxResolution)
++        return TE_Err;
+     if(!row) {
+         LocalJNIEnv env;
+         const int64_t id = env->CallLongMethod(impl, FeatureSetCursor_class.getId);
+@@ -77,13 +81,29 @@
+ {
+     bool FeatureSetCursor_init(JNIEnv &env) NOTHROWS
+     {
++        // macTAK (issue 142): every lookup guarded, as jni-class-init-guards
++        // does for the inits that predate 5.5
+         FeatureSetCursor_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/layer/feature/FeatureSetCursor");
++        if(!FeatureSetCursor_class.id)
++            return false;
+         FeatureSetCursor_class.getId = env.GetMethodID(FeatureSetCursor_class.id, "getId", "()J");
++        if(!FeatureSetCursor_class.getId)
++            return false;
+         FeatureSetCursor_class.getProvider = env.GetMethodID(FeatureSetCursor_class.id, "getProvider", "()Ljava/lang/String;");
++        if(!FeatureSetCursor_class.getProvider)
++            return false;
+         FeatureSetCursor_class.getType = env.GetMethodID(FeatureSetCursor_class.id, "getType", "()Ljava/lang/String;");
++        if(!FeatureSetCursor_class.getType)
++            return false;
+         FeatureSetCursor_class.getName = env.GetMethodID(FeatureSetCursor_class.id, "getName", "()Ljava/lang/String;");
++        if(!FeatureSetCursor_class.getName)
++            return false;
+         FeatureSetCursor_class.getMinResolution = env.GetMethodID(FeatureSetCursor_class.id, "getMinResolution", "()D");
++        if(!FeatureSetCursor_class.getMinResolution)
++            return false;
+         FeatureSetCursor_class.getMaxResolution = env.GetMethodID(FeatureSetCursor_class.id, "getMaxResolution", "()D");
++        if(!FeatureSetCursor_class.getMaxResolution)
++            return false;
+ 
+         return true;
+     }

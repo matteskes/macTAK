@@ -38,6 +38,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the JNI library uses that copy, and `build-commo.sh`'s canary fails on
   any shared libcurl. Homebrew's curl left the build and the `Brewfile`.
 
+- Wave 7, batch 1 (issue #142; `dev/g1/NOTES.md` §G1.21): the four
+  Java-backed feature wrappers no longer crash when their class init
+  fails. Their 5.5 inits had no guards at all (a failed `findClass` went
+  into `GetMethodID` on a NULL class), `feature/Interop.cpp` ignored
+  `checkInit`'s result in 16 marshals and skipped it in one, and every
+  consumer called through the IDs regardless. Two upstream method-ID bugs
+  in `ManagedFeatureDataStore2` are fixed as well: `setFeatureSetVisible`
+  reached the plural Java method (a crash), and the unfiltered
+  `queryFeaturesCount` returned the feature-set count. Pinned in `make
+  test-jni` (`jni-tests/feature_guards_test.cpp`), guards and kernel mode;
+  `dev/g1/tools/wave7/check_lookups.py` checks an init's lookups against
+  the kernel jars before it is guarded.
+
 ### Security
 
 - Opening a layer file can no longer make GDAL reach the network (G1.14
