@@ -18,7 +18,9 @@ the 3DEP GeoTIFF declares no vertical datum (#74); an engine bug unmapped
 deleted buffers, hidden because the engine clears GL errors (#75); and
 desktop builds pick terrain on the GPU for every gesture's ray cast, a
 GPU sync per event that Android avoids (#76). Section "The exit run" at
-the end; the stall is trap #77.
+the end; the stall is trap #77. The investigation so far, how to repeat
+it, the open leads and a template for other Macs' results are in
+[issue #125](https://github.com/matteskes/macTAK/issues/125).
 
 ## State (G2.6 — 2026-11-12): elevation, GeoTIFF DEM and DTED, drawn as terrain on ANGLE
 
@@ -2074,4 +2076,6 @@ frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
   AppKit events dropped 3 in 30), the title bar's glass (borderless 2 in
   20, titled 1 in 20), and the size of the per-frame event queue (a 4 ms
   pump budget changed nothing). What the window server's surface is, and
-  whether anything we do starts it, is open.
+  whether anything we do starts it, is open. How to reproduce it, what
+  was tried and the open leads: [issue #125](https://github.com/matteskes/macTAK/issues/125),
+  which asks for drop rates from other Macs and displays.
