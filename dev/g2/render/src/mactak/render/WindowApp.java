@@ -560,8 +560,11 @@ public final class WindowApp {
                 continue;
             }
 
-            // CPU from here: the queued work (gestures included) and the render
+            // CPU from here: the queued work (gestures included) and the render;
+            // the GPU timer covers the same span
             final long renderCpuStart = CPU.getCurrentThreadCpuTime();
+            final long renderWallStart = System.nanoTime();
+            NativeEgl.gpuTimerStart(times.count());
             ctx.pump();
             final long now = System.nanoTime();
             if (scriptRunning && scriptedPan) panStep((now - t0) / 1e9);
@@ -576,14 +579,20 @@ public final class WindowApp {
             // takes the next drawable lazily at the first draw, so the wait
             // for the display happens inside render(); blocking is not CPU.
             final long renderNs = CPU.getCurrentThreadCpuTime() - renderCpuStart;
+            NativeEgl.gpuTimerStop();
+            final long swapStart = System.nanoTime();
             if (NativeEgl.swap()) presented++; else swapFails++;
             final long presentedAt = System.nanoTime();
-            times.add(lastPresent == 0 ? -1 : presentedAt - lastPresent, renderNs);
+            times.add(lastPresent == 0 ? -1 : presentedAt - lastPresent, renderNs,
+                    swapStart - renderWallStart, presentedAt - swapStart);
+            times.pollGpu();
             lastPresent = presentedAt;
             clampFrameRate(presentedAt);
 
             if (scriptRunning && presentedAt - t0 >= liveMs * 1_000_000L) {
                 scriptDone = true;
+                NativeEgl.finish();   // the last frames' GPU times
+                times.pollGpu();
                 times.report(TAG + ": live", frameLog);
                 int verdict = liveGate(outPath, hasLayers, hasBasemaps, glErrors, presented,
                         swapFails, resizes, expectResizes);
@@ -742,21 +751,51 @@ public final class WindowApp {
         private long[] interval = new long[1024];
         private long[] work = new long[1024];
         private long[] at = new long[1024];
+        /** Wall time in the queued work + render (includes waiting for a drawable), and in the present. */
+        private long[] renderWall = new long[1024], swapWall = new long[1024];
+        /** GPU time per frame, -1 until (or unless) its timer query arrives. */
+        private long[] gpu = filled(1024);
+        private final long[] gpuPairs = new long[64];
         private final long origin = System.nanoTime();
         private int n;
 
         /** Frames recorded so far. */
         int count() { return n; }
 
+        private static long[] filled(int size) {
+            final long[] a = new long[size];
+            java.util.Arrays.fill(a, -1L);
+            return a;
+        }
+
+        /** Collect the GPU times that have arrived (NativeEgl's timer ring). */
+        void pollGpu() {
+            int k;
+            while ((k = NativeEgl.gpuTimerPoll(gpuPairs)) > 0) {
+                for (int i = 0; i < k; i++) {
+                    final int f = (int) gpuPairs[2 * i];
+                    if (f >= 0 && f < n) gpu[f] = gpuPairs[2 * i + 1];
+                }
+                if (k < gpuPairs.length / 2) return;
+            }
+        }
+
         /** @param intervalNs -1 for the first frame after a start or pause */
-        void add(long intervalNs, long workNs) {
+        void add(long intervalNs, long workNs, long renderWallNs, long swapWallNs) {
             if (n == interval.length) {
                 interval = java.util.Arrays.copyOf(interval, n * 2);
                 work = java.util.Arrays.copyOf(work, n * 2);
                 at = java.util.Arrays.copyOf(at, n * 2);
+                renderWall = java.util.Arrays.copyOf(renderWall, n * 2);
+                swapWall = java.util.Arrays.copyOf(swapWall, n * 2);
+                final long[] g = filled(n * 2);
+                System.arraycopy(gpu, 0, g, 0, n);
+                gpu = g;
             }
             interval[n] = intervalNs;
             work[n] = workNs;
+            renderWall[n] = renderWallNs;
+            swapWall[n] = swapWallNs;
             at[n] = System.nanoTime() - origin;
             n++;
         }
@@ -773,18 +812,27 @@ public final class WindowApp {
                         + "dropped (>%.0f ms) %d; render CPU ms p50 %.2f p95 %.2f max %.2f%n",
                         tag, n, mean(iv) / 1e6, pct(iv, 50) / 1e6, pct(iv, 95) / 1e6, iv[iv.length - 1] / 1e6,
                         1e9 / mean(iv), DROPPED_NS / 1e6, dropped, pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
+                final long[] gp = java.util.Arrays.stream(gpu, 0, n).filter(v -> v >= 0).sorted().toArray();
+                if (gp.length > 0)
+                    System.out.printf("%s: GPU ms p50 %.2f p95 %.2f max %.2f (%d of %d frames timed)%n",
+                            tag, pct(gp, 50) / 1e6, pct(gp, 95) / 1e6, gp[gp.length - 1] / 1e6, gp.length, n);
                 // each one, to set against the gesture script and the GC log
                 for (int i = 0; i < n; i++)
                     if (interval[i] > DROPPED_NS)
-                        System.out.printf("%s: dropped frame %d at %.3f s: interval %.2f ms, render CPU %.2f ms%n",
-                                tag, i, at[i] / 1e9, interval[i] / 1e6, work[i] / 1e6);
+                        System.out.printf("%s: dropped frame %d at %.3f s: interval %.2f ms, render CPU %.2f ms, GPU %s; "
+                                        + "wall: render %.2f ms, present %.2f ms%n",
+                                tag, i, at[i] / 1e9, interval[i] / 1e6, work[i] / 1e6,
+                                gpu[i] < 0 ? "untimed" : String.format("%.2f ms", gpu[i] / 1e6),
+                                renderWall[i] / 1e6, swapWall[i] / 1e6);
             }
             if (csvPath != null) {
                 try (java.io.PrintWriter out = new java.io.PrintWriter(new FileOutputStream(csvPath))) {
-                    out.println("frame,t_s,interval_ms,render_cpu_ms");
+                    out.println("frame,t_s,interval_ms,render_cpu_ms,gpu_ms,render_wall_ms,present_wall_ms");
                     for (int i = 0; i < n; i++)
-                        out.printf("%d,%.4f,%s,%.3f%n", i, at[i] / 1e9,
-                                interval[i] < 0 ? "" : String.format("%.3f", interval[i] / 1e6), work[i] / 1e6);
+                        out.printf("%d,%.4f,%s,%.3f,%s,%.3f,%.3f%n", i, at[i] / 1e9,
+                                interval[i] < 0 ? "" : String.format("%.3f", interval[i] / 1e6), work[i] / 1e6,
+                                gpu[i] < 0 ? "" : String.format("%.3f", gpu[i] / 1e6),
+                                renderWall[i] / 1e6, swapWall[i] / 1e6);
                 }
                 System.out.println(tag + ": frame log " + csvPath);
             }

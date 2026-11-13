@@ -47,4 +47,16 @@ final class NativeEgl {
     static native String getString(int which);
 
     static native void destroy();
+
+    /**
+     * G2 exit run, GPU time per frame (GL_EXT_disjoint_timer_query): time
+     * the GPU work issued from here to {@link #gpuTimerStop}. False if the
+     * extension is missing or this frame's slot in the ring is unread.
+     */
+    static native boolean gpuTimerStart(int frame);
+
+    static native void gpuTimerStop();
+
+    /** Arrived results as (frame, ns) pairs into {@code out}; returns the pair count. ns -1: voided. */
+    static native int gpuTimerPoll(long[] out);
 }
