@@ -1,4 +1,4 @@
-.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-gdal-network test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
+.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -28,6 +28,7 @@ help:
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"
 	@echo "  test-gdal-network - layer files can't make GDAL reach the network: hostile VRT/GML vs a loopback listener (G1.14 finding 10)"
+	@echo "  test-commo-https - commo's https path (enrollment) verifies the CA it is given, refuses another CA and a wrong host name, doesn't crash"
 	@echo "  test-quic      - QUIC canary: commo streams over QUIC (ngtcp2 ossl backend), refuses a client-only impostor, names a failed handshake's cause"
 	@echo "  test-render    - G2 render smoke: engine GLGlobe into an EGL pbuffer on ANGLE, bare + GeoJSON layer + MBTiles basemap (dev/g2/render/run.sh)"
 	@echo "  test-render-resize - M3.1 dynamic-size exercise: --resize mid-run, bare + GeoJSON layer (surface OnSizeChangedListeners must fire)"
@@ -110,6 +111,12 @@ test-tls:
 # control); the engine's import path must not. Needs an engine build.
 test-gdal-network:
 	@bash dev/g1/headless/test/gdal-network.sh
+
+# Issues #157/#146: commo's curl path (certificate enrollment's first request)
+# against loopback HTTPS servers. Needs dev/g1/build-commo.sh's commo, whose
+# curl is fetch-curl.sh's static build on openssl@3.
+test-commo-https:
+	@bash dev/g1/headless/test/commo-https.sh
 
 test-quic:
 	@bash dev/g1/headless/test/quic.sh

@@ -15,6 +15,7 @@
 /dev/g1/build-commo/
 # ngtcp2 for commo's QUIC (dev/g1/fetch-ngtcp2.sh; cached across commo builds)
 /dev/g1/build-ngtcp2/
+/dev/g1/build-curl/
 
 # G1 probe/build logs (diagnostics, not evidence)
 /dev/g1/*.log

@@ -38,6 +38,7 @@ WORK="$G1/build-commo"
 OUT="$G1/native-dist"
 COMMOSRC="$ROOT/src/commoncommo"
 NGTCP2="$G1/build-ngtcp2/prefix"
+CURL="$G1/build-curl/prefix"
 JOBS="$(sysctl -n hw.ncpu)"
 HB=/opt/homebrew
 
@@ -65,18 +66,16 @@ trap '_rc=$?; if (( _rc != 0 )); then
 for t in make clang++ patch python3 brew rsync protoc git codesign; do
   command -v "$t" >/dev/null 2>&1 || die "missing tool: $t"
 done
-for f in openssl@3 libxml2 protobuf libmicrohttpd curl; do
+for f in openssl@3 libxml2 protobuf libmicrohttpd; do
   brew list --versions "$f" >/dev/null 2>&1 \
     || die "brew formula missing: $f
-       → brew install openssl@3 libxml2 protobuf libmicrohttpd curl"
+       → brew install openssl@3 libxml2 protobuf libmicrohttpd"
 done
 # shellcheck source=SCRIPTDIR/../jdk.sh
 source "$DEV/jdk.sh"
 JDK="$(mactak_jdk_home 21 || true)"
 [[ -n "$JDK" ]] || die "JDK 21 required (dev/jdk.sh)"
 PROTOC="$(command -v protoc)"
-CURL_CONF="$HB/opt/curl/bin/curl-config"
-[[ -x "$CURL_CONF" ]] || CURL_CONF="$(command -v curl-config)"
 [[ -d "$COMMOSRC/core/impl" ]] \
   || die "commoncommo tree missing at $COMMOSRC — populate src/ per CONTRIBUTING.md (Setup)"
 
@@ -84,6 +83,9 @@ log "preflight ok (root=$ROOT, -j$JOBS)"
 
 log "ngtcp2 (QUIC) against openssl@3"
 bash "$G1/fetch-ngtcp2.sh"
+
+log "curl against openssl@3 (static; issue #157)"
+bash "$G1/fetch-curl.sh"
 
 # --- work tree -----------------------------------------------------------
 rm -rf "$WORK"
@@ -114,6 +116,19 @@ ln -sf  "$HB/lib/libprotobuf-lite.dylib"                "$WORK/shim/lib/"
 # whose libngtcp2_crypto_ossl.dylib links openssl@4
 ln -sfn "$NGTCP2/include/ngtcp2" "$WORK/shim/include/ngtcp2"
 ln -sf  "$NGTCP2"/lib/libngtcp2*.a "$WORK/shim/lib/"
+# curl, static on openssl@3 (fetch-curl.sh): commo edits curl's SSL_CTX with
+# its own OpenSSL calls, so curl's TLS library must be commo's openssl@3.
+# Neither Apple's libcurl (LibreSSL) nor Homebrew's (openssl@4) is (#157).
+ln -sfn "$CURL/include/curl" "$WORK/shim/include/curl"
+ln -sf  "$CURL/lib/libcurl.a" "$WORK/shim/lib/"
+# The JNI Makefile links $(CURL_CONF) --libs. Give it nothing: its one curl
+# call (curl_global_init, in initThirdpartyNativeLibraries) must reach the
+# core's copy, which libcommoncommo exports, not a second curl of its own.
+mkdir -p "$WORK/shim/bin"
+printf '#!/bin/sh\n# build-commo.sh: the JNI library takes curl from libcommoncommo\nexit 0\n' \
+  > "$WORK/shim/bin/curl-config"
+chmod +x "$WORK/shim/bin/curl-config"
+CURL_CONF="$WORK/shim/bin/curl-config"
 
 # --- protobuf codegen + objects ------------------------------------------
 # New protoc emits code that no longer compiles as C++11; the 2016 core
@@ -150,7 +165,7 @@ CORE_CXXFLAGS="-g -O2 -fPIC -std=c++17 -Wall -fstack-protector-all \
  -I../include -I$WORK/shim/include/libxml2 -I$WORK/shim/include -I$HB/include \
  -Wl,-rpath,$HB/opt/protobuf/lib -Wl,-rpath,$HB/opt/abseil/lib \
  -L$WORK/shim/lib \
- -L$HB/lib -lcurl \
+ -L$HB/lib -lcurl -lz -framework CoreFoundation -framework CoreServices -framework SystemConfiguration \
  -L$HB/opt/abseil/lib -L$HB/opt/protobuf/lib $ABSL_LIBS -lutf8_validity -lutf8_range \
  -Wno-deprecated-declarations -Wno-deprecated \
  -Wno-unused-command-line-argument \
@@ -230,17 +245,26 @@ for lib in libcommoncommo libcommoncommojni; do
     || die "$lib.dylib does not link openssl@3's libcrypto: $(otool -L "$OUT/$lib.dylib" | grep -i crypto | tr -s ' ')"
 done
 
-log "canary 3/4: no second OpenSSL, ngtcp2 static with its ossl backend"
+log "canary 3/4: no second OpenSSL or TLS library; ngtcp2 and curl static on openssl@3"
 for lib in libcommoncommo libcommoncommojni; do
   linkage="$(otool -L "$OUT/$lib.dylib")"
   if grep -Eq 'openssl@4|libngtcp2' <<<"$linkage"; then
     die "$lib.dylib links a second OpenSSL or a shared ngtcp2: $(grep -E 'openssl|ngtcp2' <<<"$linkage" | tr -s ' ')"
+  fi
+  # any shared libcurl brings its own TLS library: Apple's is LibreSSL,
+  # Homebrew's openssl@4, and commo's SSL_CTX callbacks crash on both (#157)
+  if grep -q 'libcurl' <<<"$linkage"; then
+    die "$lib.dylib links a shared libcurl: $(grep libcurl <<<"$linkage" | tr -s ' ')"
   fi
 done
 # capture, then grep: grep -q at a pipe's end under pipefail (g55 trap 3)
 exports="$(nm -gU "$OUT/libcommoncommo.dylib")"
 grep -q '_ngtcp2_crypto_ossl_configure_client_session' <<<"$exports" \
   || die "libcommoncommo.dylib does not carry ngtcp2's ossl backend"
+grep -q '_curl_easy_init' <<<"$exports" \
+  || die "libcommoncommo.dylib does not carry curl (fetch-curl.sh)"
+grep -q '_Curl_ossl_ctx_init' <<<"$(nm "$OUT/libcommoncommo.dylib")" \
+  || die "libcommoncommo.dylib's curl has no OpenSSL backend"
 
 log "canary 4/4: JVM in-process Commo create"
 cat > "$WORK/canary/CommoLoadSmoke.java" <<'JAVA'
