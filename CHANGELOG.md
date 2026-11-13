@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Nothing yet.
+
+## [0.3.2] - 2026-11-13 — G2: the shell, gestures, imagery, terrain and the exit run (gate open on trap 77) + G3.0 app skeleton
+
+G2's gate stays open: the exit run's zero-dropped-frames gate still fails
+about one run in 10–20 on a window-server stall (trap 77, #125), so this
+is a patch release, not 0.4.0. G3.0 ships here because G3 isn't complete
+either.
+
 ### Added
 
 - G3.0, the app skeleton (`dev/g3/NOTES.md`): a Swift package at `app/`
