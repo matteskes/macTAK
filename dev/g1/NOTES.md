@@ -754,7 +754,8 @@ corrected to the tool's own output.)
   the sweep's own F16/F17 entry gates closed 2 — the `GeoPoint` and
   `NativeProjection` clinit locals in core `Interop` are read now).
   Gating the remaining consumers is the wave-7 item now that the init
-  bodies themselves report failure honestly ([issue #142](https://github.com/matteskes/macTAK/issues/142)).
+  bodies themselves report failure honestly ([issue #142](https://github.com/matteskes/macTAK/issues/142);
+  on 5.5 the count is 29, and wave 7 works through it by area: §G1.21).
 - F-1, recorded 2026-11-08, deliberately untouched: `MapRenderer3_init`
   binds the `setFocusPointOffset` slot from `GetMethodID(…, "isAnimating",
   "(FF)V")` (`jni-class-init-guards.patch` line 51; pristine
@@ -1731,3 +1732,100 @@ commo.
   names when asked (§G1.14 said "every https request"), and the
   "verifies through libssl" sentence didn't hold on macOS until this
   fix.
+
+## G1.21 — wave 7, batch 1: the feature wrappers' class inits (2026-11-13, branch `g1/wave7-feature-guards`, issue 142)
+
+Wave 6 (§G1.8) left about 23 call sites that run a class init and never
+read its result. Wave 7 guards their consumers, one area per PR
+([issue #142](https://github.com/matteskes/macTAK/issues/142)).
+
+### The audit on 5.5
+
+`dev/g1/tools/wave6/class_init_audit.py dev/g1/build/engine/jni` (the
+tree `build-native.sh` patches) finds **29** unread call sites, not 23:
+the 5.5 re-pin added wrappers wave 6 never saw. Three don't count: the two
+in `formats/c3dt` (3D Tiles isn't built) and `ManagedTextFormat2`, whose
+consumers wave 6 guarded (F18). That leaves 23 files, about 300 JNI call
+sites through the IDs those inits set, done in five batches by area:
+feature (this one), db, elevation, core and renderer (with F-1, issue
+141), then the rest.
+
+### What batch 1 found
+
+Reading the four feature wrappers turned up more than unread results:
+
+- **Inits with no guards at all.** `ManagedFeatureCursor`,
+  `ManagedFeatureSetCursor`, `ManagedFeatureDataStore2` and
+  `feature/Interop.cpp`'s `Feature_interop_init` (8 of 80 lookups
+  guarded) are 5.5 code outside wave 6's reach. A failed `findClass` went
+  straight into `GetMethodID` on a NULL class, so the init itself
+  crashed, before any consumer could.
+- **`checkInit`'s result ignored.** `feature/Interop.cpp` initializes
+  lazily through `checkInit()`; 16 of its marshals called it and went on
+  regardless, into `NewObject` on NULL IDs.
+- **A marshal that never initializes.** `Interop_marshal(…,
+  FeatureSetQueryParameters)` doesn't call `checkInit` at all. As the
+  first feature interop call in a process it crashed in `NewObject` even
+  on a healthy JVM; some other call usually initialized the file first.
+- **Two wrong method IDs** in `FeatureDataStore2_init`, on a healthy JVM:
+  the `setFeatureSetsVisible` lookup was stored in
+  `setFeatureSetVisible`'s slot, so the singular call reached the plural
+  method with a `jlong` where Java expects an object (a crash in the GC's
+  barrier), and the plural call went through a NULL ID; and
+  `queryFeaturesCount()` without parameters called
+  `queryFeatureSetsCount`, returning the feature-set count.
+
+### The patches
+
+- **`managedfeature-class-init-guards.patch`** (sorts after
+  `jni-class-init-guards`, which touches `ManagedFeatureDataSource2`):
+  every lookup in the four unguarded inits gets the house guard (`if(!x)
+  return false;`; 132 lookups, 8 of them guarded already); constructors that call through the IDs
+  return early on a failed init (`ManagedFeatureDataStore2`'s
+  `IsInstanceOf`, `NewObject` and listener registration;
+  `ManagedFeatureDataSource2`'s `getName`); each consumer bails before a
+  NULL method ID (`TE_Err`, 39 of them; `parseVersion` returns 0;
+  `ManagedFeatureDataSource2::parse` also checks the last `Content`
+  lookup, since it is the only way to a `ManagedContent`); and every
+  `checkInit` call in `feature/Interop.cpp` returns `TE_IllegalState` on
+  a failed init, the marshal that skipped it included.
+- **`managedfeaturedatastore2-method-ids.patch`**: the two upstream
+  method-ID bugs.
+
+The house guard makes one missing lookup disable a whole wrapper, so
+before adding it, `dev/g1/tools/wave7/check_lookups.py` checked every
+member lookup in the four inits against the 5.5 kernel jars, walking
+superclasses and interfaces (`FeatureDataStore2.dispose` is inherited from
+`gov.tak.api.util.Disposable`): 61 of 61, 38 of 38, 3 of 3 and 6 of 6
+resolve. `ManagedFeatureDataSource2`'s init was guarded in wave 6.
+
+### The guard: `jni-tests/feature_guards_test.cpp`
+
+In `make test-jni` (`build-native.sh` canary 3), both modes:
+
+| Mode | Pin | Without the patches |
+|---|---|---|
+| guards | each wrapper's constructor survives a failed init (wrapping a `String`) | SIGSEGV |
+| guards | `ManagedFeatureDataStore2`'s consumers bail `TE_Err`, JNIEnv clean | SIGSEGV |
+| guards | both cursors' consumers bail | SIGSEGV |
+| guards | `ManagedFeatureDataSource2::parse` bails, `parseVersion` is 0 | SIGSEGV |
+| guards | both query-parameter marshals return `TE_IllegalState` | SIGSEGV |
+| kernel | `queryFeaturesCount()` over a recording `FeatureDataStore2` proxy returns the feature count | returns 3, the feature-set count |
+| kernel | `setFeatureSetVisible` and `setFeatureSetsVisible` each reach their own Java method | SIGSEGV |
+
+The kernel pins wrap `JniTestsMain.RecordingFeatureDataStore`, a
+`java.lang.reflect.Proxy` over `FeatureDataStore2` that records each call
+and returns different counts for the two count methods. With the
+patches: guards mode 16 of 16, kernel 8 of 8, noslf4j 2 of 2; `layer.sh`,
+`make test-gdal-network` and every `make test-render` gate pass.
+
+### Traps
+
+- **A kernel-mode test gets its JNIEnv from `jnitest::launcher_env()`.**
+  `jni_env()` boots a JVM of its own and is NULL under the launcher; the
+  first kernel pins failed on it before reaching any code.
+- **A guarded init can still crash a pin through another file.** The
+  query-parameter marshal pin crashed in `Feature_interop_init`, which
+  the marshal's new `checkInit` guard reached first; that is how the
+  unguarded 80-lookup init came to light. Pin each fix by calling it, not
+  only the wrapper above it.

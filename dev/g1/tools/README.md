@@ -1,7 +1,8 @@
-# dev/g1 tooling — waves 5 & 6 JNI hygiene reference tooling
+# dev/g1 tooling — waves 5–7 JNI hygiene reference tooling
 
 The audit, patch-generation and verification scripts behind the G1.7 (wave 5)
-and G1.8 (wave 6) JNI bridge hygiene sweeps. The outcomes live in the
+and G1.8 (wave 6) JNI bridge hygiene sweeps, and the lookup check wave 7
+(G1.21, issue #142) runs before it adds init guards. The outcomes live in the
 committed patches (`dev/g1/patches/`) and in `dev/g1/NOTES.md`; these
 scripts are the reference tooling that produced — and can re-derive — those
 outcomes from the repo alone. They are **not wired into CI** and gate
@@ -18,6 +19,7 @@ nothing; they are run by hand to reproduce, re-audit or extend the waves.
 | `wave6/guard_inits.py` | The sweep's body-editing pass: inserts `if(!x) return <bail>;` guards after unguarded lookups in tree b (authoring; its outcome is baked into the committed patches) |
 | `wave6/fix_inline.py` | The sweep's cleanup pass: rewrites hoisted-`fid` blocks so the `New*Ref` statement uses the hoisted id (authoring, as above) |
 | `wave6/gen_patches.py` | Regenerates the 11 wave-6 patches from the staged authoring trees; replays the full patch set on a pristine copy and asserts the jni tree equals tree b |
+| `wave7/check_lookups.py` | Checks one class init's member lookups (`env.Get*ID(cls, "name", "sig")`) against the kernel jars with `javap`, walking superclasses and interfaces; run before guarding an init with `if(!x) return false;`, which makes one missing lookup disable the whole wrapper |
 | `wave6/stage_baseline.py` | Rebuilds both wave-6 staging trees from the repo alone: a/ = pristine + gdal-drift + every committed patch except the wave-6 set (the post-wave-5 baseline), b/ = pristine + gdal-drift + the full set (the post-sweep tree) |
 
 Deliberately not committed (one-offs whose outcomes are already baked into
@@ -28,10 +30,15 @@ edit driver; `gen_patches.py` covers its patch-generation step), wave-6
 
 ## Prerequisites
 
-- `src/` populated per [CONTRIBUTING.md](../../../CONTRIBUTING.md) — the
-  read-only upstream pin `deptofdefense/AndroidTacticalAssaultKit-CIV` @
-  `889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc`. The scripts read the engine
-  from `src/takkernel/engine/src/main/` exactly like `build-native.sh`.
+- `src/` populated per [CONTRIBUTING.md](../../../CONTRIBUTING.md). Waves 5
+  and 6 ran against the 4.6 pin (`deptofdefense/AndroidTacticalAssaultKit-CIV`
+  @ `889eee2`); since the re-pin, `src/` is `TAK-Product-Center/atak-civ`
+  5.5.1.10 @ `9f6893d` (`dev/spike/g55/NOTES.md`), and the wave-5/6 scripts'
+  recorded numbers describe the 4.6 tree. On 5.5, audit the patched tree
+  `build-native.sh` leaves in `dev/g1/build/engine`:
+  `python3 dev/g1/tools/wave6/class_init_audit.py dev/g1/build/engine/jni`
+  (G1.21 records its 5.5 numbers). The scripts read the engine from
+  `src/takkernel/engine/src/main/` exactly like `build-native.sh`.
 - `python3` plus the macOS builtins `rsync`, `patch`, `diff`.
 - Patch *regeneration* additionally needs the wave's staged `a/`+`b/`
   authoring trees under the staging root. Those existed only on the machine
@@ -137,3 +144,15 @@ give `pristine()` a pristine-engine fallback.
   are byte-identical to what the pipeline produces.
 - The audit against the rebuilt (not the wave-time) trees prints exactly
   the expected output above.
+
+## Wave 7: check an init's lookups before guarding it
+
+```bash
+CP="$(ls dev/g1/kernel-dist/*.jar | paste -sd: -)"
+python3 dev/g1/tools/wave7/check_lookups.py "$CP" \
+  dev/g1/build/engine/jni/interop/feature/ManagedFeatureDataStore2.cpp FeatureDataStore2_init
+```
+
+Exit 0 when every parsed lookup resolves in the 5.5 jars. Only the `env.`
+form with literal strings is parsed; the summary line says how many of
+the init's lookups that covers (its count includes the `findClass` calls).
