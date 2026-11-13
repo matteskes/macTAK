@@ -99,6 +99,9 @@ public final class WindowApp {
     private static double camLat = Double.NaN, camLon = Double.NaN, camRes = Double.NaN;
     /** Set once the view exists; read by the AppKit main thread in {@link #input}. */
     private static volatile InputBridge bridge;
+    /** The first frame must show the attached content (the gates); false
+     *  for the app, whose layers may keep loading after the first frame. */
+    private static boolean contentGate = true;
 
     // Teardown bookkeeping: whatever the render body built, for the render
     // thread to release in reverse order once the shell asks for shutdown.
@@ -121,28 +124,26 @@ public final class WindowApp {
      * shell's {@code CAMetalLayer*} — opaque here, dereferenced only by the
      * engine's {@code createWindowSurface}.
      *
-     * @param w h       surface size in pixels (window points x backing scale)
-     * @param atLat atLon camera centre; NaN means frame on content bounds
-     * @param res   metres/pixel; NaN means fit content bounds
-     * @param dpi   72 x the window's backing scale
-     * @param liveMs scripted live phase after the first frame (0: none)
-     * @param expectResizes resizes the shell will drive during that phase
-     * @param frameLog CSV of the live phase's frame intervals, or null
-     * @param scriptedPan pan the camera automatically during the live phase
-     * @param gestureKinds bitmask (1 << InputBridge kind) of the gestures the
-     *        shell injects during the live phase; the live gate checks them
-     * @param elevations elevation sources (a GeoTIFF DEM file or a DTED
-     *        directory, {@link ElevationSources}); null or empty for none
+     * Called through {@link mactak.engine.EngineBridge#start} (G3.0), which
+     * replaced the 22 positional arguments this took through G2.
+     *
+     * @param w h  surface size in pixels (window points x backing scale)
+     * @param dpi  72 x the window's backing scale
+     * @param cfg  the natives, data, camera and scripted live phase
+     *             ({@link mactak.engine.MapConfig}: NaN camera fields frame
+     *             on the content bounds; null arrays mean none)
      */
-    public static synchronized void start(long layerPtr, int w, int h,
-                                          String[] libs, String eglPath, String glesPath,
-                                          String[] layers, String[] basemaps,
-                                          String layerDb, String outPath,
-                                          double res, double atLat, double atLon,
-                                          int frames, long settleMs,
-                                          double dpi, long liveMs, int expectResizes,
-                                          String frameLog, boolean scriptedPan, int gestureKinds,
-                                          String[] elevations) {
+    public static synchronized void start(long layerPtr, int w, int h, double dpi,
+                                          mactak.engine.MapConfig cfg) {
+        final String[] libs = cfg.libs;
+        final String eglPath = cfg.egl, glesPath = cfg.gles;
+        final String layerDb = cfg.layerDb, outPath = cfg.out, frameLog = cfg.frameLog;
+        final double res = cfg.res, atLat = cfg.atLat, atLon = cfg.atLon;
+        final int frames = cfg.frames, expectResizes = cfg.expectResizes, gestureKinds = cfg.gestureKinds;
+        final long settleMs = cfg.settleMs, liveMs = cfg.liveMs;
+        final boolean scriptedPan = cfg.scriptedPan;
+        final String[] layers = cfg.layers, basemaps = cfg.basemaps, elevations = cfg.elevations;
+        contentGate = cfg.contentGate;
         if (renderThread != null)
             throw new IllegalStateException(TAG + ": start called twice");
         if (layerPtr == 0)
@@ -385,7 +386,7 @@ public final class WindowApp {
             // commit had passed 25 minutes earlier), so with content attached the
             // readback is polled as frames run and rendering continues — up to a
             // generous cap — until content pixels have actually appeared.
-            boolean hasContent = layers.length > 0 || basemaps.length > 0;
+            boolean hasContent = contentGate && (layers.length > 0 || basemaps.length > 0);
             long deadline = System.currentTimeMillis() + (hasContent ? settleMs : 0);
             long cap = System.currentTimeMillis() + (hasContent ? Math.max(settleMs * 5, 15000) : 0);
             boolean contentSeen = !hasContent;
@@ -448,7 +449,8 @@ public final class WindowApp {
                 }
             }
 
-            final long required = ContentGate.requiredPixels(w, h, layers.length > 0, basemaps.length > 0);
+            final long required = contentGate
+                    ? ContentGate.requiredPixels(w, h, layers.length > 0, basemaps.length > 0) : 0;
             boolean pass = readOk && glErrors == 0 && sentinel == 0 && presented > 0 && swapFails == 0
                     && content >= required;
             if (presented == 0) System.err.println(TAG + ": FAIL: no frame was ever presented");

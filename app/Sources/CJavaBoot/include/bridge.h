@@ -1,10 +1,10 @@
 #ifndef MACTAK_SHELL_BRIDGE_H
 #define MACTAK_SHELL_BRIDGE_H
 
-/* The JVM bootstrap surface the Swift shell uses (main.swift). The fiddly
+/* The JVM bootstrap surface MacTAKCore uses (JavaBoot.swift). The fiddly
  * bits — dlopen path probing for libjli and the JNI_CreateJavaVM call —
  * live in jni_boot.c; everything above this line is Swift. jni.h comes from
- * -I"$JDK/include" -I"$JDK/include/darwin" (build-shell.sh). */
+ * the repo's pinned copy, dev/g1/jdk-include (app/Package.swift). */
 
 #include <jni.h>
 #include <stddef.h>
