@@ -7,7 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Nothing yet.
+### Added
+
+- G3.1, commo from Swift (`dev/g3/NOTES.md`): the `CommoClient` actor
+  connects to TAK servers over TCP or TLS, beacons self-SA, broadcasts
+  and sends CoT, and reports CoT, contacts, interface changes and commo's
+  log as one `AsyncStream`. It reaches commo's C++ API through
+  `CCommoShim`, which forwards commo's listener classes to C callbacks
+  behind a plain C API. `make test-app-comms` runs two clients through
+  `fake-cot-server.py` (A sees B as a contact and gets B's marker, B gets
+  A's presence), in CI's comms job. The package builds without commo
+  unless `MACTAK_COMMO_LIB` names `app/stage-commo.sh`'s copy.
 
 ## [0.3.2] - 2026-11-13 — G2: the shell, gestures, imagery, terrain and the exit run (gate open on trap 77) + G3.0 app skeleton
 
