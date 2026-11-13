@@ -106,6 +106,8 @@ public final class WindowApp {
     private static Globe globe;
     private static LayerStore store;
     private static PersistentRasterDataStore rasterStore;
+    private static final java.util.List<com.atakmap.map.elevation.ElevationSource> elevationSources =
+            new java.util.ArrayList<>();
     private static EglRenderContext ctx;
     /** NativeEgl.init succeeded: teardown must destroy EGL even when it
      *  failed before the render context existed (G2.5 #7). */
@@ -129,6 +131,8 @@ public final class WindowApp {
      * @param scriptedPan pan the camera automatically during the live phase
      * @param gestureKinds bitmask (1 << InputBridge kind) of the gestures the
      *        shell injects during the live phase; the live gate checks them
+     * @param elevations elevation sources (a GeoTIFF DEM file or a DTED
+     *        directory, {@link ElevationSources}); null or empty for none
      */
     public static synchronized void start(long layerPtr, int w, int h,
                                           String[] libs, String eglPath, String glesPath,
@@ -137,7 +141,8 @@ public final class WindowApp {
                                           double res, double atLat, double atLon,
                                           int frames, long settleMs,
                                           double dpi, long liveMs, int expectResizes,
-                                          String frameLog, boolean scriptedPan, int gestureKinds) {
+                                          String frameLog, boolean scriptedPan, int gestureKinds,
+                                          String[] elevations) {
         if (renderThread != null)
             throw new IllegalStateException(TAG + ": start called twice");
         if (layerPtr == 0)
@@ -152,13 +157,14 @@ public final class WindowApp {
         if (liveMs < 0 || expectResizes < 0) throw new IllegalArgumentException(TAG + ": --live must be >= 0");
         final String[] layerList = (layers == null) ? new String[0] : layers;
         final String[] basemapList = (basemaps == null) ? new String[0] : basemaps;
+        final String[] elevationList = (elevations == null) ? new String[0] : elevations;
 
         phase = PHASE_RENDERING;
         exitCode = -1;
         stopRequested = false;
         renderThread = new Thread(() -> render(layerPtr, w, h, libs, eglPath, glesPath,
                 layerList, basemapList, layerDb, outPath, res, atLat, atLon, frames, settleMs,
-                dpi, liveMs, expectResizes, frameLog, scriptedPan, gestureKinds),
+                dpi, liveMs, expectResizes, frameLog, scriptedPan, gestureKinds, elevationList),
                 "mactak-render");
         renderThread.start();
     }
@@ -221,7 +227,7 @@ public final class WindowApp {
                                double res, double atLat, double atLon,
                                int frames, long settleMs,
                                double dpi, long liveMs, int expectResizes, String frameLog,
-                               boolean scriptedPan, int gestureKinds) {
+                               boolean scriptedPan, int gestureKinds, String[] elevations) {
         int code = 1;   // default when stop() arrives before the frame is done
         try {
             for (String lib : libs) System.load(lib);
@@ -276,6 +282,18 @@ public final class WindowApp {
             Layers.registerAll();
             // G2.4 b.1: GDAL imagery through GdalLayerInfo -> GdalTileReader (GdalImagery)
             GdalImagery.enable(TAG);
+            // G2 exit run: elevation for the height queries and the terrain
+            // renderer, as RenderSmoke attaches it (G2.6); teardown detaches it
+            for (String p : elevations) {
+                final File e = new File(p);
+                if (!e.exists()) {
+                    System.err.println(TAG + ": no such elevation: " + e);
+                    finish(2);
+                    return;
+                }
+                elevationSources.add(ElevationSources.attach(e));
+                System.out.println(TAG + ": elevation " + e.getName() + " attached");
+            }
             globe = new Globe();
             view = new GLMapView(ctx, globe, 0, 0, w, h);
             ctx.setGLMapView(view);
@@ -384,14 +402,19 @@ public final class WindowApp {
                     if (glErrors <= 10) System.err.printf(TAG + ": frame %d GL error 0x%04x%n", i, err);
                 }
                 if (hasContent) {
-                    if (rendered % 4 == 0)      // poll: has the async content landed?
+                    if (rendered % 4 == 0 && !contentSeen) {   // poll: has the async content landed?
                         contentSeen = NativeEgl.readPixels(px) && countNonClear(px, w, h)
-                                >= ContentGate.requiredPixels(w, h, layers.length > 0, basemaps.length > 0);
+                                >= ContentGate.requiredPixels(w, h, layers.length > 0, basemaps.length > 0)
+                                && (elevationSources.isEmpty() || ElevationChecks.terrainUnderRays(view, w, h));
+                        if (contentSeen) coldStart("first frame with content (and terrain, if any)");
+                    }
                     try { Thread.sleep(16); } catch (InterruptedException e) { break; }
                 }
                 // Present last: once a frame is presented its back buffer's
                 // contents are undefined, so nothing reads it past this point.
-                if (NativeEgl.swap()) presented++; else swapFails++;
+                if (NativeEgl.swap()) {
+                    if (presented++ == 0) coldStart("first presented frame");
+                } else swapFails++;
             }
             frames = rendered;
             double msPerFrame = (System.nanoTime() - t0) / 1e6 / Math.max(frames, 1);
@@ -546,7 +569,8 @@ public final class WindowApp {
             int err;
             while ((err = NativeEgl.getGlError()) != 0) {
                 glErrors++;
-                if (glErrors <= 10) System.err.printf(TAG + ": live frame GL error 0x%04x%n", err);
+                if (glErrors <= 10)
+                    System.err.printf(TAG + ": live frame %d (%.2f s) GL error 0x%04x%n", times.count(), (now - t0) / 1e9, err);
             }
             // The engine's cost: CPU time, not wall time. ANGLE's Metal backend
             // takes the next drawable lazily at the first draw, so the wait
@@ -673,6 +697,7 @@ public final class WindowApp {
         final boolean readOk = NativeEgl.readPixels(px);
         final long content = countNonClear(px, w, h);
         final long required = ContentGate.requiredPixels(w, h, hasLayers, hasBasemaps);
+        final boolean terrainHolds = elevationSources.isEmpty() || ElevationChecks.terrainDrawn(TAG + ": live", view, w, h);
         System.out.printf(TAG + ": live: %d presented, %d failed, glErrors=%d, resizes=%d (expected %d), "
                 + "surface %dx%d, content pixels=%d (need %d)%n",
                 presented, swapFails, glErrors, resizes, expectResizes, w, h, content, required);
@@ -694,6 +719,10 @@ public final class WindowApp {
             System.err.println(TAG + ": FAIL: " + ContentGate.failure(content, required, w, h, hasBasemaps));
             pass = false;
         }
+        if (!terrainHolds) {
+            System.err.println(TAG + ": FAIL: the terrain renderer did not draw the elevation (ray casts missed the terrain mesh)");
+            pass = false;
+        }
         System.out.println(pass ? TAG + ": live: PASS" : TAG + ": live: FAIL");
         return pass ? 0 : 1;
     }
@@ -712,16 +741,23 @@ public final class WindowApp {
         static final long DROPPED_NS = 25_000_000L;
         private long[] interval = new long[1024];
         private long[] work = new long[1024];
+        private long[] at = new long[1024];
+        private final long origin = System.nanoTime();
         private int n;
+
+        /** Frames recorded so far. */
+        int count() { return n; }
 
         /** @param intervalNs -1 for the first frame after a start or pause */
         void add(long intervalNs, long workNs) {
             if (n == interval.length) {
                 interval = java.util.Arrays.copyOf(interval, n * 2);
                 work = java.util.Arrays.copyOf(work, n * 2);
+                at = java.util.Arrays.copyOf(at, n * 2);
             }
             interval[n] = intervalNs;
             work[n] = workNs;
+            at[n] = System.nanoTime() - origin;
             n++;
         }
 
@@ -737,12 +773,18 @@ public final class WindowApp {
                         + "dropped (>%.0f ms) %d; render CPU ms p50 %.2f p95 %.2f max %.2f%n",
                         tag, n, mean(iv) / 1e6, pct(iv, 50) / 1e6, pct(iv, 95) / 1e6, iv[iv.length - 1] / 1e6,
                         1e9 / mean(iv), DROPPED_NS / 1e6, dropped, pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
+                // each one, to set against the gesture script and the GC log
+                for (int i = 0; i < n; i++)
+                    if (interval[i] > DROPPED_NS)
+                        System.out.printf("%s: dropped frame %d at %.3f s: interval %.2f ms, render CPU %.2f ms%n",
+                                tag, i, at[i] / 1e9, interval[i] / 1e6, work[i] / 1e6);
             }
             if (csvPath != null) {
                 try (java.io.PrintWriter out = new java.io.PrintWriter(new FileOutputStream(csvPath))) {
-                    out.println("frame,interval_ms,render_cpu_ms");
+                    out.println("frame,t_s,interval_ms,render_cpu_ms");
                     for (int i = 0; i < n; i++)
-                        out.printf("%d,%s,%.3f%n", i, interval[i] < 0 ? "" : String.format("%.3f", interval[i] / 1e6), work[i] / 1e6);
+                        out.printf("%d,%.4f,%s,%.3f%n", i, at[i] / 1e9,
+                                interval[i] < 0 ? "" : String.format("%.3f", interval[i] / 1e6), work[i] / 1e6);
                 }
                 System.out.println(tag + ": frame log " + csvPath);
             }
@@ -759,6 +801,18 @@ public final class WindowApp {
             final int rank = (int) Math.ceil(p / 100d * sorted.length);
             return sorted[Math.max(0, Math.min(sorted.length - 1, rank - 1))];
         }
+    }
+
+    /**
+     * G2 exit run: time from process launch (the shell's exec) to a
+     * milestone of the first frame. The process start comes from the OS
+     * ({@link ProcessHandle}), so the JVM's own startup is inside the figure.
+     */
+    private static void coldStart(String milestone) {
+        final java.util.Optional<java.time.Instant> started = ProcessHandle.current().info().startInstant();
+        if (started.isEmpty()) return;
+        final long ms = java.time.Duration.between(started.get(), java.time.Instant.now()).toMillis();
+        System.out.println(TAG + ": cold start: " + milestone + " " + ms + " ms after launch");
     }
 
     /** Record a failure and end the render thread without the live loop. */
@@ -783,6 +837,9 @@ public final class WindowApp {
             globe.dispose();
             globe = null;
         }
+        // before the process exits, or C++ static teardown crashes (G2 trap #73)
+        for (com.atakmap.map.elevation.ElevationSource e : elevationSources) ElevationSources.detach(e);
+        elevationSources.clear();
         if (store != null) {
             store.close();
             store = null;

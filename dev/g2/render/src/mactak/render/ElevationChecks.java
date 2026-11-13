@@ -57,15 +57,20 @@ final class ElevationChecks {
      * that point. Prints each; returns whether all hold.
      */
     static boolean terrainDrawn(MapRenderer3 renderer, int w, int h) {
-        return terrainCheck(renderer, w, h, true);
+        return terrainDrawn("render-smoke", renderer, w, h);
+    }
+
+    /** {@link #terrainDrawn}, printing under the caller's tag. */
+    static boolean terrainDrawn(String tag, MapRenderer3 renderer, int w, int h) {
+        return terrainCheck(tag, renderer, w, h, true);
     }
 
     /** {@link #terrainDrawn} without printing: the render loop polls it until the tiles land. */
     static boolean terrainUnderRays(MapRenderer3 renderer, int w, int h) {
-        return terrainCheck(renderer, w, h, false);
+        return terrainCheck(null, renderer, w, h, false);
     }
 
-    private static boolean terrainCheck(MapRenderer3 renderer, int w, int h, boolean report) {
+    private static boolean terrainCheck(String tag, MapRenderer3 renderer, int w, int h, boolean report) {
         boolean all = true;
         for (float fy : new float[] { 0.5f, 0.25f, 0.75f }) {
             final PointD at = new PointD(w / 2d, h * fy);
@@ -76,8 +81,8 @@ final class ElevationChecks {
             final boolean ok = result == MapRenderer3.InverseResult.TerrainMesh
                     && !Double.isNaN(ground) && Math.abs(hit.getAltitude() - ground) <= TERRAIN_TOLERANCE_M;
             if (report)
-                System.out.printf(Locale.US, "render-smoke: terrain at pixel (%.0f, %.0f): %s, (%.5f, %.5f) at %.2f m, ground %.2f m: %s%n",
-                        at.x, at.y, result, hit.getLatitude(), hit.getLongitude(), hit.getAltitude(), ground, ok ? "ok" : "FAIL");
+                System.out.printf(Locale.US, "%s: terrain at pixel (%.0f, %.0f): %s, (%.5f, %.5f) at %.2f m, ground %.2f m: %s%n",
+                        tag, at.x, at.y, result, hit.getLatitude(), hit.getLongitude(), hit.getAltitude(), ground, ok ? "ok" : "FAIL");
             all &= ok;
         }
         return all;
