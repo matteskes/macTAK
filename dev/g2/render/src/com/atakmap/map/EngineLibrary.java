@@ -53,6 +53,13 @@ public final class EngineLibrary {
         ConfigOptions.setOption("terrain.legacy-elevation-api", 0);
         ConfigOptions.setOption("terrain.resadj", 1.0);
         ConfigOptions.setOption("gltext.use-font-bins", 0);
+        // Android's default, not the desktop one (G2 exit run, trap #76):
+        // screen-to-ground ray casts (MapRenderer.inverse, every gesture
+        // event) intersect the terrain meshes on the CPU. The desktop default
+        // (1) picks terrain tiles on the GPU and reads them back, which
+        // waits for all queued GPU work in the middle of a frame. The option
+        // gates only that choice (GLGlobe, GLMapView2).
+        ConfigOptions.setOption("glmapview.surface-rendering-v2", 0);
 
         // GLSLUtil resolves shader sources from Android raw resources; the jar
         // carries them at resources/raw/*. Unpack once and hand GLSLUtil the
