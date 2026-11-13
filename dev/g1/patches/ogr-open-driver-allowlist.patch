@@ -1,0 +1,40 @@
+--- a/tmp/takeng-src/cpp/formats/ogr/OGR_Content2.cpp
++++ b/tmp/takeng-src/cpp/formats/ogr/OGR_Content2.cpp
+@@ -206,10 +206,19 @@
+         openPath = strm.str().c_str();
+     }
+ 
++    // macTAK (G1 security finding 10, issue 147): only drivers that never
++    // follow references inside a file may open a layer. With no list, any
++    // registered driver may claim the file, and some fetch what it names:
++    // an OGR VRT's /vsicurl/ source, a GML file's WFS schemaLocation (GDAL
++    // downloads it by default). Opening a layer then reached the network,
++    // or another local file, and the GML driver wrote a .gfs beside it.
++    static const char *const allowedDrivers[] = {
++        "GeoJSON", "GPKG", "KML", "LIBKML", "ESRI Shapefile", "GPX", "FlatGeobuf", nullptr
++    };
+     dataSource = GDAL_DatasetPtr(static_cast<GDALDataset*>
+                                  (GDALOpenEx(openPath,
+                                              GDAL_OF_VECTOR | GDAL_OF_READONLY | GDAL_OF_VERBOSE_ERROR | GDAL_OF_INTERNAL,
+-                                             nullptr, openOptions, nullptr)),
++                                             allowedDrivers, openOptions, nullptr)),
+                                  [](GDALDataset* ds)
+                                  {
+                                      GDALClose(static_cast<GDALDatasetH>(ds));
+--- a/tmp/takeng-src/cpp/feature/OGDIFeatureDataSource.cpp
++++ b/tmp/takeng-src/cpp/feature/OGDIFeatureDataSource.cpp
+@@ -953,10 +953,13 @@
+ 
+         m_path = path.c_str();
+ 
++		// macTAK (issue 147): this source opens OGDI datastores only, so
++		// only the OGDI driver may claim the path (see OGR_Content2.cpp).
++		static const char *const allowedDrivers[] = { "OGDI", nullptr };
+ 		m_dataSource = GDAL_DatasetPtr(static_cast<GDALDataset*>
+ 			(GDALOpenEx(m_path,
+ 				GDAL_OF_VECTOR | GDAL_OF_READONLY | GDAL_OF_VERBOSE_ERROR | GDAL_OF_INTERNAL,
+-				nullptr, nullptr, nullptr)),
++				allowedDrivers, nullptr, nullptr)),
+ 			[](GDALDataset * ds) { GDALClose(static_cast<GDALDatasetH> (ds)); });
+ 
+ 		if (!m_dataSource.get())
