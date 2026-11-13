@@ -159,6 +159,14 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g1/headless/test/layer.sh
 
+      - name: Layer files can't reach the network (make test-gdal-network)
+        # G1 security finding 10 (issue 147): a hostile OGR VRT and GML each
+        # point at a loopback listener. Stock ogrinfo must fetch (the
+        # control); the engine's import path must not
+        # (patches/ogr-open-driver-allowlist.patch).
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-gdal-network
+
       - name: Upload engine artifacts
         # Guarded: if-no-files-found is error, which would fail a no-op run.
         if: always() && needs.changes.outputs.changed == 'true'
