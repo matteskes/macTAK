@@ -9,6 +9,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The G2 exit run, `make exit-run` (`dev/g2/NOTES.md` §The exit run;
+  dev Mac): real NAIP 2024 imagery, the landmarks and real USGS 3DEP
+  terrain in the shell's window under a 10 s gesture tour (`shell
+  --tour`), gated on zero dropped frames, with fps, render CPU, GPU time,
+  GC pauses, peak memory and cold start reported in
+  `dev/g2/build/exit-run.txt`. `fixtures/fetch-exit-data.sh` fetches the
+  4 km clip over anonymous HTTPS and pins it by pixel checksums. The live
+  window gains `--elevation`, cold-start timing, GPU time per frame
+  (`GL_EXT_disjoint_timer_query`) and a per-dropped-frame breakdown; the
+  shell reports its peak memory. Result: 60.1 fps, p95 17.3 ms, GPU p95
+  1.15 ms, longest GC pause 0.009 ms; G2 stays open because about one run
+  in 10–20 still drops one frame in the window server (trap #77).
 - G2.6, elevation (`dev/g2/NOTES.md` §G2.6): GeoTIFF DEMs and DTED attach
   to the engine's elevation manager (`ElevationSources`); heights read back
   right (DTED with the geoid) and the terrain renderer draws them on ANGLE.
@@ -273,6 +285,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The engine casts rays on the CPU, as on Android
+  (`glmapview.surface-rendering-v2` = 0 in `EngineLibrary`). The desktop
+  default picked terrain on the GPU and read it back for every gesture
+  event, a GPU sync in the middle of a frame; runs of the exit run that
+  dropped a frame fell from about 40% to about 10% (G2 trap #76).
 - `make test-kernel` runs takkernel's `:shared` tests again, beside
   `:port` (`dev/g1/NOTES.md` G1.15; closes `dev/spike/g55/NOTES.md`
   trap 11): 26 + 220 tests, 0 failures. `dev/g1/kernel/kernel-tests.gradle`
@@ -345,6 +362,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The engine deleted feature buffers whose unmap was still queued and then
+  unmapped the deleted names (`GL_INVALID_OPERATION`, and a leaked buffer
+  name each time on GL ES). New engine patch
+  `featurerenderer-unmap-before-discard.patch` (42 in the series). The
+  error showed only now and then because the engine clears GL errors
+  itself; the exit run now checks through ANGLE's debug output (G2 trap
+  #75).
+- USGS 3DEP elevation read 32 m high: the GeoTIFF declares no vertical
+  datum, so the engine took its heights as ellipsoid heights. The exit
+  run's fetch stamps NAVD88 on the clip (G2 trap #74).
 - `dev/g2/render/env.sh` rebuilt the render classes only when an input was
   newer than them, so deleting a patch left its patched class in place; it
   now also rebuilds when the set of sources and patches changes (G2 trap

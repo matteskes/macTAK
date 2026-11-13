@@ -23,7 +23,8 @@
 # PASS: the live gate (every present succeeded, no GL error, content, and
 # the terrain mesh under three rays at the end), every gesture kind reached
 # the camera, and ZERO DROPPED FRAMES (no present interval over 25 ms).
-# Reported, not gated: fps and interval percentiles, render CPU, the
+# Reported, not gated: fps and interval percentiles, render CPU, GPU time
+# per frame (GL timer queries), the
 # longest GC pause, peak resident memory, cold start (launch to the first
 # presented frame, and to the first frame with content).
 #
@@ -116,7 +117,7 @@ gc_stalls="$(awk '/Allocation Stalls:/ { for (i = NF - 3; i <= NF; i++) s += $i 
   echo "data: NAIP 2024 window $(gdalinfo -checksum "$DATA/naip-window.tif" | sed -nE 's/^ *Checksum=([0-9]+)$/\1/p' | tr '\n' ' ')/ 3DEP window $(gdalinfo -checksum "$DATA/3dep-window.tif" | sed -nE 's/^ *Checksum=([0-9]+)$/\1/p')"
   grep -E '^window-app: (cold start|camera|basemap|elevation|[0-9]+ feature)|^mactak-shell: (CAMetalLayer|peak resident)' "$RUN_LOG" || true
   echo "live: $frames_line"
-  grep -E '^window-app: live: (dropped frame|terrain|[0-9]+ presented)|^window-app: gestures:|^window-app: live frame .*GL error' "$RUN_LOG" || true
+  grep -E '^window-app: live: (GPU ms|dropped frame|terrain|[0-9]+ presented)|^window-app: gestures:|^window-app: live frame .*GL error' "$RUN_LOG" || true
   echo "GC: ${gc_n:-0} pauses, longest ${gc_max:-?} ms, allocation stalls ${gc_stalls} (generational ZGC)"
   echo "shell exit $rc"
 } > "$BUILD/exit-run.txt"
