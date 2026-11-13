@@ -84,6 +84,49 @@ namespace {
     Egl g;
     JavaVM *g_vm = nullptr;
 
+    // G2 exit run: GPU time per frame (GL_EXT_disjoint_timer_query; ANGLE's
+    // Metal backend has it). A ring of TIME_ELAPSED queries, one per frame,
+    // read back only once available, so the timing never waits on the GPU.
+    struct GpuTimer {
+        static constexpr int N = 16;
+        bool tried = false, ready = false, active = false;
+        void (GL_APIENTRY *gen)(GLsizei, GLuint *) = nullptr;
+        void (GL_APIENTRY *del)(GLsizei, const GLuint *) = nullptr;
+        void (GL_APIENTRY *begin)(GLenum, GLuint) = nullptr;
+        void (GL_APIENTRY *end)(GLenum) = nullptr;
+        void (GL_APIENTRY *getu)(GLuint, GLenum, GLuint *) = nullptr;
+        void (GL_APIENTRY *getu64)(GLuint, GLenum, GLuint64 *) = nullptr;
+        void (GL_APIENTRY *getInt)(GLenum, GLint *) = nullptr;
+        GLuint q[N] = {};
+        jint frame[N] = {};
+        bool pending[N] = {};
+        int slot = 0;
+    };
+    GpuTimer t;
+
+    bool gpuTimerInit() {
+        t.tried = true;
+        const char *ext = g.glGetString_ ? reinterpret_cast<const char *>(g.glGetString_(GL_EXTENSIONS)) : nullptr;
+        if (!ext || !std::strstr(ext, "GL_EXT_disjoint_timer_query")) return false;
+        t.gen = reinterpret_cast<decltype(t.gen)>(g.GetProcAddress("glGenQueriesEXT"));
+        t.del = reinterpret_cast<decltype(t.del)>(g.GetProcAddress("glDeleteQueriesEXT"));
+        t.begin = reinterpret_cast<decltype(t.begin)>(g.GetProcAddress("glBeginQueryEXT"));
+        t.end = reinterpret_cast<decltype(t.end)>(g.GetProcAddress("glEndQueryEXT"));
+        t.getu = reinterpret_cast<decltype(t.getu)>(g.GetProcAddress("glGetQueryObjectuivEXT"));
+        t.getu64 = reinterpret_cast<decltype(t.getu64)>(g.GetProcAddress("glGetQueryObjectui64vEXT"));
+        t.getInt = reinterpret_cast<decltype(t.getInt)>(dlsym(g.glesLib, "glGetIntegerv"));
+        if (!t.gen || !t.del || !t.begin || !t.end || !t.getu || !t.getu64 || !t.getInt) return false;
+        t.gen(GpuTimer::N, t.q);
+        GLint disjoint = 0;
+        t.getInt(GL_GPU_DISJOINT_EXT, &disjoint);   // reading clears the flag
+        return true;
+    }
+
+    void gpuTimerReset() {
+        if (t.ready && t.del && g.ctx != EGL_NO_CONTEXT) t.del(GpuTimer::N, t.q);
+        t = GpuTimer();
+    }
+
     void setError(const char *what) {
         std::snprintf(g.lastError, sizeof g.lastError, "%s (eglError=0x%04x)", what,
                       g.GetError ? (unsigned)g.GetError() : 0u);
@@ -126,6 +169,7 @@ namespace {
     }
 
     void teardown() {
+        gpuTimerReset();
         if (g.dpy != EGL_NO_DISPLAY) {
             if (g.MakeCurrent) g.MakeCurrent(g.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
             if (g.ctx != EGL_NO_CONTEXT && g.DestroyContext) g.DestroyContext(g.dpy, g.ctx);
@@ -458,6 +502,54 @@ JNIEXPORT jstring JNICALL Java_mactak_render_NativeEgl_getString(JNIEnv *env, jc
         case 4: return str(env, g.lastError);
         default: return str(env, "");
     }
+}
+
+// G2 exit run: time this frame's GPU work, from here to gpuTimerStop. False
+// when the extension is missing, or the frame's ring slot is still unread.
+JNIEXPORT jboolean JNICALL Java_mactak_render_NativeEgl_gpuTimerStart(JNIEnv *, jclass, jint frame)
+{
+    if (!t.tried) t.ready = gpuTimerInit();
+    if (!t.ready || t.active) return JNI_FALSE;
+    const int s = frame % GpuTimer::N;
+    if (t.pending[s]) return JNI_FALSE;
+    t.slot = s;
+    t.frame[s] = frame;
+    t.begin(GL_TIME_ELAPSED_EXT, t.q[s]);
+    t.active = true;
+    return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL Java_mactak_render_NativeEgl_gpuTimerStop(JNIEnv *, jclass)
+{
+    if (!t.active) return;
+    t.end(GL_TIME_ELAPSED_EXT);
+    t.pending[t.slot] = true;
+    t.active = false;
+}
+
+// Results that have arrived, as (frame, nanoseconds) pairs into out; returns
+// the pair count. A disjoint operation (the GPU's clock was interrupted)
+// voids the pending results: they come back as -1 ns.
+JNIEXPORT jint JNICALL Java_mactak_render_NativeEgl_gpuTimerPoll(JNIEnv *env, jclass, jlongArray out)
+{
+    if (!t.ready || !out) return 0;
+    const jsize cap = env->GetArrayLength(out) / 2;
+    GLint disjoint = 0;
+    t.getInt(GL_GPU_DISJOINT_EXT, &disjoint);
+    jint n = 0;
+    for (int s = 0; s < GpuTimer::N && n < cap; s++) {
+        if (!t.pending[s]) continue;
+        GLuint available = 0;
+        t.getu(t.q[s], GL_QUERY_RESULT_AVAILABLE_EXT, &available);
+        if (!available && !disjoint) continue;
+        GLuint64 ns = 0;
+        if (available) t.getu64(t.q[s], GL_QUERY_RESULT_EXT, &ns);
+        const jlong pair[2] = { t.frame[s], (available && !disjoint) ? (jlong)ns : -1 };
+        env->SetLongArrayRegion(out, 2 * n, 2, pair);
+        t.pending[s] = false;
+        n++;
+    }
+    return n;
 }
 
 JNIEXPORT void JNICALL Java_mactak_render_NativeEgl_destroy(JNIEnv *, jclass)

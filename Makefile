@@ -1,4 +1,4 @@
-.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window lint docs-site clean
+.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -33,6 +33,7 @@ help:
 	@echo "  build-window-host - compile the M3.1 window-harness host dylib (WindowHost.m -> build/window-host.dylib)"
 	@echo "  test-render-window - M3.1 window-surface exercise: engine into a CAMetalLayer window surface, --resize via the host's drawableSize (off-screen; CI runs it too)"
 	@echo "  smoke-window   - G2 M3.0 manual gate: NSWindow -> CAMetalLayer -> eglCreateWindowSurface on ANGLE; opens a window ~3 s, writes dev/g2/build/window-smoke.ppm (needs a GUI session)"
+	@echo "  exit-run       - G2 exit run (dev Mac): real imagery + vector + elevation in the shell window, 10 s gesture tour, zero dropped frames (dev/g2/shell/test/exit-run.sh)"
 	@echo "  lint           - shellcheck + bash -n over dev/**/*.sh; markdownlint/actionlint if installed"
 	@echo "  docs-site      - build the docs site (MkDocs, strict) into dev/docs-site/build/site"
 	@echo "  clean          - remove build outputs"
@@ -153,6 +154,13 @@ test-shell: build-shell
 	bash dev/g2/shell/test/exit-code.sh
 	bash dev/g2/shell/test/live.sh
 	bash dev/g2/shell/test/gestures.sh
+
+# G2's exit run (dev Mac, GUI session, network once): real NAIP imagery +
+# landmarks + 3DEP terrain in the shell's window under a 10 s gesture tour;
+# passes on zero dropped frames, and reports fps, GC pauses, peak memory and
+# cold start in dev/g2/build/exit-run.txt (dev/g2/NOTES.md "The 60 fps gate").
+exit-run: build-shell
+	bash dev/g2/shell/test/exit-run.sh
 
 # M3.0 manual gate (dev Mac, GUI session): `angle` stages the ANGLE pair and
 # runs the headless pbuffer canary first, then the window opens for ~3 s and

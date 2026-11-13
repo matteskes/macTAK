@@ -1,5 +1,25 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (exit run — 2026-11-12): the full stack runs at 60 fps; G2 stays open on one dropped frame in 5–10% of runs
+
+`make exit-run` (`shell/test/exit-run.sh`) runs the full stack (real NAIP
+2024 imagery, the landmarks and real USGS 3DEP terrain) in the shell's
+window under a 10 s gesture tour (`--tour`). Everything holds: 60.1 fps,
+p95 17.3 ms, GPU time per frame p95 1.15 ms, render CPU p95 1.8 ms, no GL
+error (checked through ANGLE's debug output), the terrain under every
+ray, the longest GC pause 0.009 ms, cold start 0.67 s to the first frame
+and 2.5 s to imagery and terrain, peak memory 2.0 GB. The gate is zero
+dropped frames, and about one run in 10–20 still drops one frame (26–33
+ms): a Metal System Trace places it in the window server, which misses a
+refresh while starting a one-second composite of a surface of its own;
+our CPU and GPU work in that frame are about 1 ms. The owner chose to
+open the PR with G2 still open on the gate. Found and fixed on the way:
+the 3DEP GeoTIFF declares no vertical datum (#74); an engine bug unmapped
+deleted buffers, hidden because the engine clears GL errors (#75); and
+desktop builds pick terrain on the GPU for every gesture's ray cast, a
+GPU sync per event that Android avoids (#76). Section "The exit run" at
+the end; the stall is trap #77.
+
 ## State (G2.6 — 2026-11-12): elevation, GeoTIFF DEM and DTED, drawn as terrain on ANGLE
 
 The engine reads a GeoTIFF DEM (`GdalElevationChunk`) and a DTED tree
@@ -1465,7 +1485,7 @@ starts. The M3 architecture above ("M3 design") is unchanged.
 | M3.4 (**done**) | `InputBridge`: the gesture map below onto `CameraController.Interactive`; **R4 verdict** recorded here and in the roadmap | the gesture tests below; R4 written up |
 | G2.4 b.1 (**done 2026-11-12**) | GeoTIFF imagery through `GdalTileReader` (the `org.gdal` bindings, axis order and `/vsitakio/` are done: b.0, b.2, b.1a); the rest of G2.5 #7 (`BitmapRegionDecoder`, `Canvas` clip, shim bounds) as the imagery path reaches it | imagery leg in `make test-render` and CI |
 | G2.6 (**done 2026-11-12**) | elevation: a GeoTIFF DEM through `GdalElevationChunk` (b.1's GDAL path), DTED as the second format; the terrain renderer on ANGLE | elevation leg in `make test-render` and CI |
-| Exit | the full stack (imagery + vector + elevation) under the scripted gesture run | the 60 fps gate below; G2 closes |
+| Exit (**run 2026-11-12; open on #77**) | the full stack (imagery + vector + elevation) under the scripted gesture run (`make exit-run`) | the 60 fps gate below; G2 closes |
 
 R4 is G2's branch-point risk, so it is answered before the data work; the
 60 fps gate is measured once, at the end, on the full stack.
@@ -1760,6 +1780,8 @@ back only if a later feature needs AppKit to wait on the engine.
   engine's thread; it did not recur in the next two runs. Most likely Metal
   compiling the pipeline the first tilted view needs, which macOS then
   caches on disk (not proven). The exit run should start warm.
+  **Later (exit run, 2026-11-12):** more likely the GPU terrain pick of
+  trap #76, whose first use also builds its shaders; tilting casts rays.
 
 ## G2.4 b.1 — GeoTIFF imagery through GDAL (2026-11-12, branch `g2/geotiff-imagery`)
 
@@ -1844,7 +1866,8 @@ world file.
   present at the pin and draws.
 - **The exit run's real-data clip:** chosen (NAIP 2024 and 3DEP 1/3″, 4 km
   over Golden Gate Park to Twin Peaks, pinned by pixel checksums; "The
-  exit run's real data" above). The fetch script comes with the exit run.
+  exit run's real data" above). Fetched by `fixtures/fetch-exit-data.sh`
+  (section "The exit run").
 - **G2.5 #7's rest** (`BitmapRegionDecoder`'s stream, `Canvas` clip, GLES
   shim bounds) is not on the GDAL path (it reads through GDAL, not
   `BitmapRegionDecoder`/`Canvas`), so b.1 did not reach it; still open.
@@ -1904,6 +1927,8 @@ and only the heights at known points reveal the misregistration.
   With `autoDetectMsl`, one that declares a sea-level datum is corrected
   like DTED; USGS 3DEP declares NAVD88, so the exit run's real elevation
   must be checked to read as sea level (expect the geoid offset).
+  **Corrected at the exit run:** 3DEP's metadata says NAVD88, but the
+  GeoTIFF itself declares no vertical datum (trap #74).
 
 ### Traps found on the way (#71–#73)
 
@@ -1932,3 +1957,121 @@ and only the heights at known points reveal the misregistration.
 
 `ElevationData`, home of `MODEL_TERRAIN`, is deprecated in 5.5; the flag
 bit is defined locally so the compile stays `-Werror`.
+
+## The exit run (2026-11-12, branch `g2/exit-run`): G2 stays open on trap #77
+
+### What runs
+
+`make exit-run` (`shell/test/exit-run.sh`), on the dev Mac:
+
+1. **Data** (`fixtures/fetch-exit-data.sh`): a 4 km × 4 km clip from
+   Golden Gate Park to Twin Peaks, read over anonymous HTTPS with
+   `/vsicurl/` (about 50 MB). NAIP 2024 (Planetary Computer,
+   `m_3712213_sw_10_060_20240529`, 60 cm, bands 1–3) and USGS 3DEP 1/3″
+   (`USGS_13_n38w123`). Each window is pinned by its pixel checksums at
+   the source resolution: NAIP 54466 / 11900 / 13171, 3DEP 46446 (two
+   independent fetches matched). The imagery is then resampled to 1.2 m
+   with overviews (not pinned: GDAL's resampling may change); the 3DEP
+   window is stamped NAVD88 (trap #74).
+2. **Datum**: `RenderSmoke --expect-height ...,msl` at two flat 5×5-cell
+   spots (Stow Lake, 87.010 m; a street on Twin Peaks' east slope,
+   247.362 m) must read sea level plus the geoid; the window as fetched,
+   unstamped, must fail.
+3. **Warm-up run** with `MACTAK_GL_DEBUG=1`: timings discarded; fails on
+   any GL error ANGLE reports (trap #75).
+4. **Measured run**: the shell at its default size (640×480 pt, 1280×960
+   px on the Retina display), the NAIP basemap, the landmarks and the
+   3DEP terrain, `--live 11000 --tour`. `--tour` posts a 10 s script of
+   real AppKit events: pans, wheel zoom in and out, ⌥-drag tilt 35° and
+   turn 50°, a trackpad scroll, partial returns, a double-click.
+   **PASS** = the live gate (presents, no GL error, content, the terrain
+   mesh under three rays at the end), every gesture kind moved the camera,
+   and zero dropped frames. The summary is `build/exit-run.txt`; the
+   frame log has interval, render CPU, GPU time and the render/present
+   wall split per frame.
+
+New in the live window for it: `--elevation` (detached at teardown,
+trap #73); cold start (process launch to the first present and to the first
+frame with content); GPU time per frame (`GL_EXT_disjoint_timer_query`,
+which ANGLE's Metal backend has: a ring of 16 queries in `mactak_egl.cpp`,
+read back only when available); each dropped frame with its time, CPU,
+GPU and wall split; peak resident memory from the shell.
+
+### A passing run, quoted (commit `c053f60`, M5 Max, macOS 27.2.1)
+
+```text
+datum:   height (37.77014, -122.47708) = 54.692 m, want 54.692 m (MSL + geoid): ok
+         unstamped: 87.010 m, want 54.692 m: FAIL, as required
+warm-up: GL debug output: no errors
+live:    663 frames; interval ms p50 16.66 p95 17.32 max 18.52 (60.1 fps); dropped (>25 ms) 0
+         render CPU ms p50 0.79 p95 1.80 max 6.25; GPU ms p50 0.49 p95 1.15 max 3.52
+         terrain at the three rays: TerrainMesh, within 2.2 m of the ground
+         gestures: drag=135 scroll=30 wheel=7 option-drag=180 double-click=1: PASS
+cold start 672 ms to the first present, 2468 ms to imagery and terrain
+peak resident memory 2046 MB; GC: 100 pauses, longest 0.009 ms, no allocation stalls
+```
+
+### Where the gate stands
+
+Over the last 40 runs of the tour (after #75 and #76), 3 dropped one
+frame each, 26–33 ms; the others' longest interval was 18.5–24.9 ms.
+Before #76, about 40% of runs dropped one. The owner chose to open the PR
+with the gate unmet (G2 stays open); the remaining cause is trap #77.
+
+The imagery without terrain is a separate, larger cost: 25–30 slow
+frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
+(first-use JNI and JIT costs and texture uploads that wait on the GPU in
+`glTexImage2D`). Not part of the gate (the full stack is); a follow-up.
+
+### Traps found on the way (#74–#77)
+
+- **#74 — USGS 3DEP declares no vertical datum.** Its metadata says
+  NAVD88, but the GeoTIFF's CRS is plain NAD83 (no `VERTCRS`, even with
+  `GTIFF_REPORT_COMPD_CS`), so `GdalElevationChunk`'s `autoDetectMsl` took
+  the heights as ellipsoid heights: 32 m high at San Francisco. The fetch
+  stamps `EPSG:4269+5703` (NAD83 + NAVD88 height); the engine then sees a
+  gravity-related height and adds the geoid. The exit run checks both
+  ways: stamped reads 54.692 m at Stow Lake (87.010 + geoid), unstamped
+  87.010 m. G2.6's datum note had assumed the declaration.
+- **#75 — the engine unmapped deleted buffers, and the GL error hid.**
+  `GLBatchGeometryFeatureDataStoreRenderer3` maps a feature batch's
+  buffers on its worker and queues their unmap for `drawImpl`. When a
+  second query result replaced the batch first, `draw()` deleted the
+  buffers with the unmap still queued, and `drawImpl` unmapped deleted
+  names: `GL_INVALID_OPERATION` ("Buffer is not mapped"), and on GL ES the
+  bind recreated each name as a buffer nothing deletes. A diagnostic
+  build matched all 8 errors in three runs to "deletes N while its unmap
+  is pending". Fix: `../g1/patches/featurerenderer-unmap-before-discard.patch`
+  (42 in the series) unmaps before the discard; 2–3 errors in every run
+  before, none after. It fired in every run but looked intermittent:
+  the engine calls `glGetError` itself and clears the flag, so
+  `WindowApp`'s count saw it now and then. Hence the warm-up run's
+  `MACTAK_GL_DEBUG=1` check: ANGLE reports every error to the callback.
+- **#76 — on a desktop build every ray cast is a GPU round trip.**
+  `InputBridge` casts a ray for each wheel notch and ⌥-drag event (the
+  zoom, tilt and turn focus). With terrain, `GLGlobe::intersectWithTerrainImpl`
+  answers by drawing terrain tile IDs and reading them back
+  (`glPickTerrainTile`), and ANGLE waits for all queued GPU work
+  (`-[MTLCommandBuffer waitUntilCompleted]` in a native profile) in the
+  middle of a frame. The engine picks by `ConfigOptions`
+  `glmapview.surface-rendering-v2`: 1 on desktop, 0 on Android, where it
+  intersects the terrain meshes on the CPU. Our `EngineLibrary` now sets
+  0, as ATAK runs. Dropped-frame runs went from about 40% to about 10%;
+  the tour ends at the same camera and the rays hit at the same heights.
+- **#77 — open: the window server misses a refresh.** In about one run
+  in 10–20, one present interval is 26–33 ms. On that frame the render
+  thread does about 0.8 ms of CPU and 0.25 ms of GPU work and waits about
+  28 ms inside `render()` for `CAMetalLayer`'s next drawable; the present
+  takes 0.01 ms. A Metal System Trace of one (Xcode's `xctrace`,
+  `--attach` during the tour) shows the GPU nearly idle (our work 1.5–1.9
+  ms per refresh, the window server's 0.1–0.4 ms) and the display on
+  time. The window server misses one vsync while it starts compositing a
+  surface of its own (2560×1280, RGBA16F, owned by WindowServer, never
+  touched by our process) for exactly one second; our window cannot go
+  direct to the display ("display rejected"), so every frame passes
+  through that composite. Ruled out, each by A/B runs: our CPU and GPU
+  work, the AppKit injection (a replay of the same gestures without
+  AppKit events dropped 3 in 30), the title bar's glass (borderless 2 in
+  20, titled 1 in 20), and the size of the per-frame event queue (a 4 ms
+  pump budget changed nothing). What the window server's surface is, and
+  whether anything we do starts it, is open.

@@ -1,0 +1,17 @@
+--- a/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryFeatureDataStoreRenderer3.cpp
++++ b/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryFeatureDataStoreRenderer3.cpp
+@@ -530,6 +530,14 @@
+         Lock bl(discardBuffers.mutex);
+         auto renderCtx = &view.getRenderContext();
+         if(!discardBuffers.value[renderCtx].empty()) {
++            // macTAK (G2 exit run): unmap before deleting. A batch built on
++            // the worker reaches the render thread mapped, its unmap queued
++            // for drawImpl; when a second query result replaces it first,
++            // its buffers are discarded with the unmap still queued, and
++            // drawImpl then unmapped deleted names: GL_INVALID_OPERATION
++            // ("Buffer is not mapped" on ANGLE), and on GL ES the bind
++            // recreated each name as a buffer nothing deletes.
++            unmapMappedBuffers();
+             glDeleteBuffers((GLsizei)discardBuffers.value[renderCtx].size(), discardBuffers.value[renderCtx].data());
+             discardBuffers.value[renderCtx].clear();
+         }

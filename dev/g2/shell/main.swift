@@ -57,6 +57,8 @@ struct ShellOptions {
     var resizeTo: (Int, Int)?
     var frameLog: String?
     var gestures = false
+    var tour = false
+    var elevations: [String] = []
 }
 
 let USAGE = """
@@ -64,7 +66,8 @@ usage: \(SHELL) --classpath CP --lib PATH [--lib PATH ...] --egl PATH --gles PAT
                    [--prop JVM_OPTION ...] [--size WxH] [--frames N] [--settle MS]
                    [--linger MS | --wait] [--out FILE.png] [--layer FILE ...]
                    [--basemap FILE ...] [--layer-db DIR] [--res M] [--at LAT,LON]
-                   [--live MS [--resize-to WxH | --gestures]] [--frame-log FILE.csv]
+                   [--elevation PATH ...]
+                   [--live MS [--resize-to WxH | --gestures | --tour]] [--frame-log FILE.csv]
   --classpath CP  the JVM classpath (built by dev/g2/shell/run.sh; the JVM
                   starts with -Djava.class.path=CP)
   --lib PATH      native library to System.load, in order (libtakengine,
@@ -80,7 +83,8 @@ usage: \(SHELL) --classpath CP --lib PATH [--lib PATH ...] --egl PATH --gles PAT
   --wait          no auto-close; close the window yourself
   --out FILE      readback artifact (.png via ImageIO, else binary PPM)
   --layer FILE    vector layer (GeoJSON/GPKG/KML/SHP; repeatable)
-  --basemap FILE  raster basemap (MBTiles; repeatable)
+  --basemap FILE  raster basemap (MBTiles or a GDAL raster such as GeoTIFF; repeatable)
+  --elevation P   elevation: a GeoTIFF DEM file or a DTED directory (repeatable)
   --layer-db DIR  feature store dir (default: temp)
   --res M         camera resolution, metres/pixel (default: fit content bounds)
   --at LAT,LON    camera centre (default: content bounds centre)
@@ -93,6 +97,9 @@ usage: \(SHELL) --classpath CP --lib PATH [--lib PATH ...] --egl PATH --gles PAT
                   into the window (drag, scroll, wheel, option-drag,
                   double-click) instead of the automatic pan; the live gate
                   checks each reached the camera (M3.4)
+  --tour          during --live, the G2 exit run's 10 s gesture tour instead:
+                  pans, wheel zooms in and out, tilt and turn with option-drag,
+                  a trackpad scroll and a double-click (needs --live >= 10500)
 """
 
 func parseSize(_ s: String, _ what: String) -> (Int, Int) {
@@ -143,6 +150,8 @@ while i < argv.count {
     case "--resize-to": o.resizeTo = parseSize(optionValue(), "resize-to")
     case "--frame-log": o.frameLog = optionValue()
     case "--gestures": o.gestures = true
+    case "--tour": o.tour = true
+    case "--elevation": o.elevations.append(optionValue())
     case "--at":
         let at = optionValue()
         let ll = at.split(separator: ",", maxSplits: 1).map(String.init)
@@ -162,6 +171,12 @@ guard o.settleMs >= 0, o.lingerMs >= 0 else { fputs("\(SHELL): --settle/--linger
 guard o.liveMs >= 0 else { fputs("\(SHELL): --live must be >= 0\n", stderr); exit(2) }
 guard o.resizeTo == nil || o.liveMs > 0 else { fputs("\(SHELL): --resize-to needs --live\n", stderr); exit(2) }
 guard !o.gestures || o.liveMs > 0 else { fputs("\(SHELL): --gestures needs --live\n", stderr); exit(2) }
+guard !o.tour || o.liveMs >= Int64(GestureScript.tourSeconds * 1000) + 500 else {
+    fputs("\(SHELL): --tour needs --live >= \(Int(GestureScript.tourSeconds * 1000) + 500)\n", stderr); exit(2)
+}
+guard !(o.tour && (o.gestures || o.resizeTo != nil)) else {
+    fputs("\(SHELL): --tour excludes --gestures and --resize-to\n", stderr); exit(2)
+}
 // the scripted phase runs inside the linger: keep the window up past it
 if o.liveMs > 0 { o.lingerMs = max(o.lingerMs, o.liveMs + 2000) }
 
@@ -195,8 +210,8 @@ let JNF = env.pointee!.pointee
 // ---- JNI upcalls (Swift → WindowApp statics) -----------------------------
 //
 // The Args forms (CallStatic...MethodA) are used rather than the varargs
-// ones: start() has 15 mixed-width parameters, and an explicit jvalue array
-// does not depend on how Swift lays out a 15-deep varargs call.
+// ones: start() has 22 mixed-width parameters, and an explicit jvalue array
+// does not depend on how Swift lays out a 22-deep varargs call.
 
 func jniExceptionPending(_ during: String) -> Bool {
     if JNF.ExceptionCheck!(env) != 0 {
@@ -261,10 +276,10 @@ func jniCallVoid(_ mid: jmethodID, _ args: [jvalue] = []) {
 //       String[] layers, String[] basemaps, String layerDb, String out,
 //       double res, double atLat, double atLon, int frames, long settleMs,
 //       double dpi, long liveMs, int expectResizes, String frameLog,
-//       boolean scriptedPan, int gestureKinds)
+//       boolean scriptedPan, int gestureKinds, String[] elevations)
 let SIG_START = "(JII[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
     + "[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;DDDIJ"
-    + "DJILjava/lang/String;ZI)V"
+    + "DJILjava/lang/String;ZI[Ljava/lang/String;)V"
 
 guard let midStart = jniStaticMethod(gWindowApp, "start", SIG_START),
       let midPoll = jniStaticMethod(gWindowApp, "pollStatus", "()I"),
@@ -418,15 +433,23 @@ final class MetalView: NSView {
 final class GestureScript {
     static let kinds: Int32 = Gesture.drag.bit | Gesture.scroll.bit | Gesture.wheel.bit
         | Gesture.optionDrag.bit | Gesture.doubleClick.bit
+    /// Length of the exit run's tour (--tour); the live phase must outlast it.
+    static let tourSeconds = 10.0
     private var steps: [(at: TimeInterval, run: () -> Void)] = []
     private let start = Date()
     private let window: NSWindow
     private let view: MetalView
 
-    init(window: NSWindow, view: MetalView) {
+    init(window: NSWindow, view: MetalView, tour: Bool = false) {
         self.window = window
         self.view = view
         let c = NSPoint(x: view.bounds.midX, y: view.bounds.midY)   // window coordinates: the view fills it
+        if tour { planTour(c) } else { planGestures(c) }
+        steps.sort { $0.at < $1.at }
+    }
+
+    /// M3.4's script: one of each gesture kind, about 6 s.
+    private func planGestures(_ c: NSPoint) {
         drag(from: c, by: NSPoint(x: 160, y: 0), at: 1.0, flags: [])            // pan east
         for n in 0..<30 { steps.append((2.0 + Double(n) / 60, { self.scroll(c, dx: 0, dy: -6, units: .pixel) })) }
         for n in 0..<3 { steps.append((3.0 + Double(n) / 10, { self.scroll(NSPoint(x: c.x + 60, y: c.y + 40), dx: 0, dy: 1, units: .line) })) }
@@ -436,7 +459,28 @@ final class GestureScript {
         steps.append((5.62, { self.mouse(.leftMouseUp, c, clicks: 1) }))
         steps.append((5.70, { self.mouse(.leftMouseDown, c, clicks: 2) }))
         steps.append((5.72, { self.mouse(.leftMouseUp, c, clicks: 2) }))
-        steps.sort { $0.at < $1.at }
+    }
+
+    /// The G2 exit run's tour (dev/g2/NOTES.md "The 60 fps gate"): 10 s of
+    /// continuous pan, zoom, tilt and turn over the full stack. The returns
+    /// (zoom out, turn back, tilt back) are partial, so the gesture gate
+    /// still sees every kind move the camera.
+    private func planTour(_ c: NSPoint) {
+        let off = NSPoint(x: c.x + 80, y: c.y - 50)
+        drag(from: NSPoint(x: c.x - 120, y: c.y), by: NSPoint(x: 240, y: 0), at: 0.3, flags: [], steps: 60)   // pan east, 1 s
+        for n in 0..<4 { steps.append((1.5 + Double(n) / 8, { self.scroll(off, dx: 0, dy: 1, units: .line) })) }   // zoom in
+        drag(from: c, by: NSPoint(x: -160, y: 120), at: 2.2, flags: [], steps: 45)                             // pan north-west
+        drag(from: c, by: NSPoint(x: 0, y: 140), at: 3.2, flags: .option, steps: 45)                           // tilt 35 deg
+        drag(from: c, by: NSPoint(x: 200, y: 0), at: 4.2, flags: .option, steps: 60)                           // turn 50 deg
+        for n in 0..<30 { steps.append((5.4 + Double(n) / 30, { self.scroll(c, dx: 2, dy: 2, units: .pixel) })) }   // trackpad pan
+        for n in 0..<3 { steps.append((6.6 + Double(n) / 8, { self.scroll(off, dx: 0, dy: -1, units: .line) })) }  // zoom out
+        drag(from: c, by: NSPoint(x: -100, y: 0), at: 7.2, flags: .option, steps: 45)                          // turn back 25 deg
+        drag(from: c, by: NSPoint(x: 0, y: -60), at: 8.1, flags: .option, steps: 30)                           // tilt back 15 deg
+        steps.append((9.2, { self.mouse(.leftMouseDown, c, clicks: 1) }))
+        steps.append((9.22, { self.mouse(.leftMouseUp, c, clicks: 1) }))
+        steps.append((9.30, { self.mouse(.leftMouseDown, c, clicks: 2) }))
+        steps.append((9.32, { self.mouse(.leftMouseUp, c, clicks: 2) }))                                       // zoom in 2x
+        drag(from: c, by: NSPoint(x: -120, y: -60), at: 9.4, flags: [], steps: 30)                             // a last pan
     }
 
     /// Run every step that is due; true once the script is done.
@@ -449,8 +493,7 @@ final class GestureScript {
         return steps.isEmpty
     }
 
-    private func drag(from p: NSPoint, by d: NSPoint, at t: TimeInterval, flags: NSEvent.ModifierFlags) {
-        let n = 30
+    private func drag(from p: NSPoint, by d: NSPoint, at t: TimeInterval, flags: NSEvent.ModifierFlags, steps n: Int = 30) {
         steps.append((t, { self.mouse(.leftMouseDown, p, flags: flags) }))
         for i in 1...n {
             let f = CGFloat(i) / CGFloat(n)
@@ -513,10 +556,10 @@ final class Shell: NSObject, NSApplicationDelegate {
         }
         if st == 1 && !frameDoneLogged {                       // PHASE_FRAME_DONE
             frameDoneLogged = true
-            if opt.gestures, let v = view {
-                let script = GestureScript(window: window, view: v)
+            if opt.gestures || opt.tour, let v = view {
+                let script = GestureScript(window: window, view: v, tour: opt.tour)
                 gestureScript = script
-                print("\(SHELL): live script: posting gestures into the window")
+                print("\(SHELL): live script: posting \(opt.tour ? "the exit-run tour" : "gestures") into the window")
                 let t = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] tm in
                     if script.tick() { tm.invalidate(); self?.gestureScript = nil; print("\(SHELL): gestures posted") }
                 }
@@ -598,6 +641,14 @@ final class Shell: NSObject, NSApplicationDelegate {
         jniCallVoid(mid, a)
     }
 
+    /// G2 exit run: the process's peak resident memory (JVM, engine, ANGLE
+    /// and AppKit together). macOS reports ru_maxrss in bytes.
+    func reportPeakMemory() {
+        var ru = rusage()
+        guard getrusage(RUSAGE_SELF, &ru) == 0 else { return }
+        print(String(format: "\(SHELL): peak resident memory %.0f MB", Double(ru.ru_maxrss) / 1_048_576))
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true                              // user-close flows into the path above
     }
@@ -607,6 +658,7 @@ final class Shell: NSObject, NSApplicationDelegate {
     /// terminate:] posts this and then calls exit(0) itself: app.run() never
     /// returns, so code after it never ran and a failed render exited 0.
     func applicationWillTerminate(_ notification: Notification) {
+        reportPeakMemory()
         let code = Int32(jniCallInt(midExit))
         print("\(SHELL): exiting with WindowApp's code \(code)")
         exit(code)
@@ -640,7 +692,7 @@ let (pxW, pxH) = view.pixelSize
 let startDpi = 72.0 * Double(view.backingScale)
 print("\(SHELL): CAMetalLayer @ 0x\(String(layerPtr, radix: 16)) window=\(o.w)x\(o.h) pt drawable=\(pxW)x\(pxH) px contentsScale=\(view.backingScale) dpi=\(startDpi)")
 
-var startArgs = [jvalue](repeating: jvalue(), count: 21)
+var startArgs = [jvalue](repeating: jvalue(), count: 22)
 startArgs[0].j = jlong(bitPattern: layerPtr)
 startArgs[1].i = jint(pxW)
 startArgs[2].i = jint(pxH)
@@ -660,12 +712,14 @@ startArgs[15].d = jdouble(startDpi)
 startArgs[16].j = jlong(o.liveMs)
 startArgs[17].i = jint(o.resizeTo == nil ? 0 : 1)
 startArgs[18].l = o.frameLog.flatMap { jniNewString($0) }
-startArgs[19].z = jboolean(o.gestures ? JNI_FALSE : JNI_TRUE)        // the automatic pan
-startArgs[20].i = jint(o.gestures ? GestureScript.kinds : 0)
+let scriptedInput = o.gestures || o.tour
+startArgs[19].z = jboolean(scriptedInput ? JNI_FALSE : JNI_TRUE)      // the automatic pan
+startArgs[20].i = jint(scriptedInput ? GestureScript.kinds : 0)
+startArgs[21].l = jniNewStringArray(o.elevations)
 // 3..7 must exist (libs, egl, gles, layers, basemaps); 8 (layerDb) and
 // 9 (out) are nullable by contract — WindowApp substitutes a temp dir and
 // skips the frame write respectively.
-for (n, a) in startArgs.enumerated() where n >= 3 && n <= 7 && a.l == nil {
+for (n, a) in startArgs.enumerated() where ((n >= 3 && n <= 7) || n == 21) && a.l == nil {
     shellFail("jniNewString failed for start() argument \(n)")
 }
 JNF.CallStaticVoidMethodA!(env, gWindowApp, midStart, &startArgs)

@@ -47,7 +47,7 @@ calls it yet. **To build** — app-layer code with no macOS counterpart yet.
 
 | ATAK feature | Where it lives upstream | macTAK status |
 |---|---|---|
-| Map display: imagery and vector overlays | Engine | **Working** in a window: GeoJSON, GPKG, KML and SHP open through the native OGR provider; MBTiles renders under them (`make test-render`, `make test-shell`). GeoTIFF is partway (G2.4 b.1). The frame is static: pan, zoom and gestures are M3.3–M3.4 |
+| Map display: imagery and vector overlays | Engine | **Working** in a window: GeoJSON, GPKG, KML and SHP open through the native OGR provider; MBTiles and GeoTIFF imagery render under them, and GeoTIFF and DTED elevation draw as terrain (`make test-render`, `make test-shell`). The live window pans, zooms, tilts and turns with Apple Maps–style gestures at 60 fps over real imagery and terrain (`make exit-run`; G2 stays open on one dropped frame in 10–20 runs, in the window server) |
 | CoT messaging, presence, contacts, tracks | commo | **Working**: TCP and SSL to FreeTAKServer and OpenTAKServer, TLS hardened (G1 security audit), received tracks persisted (`make test-roundtrip`, `make test-tls`) |
 | Connection data packages (server and certificates) | App | **Working** in the headless client (`atak-headless --datapackage`) |
 | Elevation and terrain: DTED, slope | Engine | **In engine**: `DtedElevationSource`, `ElevationManager`, `ElMgrTerrainRenderService`, `GLTerrainSlopeAngleLayer` |
