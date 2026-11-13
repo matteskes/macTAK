@@ -27,7 +27,9 @@ CLI="$HERE/../atak-headless"
 WORK="$(mktemp -d)"
 WITNESS_PID=""
 cleanup() {
-  [[ -n "$WITNESS_PID" ]] && kill "$WITNESS_PID" 2>/dev/null || true
+  if [[ -n "$WITNESS_PID" ]]; then
+    kill "$WITNESS_PID" 2>/dev/null || true
+  fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
