@@ -10,8 +10,11 @@
 #      flat points (Stow Lake, and a street on Twin Peaks' east slope),
 #      through RenderSmoke --expect-height ...,msl; the same window without
 #      the NAVD88 stamp must fail it (G2 trap #74)
-#   3. a warm-up run, discarded: the first run after a rebuild pays for
-#      Metal's pipeline compiles (trap #66)
+#   3. a warm-up run: the first run after a rebuild pays for Metal's
+#      pipeline compiles (trap #66). Its timings are discarded, but it runs
+#      with GL debug output (MACTAK_GL_DEBUG=1) and fails on any GL error
+#      ANGLE reports: the live gate's glGetError count misses most of them,
+#      because the engine reads and clears the error flag itself (trap #75)
 #   4. the measured run: the shell at its default size on the Retina
 #      display, the NAIP basemap, the landmarks and the 3DEP terrain, the
 #      10 s tour (shell --tour: pan, zoom, tilt, turn) inside an 11 s live
@@ -76,11 +79,17 @@ grep -q 'FAIL: a height at a known point is wrong' "$WORK/datum-unstamped.log" \
 SHELL_ARGS=(--basemap "$NAIP" --layer "$LANDMARKS" --elevation "$DEM" "${CAMERA[@]}"
             --live "$LIVE_MS" --tour)
 
-log "3. warm-up run (discarded)"
+log "3. warm-up run, with GL debug output (timings discarded)"
 set +e
-bash "$ROOT/dev/g2/shell/run.sh" "${SHELL_ARGS[@]}" > "$WORK/warm-up.log" 2>&1
+MACTAK_GL_DEBUG=1 bash "$ROOT/dev/g2/shell/run.sh" "${SHELL_ARGS[@]}" > "$WORK/warm-up.log" 2>&1
 log "   exit $?; $(sed -nE 's/^window-app: live: ([0-9]+ frames;.*dropped[^;]*);.*/\1/p' "$WORK/warm-up.log")"
 set -e
+# GL_DEBUG_TYPE_ERROR_KHR (0x824c): every GL error, named by ANGLE
+if grep -q 'GL_KHR_debug\] .* type=0x824c ' "$WORK/warm-up.log"; then
+  grep 'GL_KHR_debug\] .* type=0x824c ' "$WORK/warm-up.log" | sort | uniq -c | sed 's/^/    /' >&2
+  fail "ANGLE reported GL errors in the warm-up run"
+fi
+log "   GL debug output: no errors"
 
 log "4. measured run"
 RUN_LOG="$BUILD/exit-run.log"
