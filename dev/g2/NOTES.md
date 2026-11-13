@@ -214,7 +214,7 @@ by path, gets `@loader_path` in its rpath, and `native-dist/` receives
   ships upstream ANGLE (BSD-3) with the Metal backend; it is universal,
   hardened-runtime-signed, and dlopens its own `libGLESv2` from its directory.
   Provenance (app, Chrome/Electron version, sha256) is recorded per stage.
-  The port builds ANGLE from source (gn/ninja, pinned commit) at G5 — a
+  The port builds ANGLE from source (gn/ninja, pinned commit) at G5 ([issue #139](https://github.com/matteskes/macTAK/issues/139)) — a
   `make angle` consumer never notices. `MACTAK_ANGLE_SRC=dir` already takes
   a self-built pair.
 - **EGL lives in the JNI glue, not the engine.** Upstream's engine C++ never
@@ -239,7 +239,7 @@ by path, gets `@loader_path` in its rpath, and `native-dist/` receives
   `android.*` runtime types ahead of it on the classpath keeps the jar
   byte-identical and makes the macOS-host delta auditable (one directory).
   The proper fix is an engine built with a `macos` host source set instead
-  of `jre`; tracked as a follow-up.
+  of `jre`; tracked as a follow-up ([issue #138](https://github.com/matteskes/macTAK/issues/138)).
 
 ## Traps found on the way (do not rediscover these)
 
@@ -366,7 +366,7 @@ is ordered roughly by when it bites.
   `RenderSmoke.countNonClear`'s r,g,b < 8 black threshold vs. a future
   dark basemap (the graticule fixture cannot trip it) — switch to a
   sentinel-vs-cleared comparison or a luminance histogram when the first
-  dark imagery lands. (`--settle`'s 3000 ms wall-clock margin did race the
+  dark imagery lands ([issue #134](https://github.com/matteskes/macTAK/issues/134)). (`--settle`'s 3000 ms wall-clock margin did race the
   async layer query once hosted runners slowed — 2026-11-05: the layer smoke
   failed with content=0 on a ~520 ms/frame rerun and on a milliseconds-per-frame
   PR run alike; the smoke now polls the readback and keeps rendering until
@@ -385,11 +385,12 @@ is ordered roughly by when it bites.
   offscreen harness that plan assumed, and hosted `macos-26` already runs
   it on ANGLE/Metal (Apple Paravirtual device, ~170 ms/frame vs ~3–5 ms on
   an M-series — budget frame counts accordingly). CI uploads the frames as
-  artifacts today; a pixel-level golden diff is still open. A self-hosted
+  artifacts today; a pixel-level golden diff is still open ([issue #137](https://github.com/matteskes/macTAK/issues/137)). A self-hosted
   runner is only needed for speed, not for GL.
-- Engine jar for a `macos` host source set (retire the shadow classes).
+- Engine jar for a `macos` host source set (retire the shadow classes;
+  [issue #138](https://github.com/matteskes/macTAK/issues/138)).
 - Build ANGLE from source at a pinned commit (retire the Electron source;
-  roadmap has this at G5).
+  roadmap has this at G5; [issue #139](https://github.com/matteskes/macTAK/issues/139)).
 
 ## G2.2 — first map content: a GeoJSON FeatureLayer through the engine on ANGLE
 
@@ -1171,7 +1172,7 @@ fixed on its own branch, in this order.
 | 4 | Low | `Uri.getQueryParameter` leaves `+` as `+`; Android decodes it to a space | **Fixed** (branch `g2/uri-query-plus`), guarded by `render/test/uri.sh` |
 | 5 | Low | `shell/run.sh` leaks its scratch `MACTAK_HOME` every run: the `EXIT` trap never fires after `exec` | **Fixed** (branch `g2/shell-run-scratch-cleanup`): no `exec`, guarded by `dev/check-trap-exec.sh` |
 | 6 | Low | A value option given last crashes the Swift shell (array index out of range); `RenderSmoke` dies with a stack trace instead of usage | **Fixed** (branch `g2/cli-missing-value`), guarded by `shell/test/args.sh` and `render/test/args.sh` |
-| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; ~~`fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents)~~ (fixed on branch `chore/rebase-guards`, with `lipo` twice more, guarded by `dev/check-pipefail-grep.sh`); the GLES shim does not bounds-check array offsets | `WindowApp.teardown`: **fixed in M3.3**; the rest open |
+| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; ~~`fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents)~~ (fixed on branch `chore/rebase-guards`, with `lipo` twice more, guarded by `dev/check-pipefail-grep.sh`); the GLES shim does not bounds-check array offsets | `WindowApp.teardown`: **fixed in M3.3**; the rest open: [issue #131](https://github.com/matteskes/macTAK/issues/131) (`BitmapRegionDecoder`), [issue #132](https://github.com/matteskes/macTAK/issues/132) (`Canvas`), [issue #133](https://github.com/matteskes/macTAK/issues/133) (GLES shim) |
 | 8 | High | The Swift shell exited 0 whatever the render did: AppKit's `terminate` ends the process itself, so the code that read `WindowApp`'s exit code never ran and `make test-shell` could not fail | **Fixed** (branch `g2/shell-exit-code`): `applicationWillTerminate` exits with the code, guarded by `shell/test/exit-code.sh` (manual gate) |
 
 Settled on the bench (2026-11-10): the reading left open whether the
@@ -1863,7 +1864,8 @@ world file.
 ### Open items
 
 - **5.5's `NativeImageryRasterLayer2`** (a mosaic over the datasets, the
-  non-deprecated path) drew nothing for the same GeoTIFF; not chased.
+  non-deprecated path) drew nothing for the same GeoTIFF; not chased
+  ([issue #135](https://github.com/matteskes/macTAK/issues/135)).
   `DatasetRasterLayer2` is marked deprecated for removal at 5.5 but is
   present at the pin and draws.
 - **The exit run's real-data clip:** chosen (NAIP 2024 and 3DEP 1/3″, 4 km
@@ -1872,10 +1874,12 @@ world file.
   (section "The exit run").
 - **G2.5 #7's rest** (`BitmapRegionDecoder`'s stream, `Canvas` clip, GLES
   shim bounds) is not on the GDAL path (it reads through GDAL, not
-  `BitmapRegionDecoder`/`Canvas`), so b.1 did not reach it; still open.
+  `BitmapRegionDecoder`/`Canvas`), so b.1 did not reach it; still open:
+  [issue #131](https://github.com/matteskes/macTAK/issues/131), [issue #132](https://github.com/matteskes/macTAK/issues/132) and [issue #133](https://github.com/matteskes/macTAK/issues/133).
 - **Hand checks (M3.4):** on 2026-11-12 the owner checked, on real hardware
   with a mouse, drag, wheel (direction fine), ⌥-drag and double-click: all
-  as expected. Pinch, rotate and two-finger scroll wait for a trackpad.
+  as expected. Pinch, rotate and two-finger scroll wait for a trackpad
+  ([issue #136](https://github.com/matteskes/macTAK/issues/136)).
 
 ## G2.6 — elevation, drawn as terrain (2026-11-12, branch `g2/elevation`)
 
@@ -2023,7 +2027,8 @@ with the gate unmet (G2 stays open); the remaining cause is trap #77.
 The imagery without terrain is a separate, larger cost: 25–30 slow
 frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
 (first-use JNI and JIT costs and texture uploads that wait on the GPU in
-`glTexImage2D`). Not part of the gate (the full stack is); a follow-up.
+`glTexImage2D`). Not part of the gate (the full stack is); a follow-up:
+[issue #130](https://github.com/matteskes/macTAK/issues/130).
 
 ### Traps found on the way (#74–#77)
 
