@@ -1,11 +1,15 @@
-// main.swift — macTAK G2 M3.2–M3.3: the app shell (host model A, NOTES §M3).
+// main.swift — mactak-shell, the G2 test harness (host model A, dev/g2/NOTES.md
+// §M3): `make test-shell` and `make exit-run` drive it. G3.0 moved it into the
+// app package on MacTAKCore (JavaBoot, EngineBridge, MetalView), with the
+// same flags, log lines and exit codes; what stays here is the option
+// parsing, the scripted input and the gates' window life cycle.
 //
 // This process owns both lifecycles. AppKit's main thread creates the
 // NSWindow + CAMetalLayer, starts the JVM in-process through libjli
-// (jni_boot.c), and upcalls WindowApp.start across JNI. The JVM spawns its
+// (CJavaBoot), and calls EngineBridge.start across JNI. The JVM spawns its
 // own render thread (WindowApp.render) which owns the EGL context
 // end-to-end; the main thread never touches EGL. The main thread keeps a
-// poll timer: WindowApp.pollStatus says where the render thread is
+// poll timer: EngineBridge.pollStatus says where the render thread is
 // (RENDERING → FRAME_DONE → EXITED); on FRAME_DONE the window lingers for
 // --linger ms so a human can eyeball the frame, live (M3.3: the render
 // thread keeps presenting; the window resizes, follows the display's backing
@@ -21,8 +25,9 @@
 // bootstrap failures (libjli/JVM/class resolution, no Metal device).
 
 import AppKit
-import Metal
 import Darwin
+import MacTAKCore
+import Metal
 
 let SHELL = "mactak-shell"
 // Line-buffer stdout: the gate runs redirect it to a file, and Swift's print
@@ -180,121 +185,9 @@ guard !(o.tour && (o.gestures || o.resizeTo != nil)) else {
 // the scripted phase runs inside the linger: keep the window up past it
 if o.liveMs > 0 { o.lingerMs = max(o.lingerMs, o.liveMs + 2000) }
 
-// ---- JVM bootstrap (jni_boot.c) -----------------------------------------
+// ---- JVM bootstrap and the engine facade (MacTAKCore) ---------------------
 
-var errBuf = [CChar](repeating: 0, count: 1024)
-
-guard let libjli = mactak_find_libjli(&errBuf, errBuf.count) else {
-    shellFail(String(cString: errBuf))
-}
-print("\(SHELL): libjli \(String(cString: libjli))")
-
-var jvmOptions = ["-Djava.class.path=\(cp)"] + o.props
-var cOptions: [UnsafeMutablePointer<CChar>?] = jvmOptions.map { strdup($0) }
-let createRc = cOptions.withUnsafeMutableBufferPointer { p in
-    mactak_create_jvm(p.baseAddress, Int32(p.count), &errBuf, errBuf.count)
-}
-cOptions.forEach { if let p = $0 { free(p) } }
-if createRc != 0 {
-    shellFail("creating the JVM failed (\(createRc)): \(String(cString: errBuf))")
-}
-
-let envNullable = mactak_env()
-guard envNullable != nil else { shellFail("no JNIEnv after JNI_CreateJavaVM") }
-let env = envNullable!
-// env is the JNIEnv* — the pointer every JNI function takes as its first
-// argument; its target is the function table (C: (*env)->FindClass(env, ...)).
-// Two derefs reach the table struct; `env` itself is passed along each call.
-let JNF = env.pointee!.pointee
-
-// ---- JNI upcalls (Swift → WindowApp statics) -----------------------------
-//
-// The Args forms (CallStatic...MethodA) are used rather than the varargs
-// ones: start() has 22 mixed-width parameters, and an explicit jvalue array
-// does not depend on how Swift lays out a 22-deep varargs call.
-
-func jniExceptionPending(_ during: String) -> Bool {
-    if JNF.ExceptionCheck!(env) != 0 {
-        JNF.ExceptionDescribe!(env)
-        JNF.ExceptionClear!(env)
-        fputs("\(SHELL): JNI exception while \(during)\n", stderr)
-        return true
-    }
-    return false
-}
-
-func jniFindClass(_ name: String) -> jclass? {
-    let cName = name.cString(using: .utf8)!
-    let cls = JNF.FindClass!(env, cName)
-    return jniExceptionPending("finding class \(name)") ? nil : cls
-}
-
-func jniStaticMethod(_ cls: jclass, _ name: String, _ sig: String) -> jmethodID? {
-    let cName = name.cString(using: .utf8)!
-    let cSig = sig.cString(using: .utf8)!
-    let mid = JNF.GetStaticMethodID!(env, cls, cName, cSig)
-    return jniExceptionPending("resolving \(name)\(sig)") ? nil : mid
-}
-
-func jniNewString(_ s: String) -> jstring? {
-    let cs = s.cString(using: .utf8)!
-    let js = JNF.NewStringUTF!(env, cs)
-    return jniExceptionPending("creating string") ? nil : js
-}
-
-func jniNewStringArray(_ items: [String]) -> jobjectArray? {
-    guard let cls = jniFindClass("java/lang/String") else { return nil }
-    let arr = JNF.NewObjectArray!(env, jint(items.count), cls, nil)
-    if jniExceptionPending("creating array") { return nil }
-    for (n, s) in items.enumerated() {
-        guard let js = jniNewString(s) else { return nil }
-        JNF.SetObjectArrayElement!(env, arr, jint(n), js)
-        if jniExceptionPending("filling array") { return nil }
-    }
-    return arr
-}
-
-let windowAppNullable = jniFindClass("mactak/render/WindowApp")
-guard windowAppNullable != nil else { exit(2) }
-let gWindowApp = windowAppNullable!
-
-func jniCallInt(_ mid: jmethodID) -> jint {
-    let v = JNF.CallStaticIntMethodA!(env, gWindowApp, mid, nil)
-    if jniExceptionPending("calling") { exit(2) }
-    return v
-}
-
-func jniCallVoid(_ mid: jmethodID, _ args: [jvalue] = []) {
-    var a = args
-    a.withUnsafeMutableBufferPointer { p in
-        JNF.CallStaticVoidMethodA!(env, gWindowApp, mid, p.baseAddress)
-    }
-    if jniExceptionPending("calling") { exit(2) }
-}
-
-// start(long layerPtr, int w, int h, String[] libs, String egl, String gles,
-//       String[] layers, String[] basemaps, String layerDb, String out,
-//       double res, double atLat, double atLon, int frames, long settleMs,
-//       double dpi, long liveMs, int expectResizes, String frameLog,
-//       boolean scriptedPan, int gestureKinds, String[] elevations)
-let SIG_START = "(JII[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-    + "[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;DDDIJ"
-    + "DJILjava/lang/String;ZI[Ljava/lang/String;)V"
-
-guard let midStart = jniStaticMethod(gWindowApp, "start", SIG_START),
-      let midPoll = jniStaticMethod(gWindowApp, "pollStatus", "()I"),
-      let midExit = jniStaticMethod(gWindowApp, "exitCode", "()I"),
-      let midStop = jniStaticMethod(gWindowApp, "stop", "()V"),
-      let midResize = jniStaticMethod(gWindowApp, "resize", "(IID)V"),
-      let midVisible = jniStaticMethod(gWindowApp, "setVisible", "(Z)V"),
-      let midInput = jniStaticMethod(gWindowApp, "input", "(IFFFFD)V")
-else { exit(2) }
-
-/// InputBridge's gesture kinds (mactak.render.InputBridge), sent across JNI.
-enum Gesture: Int32 {
-    case drag = 0, scroll, wheel, magnify, rotate, optionDrag, doubleClick
-    var bit: Int32 { 1 << rawValue }
-}
+func bootFailed(_ e: Error) -> Never { shellFail("\(e)") }
 
 // No Metal device (headless Mac, VM without a GPU): the CAMetalLayer below
 // would get no device and eglCreateWindowSurface would misreport that as an
@@ -303,125 +196,15 @@ guard MTLCreateSystemDefaultDevice() != nil else {
     shellFail("no Metal device (MTLCreateSystemDefaultDevice returned nil)")
 }
 
+let jvm: JavaBoot.Started
+do { jvm = try JavaBoot.start(classpath: cp, options: o.props) } catch { bootFailed(error) }
+print("\(SHELL): libjli \(jvm.libjli)")
+
+let engine: EngineBridge
+do { engine = try EngineBridge(jni: jvm.jni) } catch { bootFailed(error) }
+engine.onFailure = { msg in fputs("\(SHELL): \(msg)\n", stderr); exit(2) }
+
 // ---- The window (AppKit main thread) -------------------------------------
-
-final class MetalView: NSView {
-    let metalLayer: CAMetalLayer
-    /// Called with the new drawableSize (pixels) and dpi after every backing
-    /// change, once the render thread exists (set after WindowApp.start).
-    var onBackingChange: ((Int, Int, Double) -> Void)?
-    /// The backing last reported: compared against, not the layer's
-    /// drawableSize, which Core Animation may already have moved along with
-    /// the layer's bounds by the time setFrameSize runs (trap #58).
-    private var reported: (w: Int, h: Int, scale: CGFloat)?
-
-    override init(frame frameRect: NSRect) {
-        metalLayer = CAMetalLayer()
-        metalLayer.device = MTLCreateSystemDefaultDevice()
-        super.init(frame: frameRect)
-        self.layer = metalLayer          // set explicitly, Chromium-style: on
-        self.wantsLayer = true           // current macOS a +layerClass override
-        syncBacking()                    // is ignored for backing layers (M3.0)
-    }
-
-    required init?(coder: NSCoder) { fatalError("no nib") }
-
-    var backingScale: CGFloat {
-        window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
-    }
-
-    /// Pixels the surface needs: the view's points times the backing scale.
-    var pixelSize: (Int, Int) {
-        let s = backingScale
-        return (max(1, Int((bounds.width * s).rounded())), max(1, Int((bounds.height * s).rounded())))
-    }
-
-    /// M3.3 Retina: drawableSize = points x backing scale, contentsScale =
-    /// that scale, dpi = 72 x scale. The layer's drawableSize is the host's
-    /// truth; the render thread adopts it (WindowApp.resize → EGL recreate).
-    func syncBacking() {
-        let (w, h) = pixelSize
-        let size = CGSize(width: w, height: h)
-        let scale = backingScale
-        if let r = reported, r.w == w, r.h == h, r.scale == scale { return }
-        reported = (w, h, scale)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)   // no implicit animation of the backing
-        metalLayer.contentsScale = scale
-        metalLayer.drawableSize = size
-        CATransaction.commit()
-        print("\(SHELL): backing \(w)x\(h) px @\(scale)x\(onBackingChange == nil ? " (before start)" : "")")
-        onBackingChange?(w, h, 72.0 * Double(scale))
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        syncBacking()
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        syncBacking()
-    }
-
-    // ---- M3.4: input → WindowApp.input (InputBridge on the render thread) ----
-    //
-    // Every event goes over as surface pixels from the upper left; the
-    // gesture meaning (Apple Maps style) is InputBridge's, JVM-side.
-
-    /// Called with (kind, x, y, dx, dy, amount) once the render thread exists.
-    var onGesture: ((Gesture, Float, Float, Float, Float, Double) -> Void)?
-    private var lastDrag: (x: CGFloat, y: CGFloat)?
-
-    override var acceptsFirstResponder: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    /// The event's position in surface pixels, upper-left origin. A
-    /// synthesized scroll event has no window: its location is in screen
-    /// coordinates then.
-    private func pixels(_ e: NSEvent) -> (x: CGFloat, y: CGFloat) {
-        let inWindow = e.window != nil ? e.locationInWindow
-                                       : (window?.convertPoint(fromScreen: e.locationInWindow) ?? e.locationInWindow)
-        let p = convert(inWindow, from: nil)
-        let s = backingScale
-        return (p.x * s, (bounds.height - p.y) * s)
-    }
-
-    private func send(_ g: Gesture, _ p: (x: CGFloat, y: CGFloat), dx: CGFloat = 0, dy: CGFloat = 0, amount: Double = 0) {
-        onGesture?(g, Float(p.x), Float(p.y), Float(dx), Float(dy), amount)
-    }
-
-    override func mouseDown(with e: NSEvent) {
-        let p = pixels(e)
-        lastDrag = p
-        if e.clickCount == 2 { send(.doubleClick, p) }
-    }
-
-    override func mouseDragged(with e: NSEvent) {
-        let p = pixels(e)
-        defer { lastDrag = p }
-        guard let last = lastDrag else { return }
-        send(e.modifierFlags.contains(.option) ? .optionDrag : .drag, p, dx: p.x - last.x, dy: p.y - last.y)
-    }
-
-    override func mouseUp(with e: NSEvent) { lastDrag = nil }
-
-    /// Trackpad (precise deltas): pan, the content following the fingers.
-    /// Mouse wheel (line deltas): zoom about the pointer, positive = in.
-    override func scrollWheel(with e: NSEvent) {
-        let p = pixels(e)
-        if e.hasPreciseScrollingDeltas {
-            let s = backingScale
-            send(.scroll, p, dx: e.scrollingDeltaX * s, dy: e.scrollingDeltaY * s)
-        } else if e.scrollingDeltaY != 0 {
-            send(.wheel, p, amount: Double(e.scrollingDeltaY))
-        }
-    }
-
-    override func magnify(with e: NSEvent) { send(.magnify, pixels(e), amount: Double(e.magnification)) }
-
-    override func rotate(with e: NSEvent) { send(.rotate, pixels(e), amount: Double(e.rotation)) }
-}
 
 /// M3.4 --gestures: real input events, posted in-process into the shell's
 /// own window during the live phase (no Accessibility permission needed).
@@ -526,30 +309,26 @@ final class GestureScript {
 final class Shell: NSObject, NSApplicationDelegate {
     let window: NSWindow
     let opt: ShellOptions
-    let midPoll: jmethodID
-    let midExit: jmethodID
-    let midStop: jmethodID
+    let engine: EngineBridge
     var frameDoneLogged = false
     var lingerDeadline: Date?
     var stopRequestedByUs = false
     var stopRequestedAt: Date?
     var lastSt = -1
     var scriptedResizeAt: Date?
-    var midVisible: jmethodID?          // WindowApp.setVisible, set after start
+    var started = false                 // EngineBridge.start returned
     var view: MetalView?
     var gestureScript: GestureScript?
     var gestureTimer: Timer?
 
-    init(window: NSWindow, opt: ShellOptions, midPoll: jmethodID, midExit: jmethodID, midStop: jmethodID) {
+    init(window: NSWindow, opt: ShellOptions, engine: EngineBridge) {
         self.window = window
         self.opt = opt
-        self.midPoll = midPoll
-        self.midExit = midExit
-        self.midStop = midStop
+        self.engine = engine
     }
 
     func tick() {
-        let st = Int(jniCallInt(midPoll))
+        let st = Int(engine.pollStatus().rawValue)
         if st != lastSt {
             print("\(SHELL): poll → \(st)")
             lastSt = st
@@ -594,7 +373,7 @@ final class Shell: NSObject, NSApplicationDelegate {
             // terminating. (Asking AppKit first would wedge — see
             // applicationShouldTerminate.)
             print("\(SHELL): linger elapsed — asking the render thread to wind down")
-            jniCallVoid(midStop)
+            engine.stop()
             stopRequestedByUs = true
             stopRequestedAt = Date()
         }
@@ -603,29 +382,28 @@ final class Shell: NSObject, NSApplicationDelegate {
             // Teardown should take well under a second; a hang here means the
             // engine stalled on the render thread. Report and get out.
             fputs("\(SHELL): teardown did not finish within 30 s — exiting anyway\n", stderr)
-            exit(Int32(jniCallInt(midExit)))
+            exit(engine.exitCode())
         }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let st = Int(jniCallInt(midPoll))
-        if st == 2 { return .terminateNow }
+        if engine.pollStatus() == .exited { return .terminateNow }
         // User-initiated quit (window close / ⌘Q) while the render thread is
         // still up. Returning .terminateLater here would wedge: AppKit then
         // runs a private nested run-loop mode inside -terminate:, where this
         // delegate's timers never fire, so NSApp.reply could never happen.
         // Instead: ask the render thread to wind down and wait for EXITED
         // with a bounded run-loop pump, then terminate for real.
-        jniCallVoid(midStop)
+        engine.stop()
         if !stopRequestedByUs { stopRequestedByUs = true }
         stopRequestedAt = Date()
         let deadline = Date().addingTimeInterval(10)
-        while Int(jniCallInt(midPoll)) != 2 && Date() < deadline {
+        while engine.pollStatus() != .exited && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
         }
-        if Int(jniCallInt(midPoll)) != 2 {
+        if engine.pollStatus() != .exited {
             fputs("\(SHELL): teardown did not finish within 10 s — exiting anyway\n", stderr)
-            exit(Int32(jniCallInt(midExit)))
+            exit(engine.exitCode())
         }
         print("\(SHELL): teardown complete — terminating")
         return .terminateNow
@@ -635,10 +413,8 @@ final class Shell: NSObject, NSApplicationDelegate {
     @objc func occlusionChanged(_ note: Notification) {
         let shown = window.occlusionState.contains(.visible)
         print("\(SHELL): window \(shown ? "visible" : "occluded")")
-        guard let mid = midVisible else { return }
-        var a = [jvalue](repeating: jvalue(), count: 1)
-        a[0].z = jboolean(shown ? JNI_TRUE : JNI_FALSE)
-        jniCallVoid(mid, a)
+        guard started else { return }
+        engine.setVisible(shown)
     }
 
     /// G2 exit run: the process's peak resident memory (JVM, engine, ANGLE
@@ -659,7 +435,7 @@ final class Shell: NSObject, NSApplicationDelegate {
     /// returns, so code after it never ran and a failed render exited 0.
     func applicationWillTerminate(_ notification: Notification) {
         reportPeakMemory()
-        let code = Int32(jniCallInt(midExit))
+        let code = engine.exitCode()
         print("\(SHELL): exiting with WindowApp's code \(code)")
         exit(code)
     }
@@ -670,7 +446,7 @@ app.setActivationPolicy(.regular)         // bare binary, no bundle: claim the
 app.activate()                            // regular policy so the window is key
 
 let frame = NSRect(x: 0, y: 0, width: CGFloat(o.w), height: CGFloat(o.h))
-let view = MetalView(frame: frame)
+let view = MetalView(frame: frame, log: { print("\(SHELL): \($0)") })
 let window = NSWindow(contentRect: frame,
                       styleMask: [.titled, .closable, .miniaturizable, .resizable],
                       backing: .buffered,
@@ -682,66 +458,46 @@ window.center()
 window.makeKeyAndOrderFront(nil)
 view.syncBacking()   // the window's screen sets the real backing scale
 
-let shell = Shell(window: window, opt: o, midPoll: midPoll, midExit: midExit, midStop: midStop)
+let shell = Shell(window: window, opt: o, engine: engine)
 app.delegate = shell
 
-// The layer pointer crosses JNI as an opaque jlong; Java never dereferences
-// it (the engine's createWindowSurface does). The view keeps the layer alive.
-let layerPtr = UInt(bitPattern: unsafeBitCast(view.metalLayer, to: Int.self))
 let (pxW, pxH) = view.pixelSize
-let startDpi = 72.0 * Double(view.backingScale)
-print("\(SHELL): CAMetalLayer @ 0x\(String(layerPtr, radix: 16)) window=\(o.w)x\(o.h) pt drawable=\(pxW)x\(pxH) px contentsScale=\(view.backingScale) dpi=\(startDpi)")
+let layerPtr = UInt(bitPattern: Unmanaged.passUnretained(view.metalLayer).toOpaque())
+print("\(SHELL): CAMetalLayer @ 0x\(String(layerPtr, radix: 16)) window=\(o.w)x\(o.h) pt drawable=\(pxW)x\(pxH) px contentsScale=\(view.backingScale) dpi=\(view.dpi)")
 
-var startArgs = [jvalue](repeating: jvalue(), count: 22)
-startArgs[0].j = jlong(bitPattern: layerPtr)
-startArgs[1].i = jint(pxW)
-startArgs[2].i = jint(pxH)
-startArgs[3].l = jniNewStringArray(o.libs)
-startArgs[4].l = jniNewString(o.egl!)
-startArgs[5].l = jniNewString(o.gles!)
-startArgs[6].l = jniNewStringArray(o.layers)
-startArgs[7].l = jniNewStringArray(o.basemaps)
-startArgs[8].l = o.layerDb.flatMap { jniNewString($0) }
-startArgs[9].l = o.out.flatMap { jniNewString($0) }
-startArgs[10].d = jdouble(o.res)
-startArgs[11].d = jdouble(o.atLat)
-startArgs[12].d = jdouble(o.atLon)
-startArgs[13].i = jint(o.frames)
-startArgs[14].j = jlong(o.settleMs)
-startArgs[15].d = jdouble(startDpi)
-startArgs[16].j = jlong(o.liveMs)
-startArgs[17].i = jint(o.resizeTo == nil ? 0 : 1)
-startArgs[18].l = o.frameLog.flatMap { jniNewString($0) }
+var config = MapConfig()
+config.libs = o.libs
+config.egl = o.egl!
+config.gles = o.gles!
+config.layers = o.layers
+config.basemaps = o.basemaps
+config.elevations = o.elevations
+config.layerDb = o.layerDb
+config.out = o.out
+config.res = o.res
+config.atLat = o.atLat
+config.atLon = o.atLon
+config.frames = o.frames
+config.settleMs = o.settleMs
+config.liveMs = o.liveMs
+config.expectResizes = o.resizeTo == nil ? 0 : 1
+config.frameLog = o.frameLog
 let scriptedInput = o.gestures || o.tour
-startArgs[19].z = jboolean(scriptedInput ? JNI_FALSE : JNI_TRUE)      // the automatic pan
-startArgs[20].i = jint(scriptedInput ? GestureScript.kinds : 0)
-startArgs[21].l = jniNewStringArray(o.elevations)
-// 3..7 must exist (libs, egl, gles, layers, basemaps); 8 (layerDb) and
-// 9 (out) are nullable by contract — WindowApp substitutes a temp dir and
-// skips the frame write respectively.
-for (n, a) in startArgs.enumerated() where ((n >= 3 && n <= 7) || n == 21) && a.l == nil {
-    shellFail("jniNewString failed for start() argument \(n)")
+config.scriptedPan = !scriptedInput                       // the automatic pan
+config.gestureKinds = scriptedInput ? GestureScript.kinds : 0
+do {
+    try engine.start(layer: view.metalLayer, width: pxW, height: pxH, dpi: view.dpi, config: config)
+} catch {
+    shellFail("calling EngineBridge.start: \(error)")
 }
-JNF.CallStaticVoidMethodA!(env, gWindowApp, midStart, &startArgs)
-if jniExceptionPending("calling WindowApp.start") { exit(2) }
 
 // M3.3: from here on, backing changes (live resize, a display with another
 // scale) and occlusion reach the render thread. Both calls are quick
 // synchronized setters on the Java side; the main thread never waits on
 // the render thread.
-view.onBackingChange = { w, h, dpi in
-    var a = [jvalue](repeating: jvalue(), count: 3)
-    a[0].i = jint(w); a[1].i = jint(h); a[2].d = jdouble(dpi)
-    jniCallVoid(midResize, a)
-}
-shell.midVisible = midVisible
+view.connect(to: engine)
+shell.started = true
 shell.view = view
-view.onGesture = { kind, x, y, dx, dy, amount in
-    var a = [jvalue](repeating: jvalue(), count: 6)
-    a[0].i = jint(kind.rawValue); a[1].f = jfloat(x); a[2].f = jfloat(y)
-    a[3].f = jfloat(dx); a[4].f = jfloat(dy); a[5].d = jdouble(amount)
-    jniCallVoid(midInput, a)
-}
 window.makeFirstResponder(view)
 NotificationCenter.default.addObserver(shell, selector: #selector(Shell.occlusionChanged(_:)),
                                        name: NSWindow.didChangeOcclusionStateNotification,
@@ -761,6 +517,4 @@ app.run()
 // code (the engine and EGL are down on their own thread by then; the JVM is
 // never destroyed). run() returns only after NSApp.stop, which nothing
 // calls; if that ever changes, the code still comes from WindowApp.
-exit(Int32(jniCallInt(midExit)))
-
-// __JNI_AND_WINDOW__
+exit(engine.exitCode())

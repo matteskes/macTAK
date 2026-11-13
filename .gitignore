@@ -24,3 +24,10 @@ __pycache__/
 *.pyc
 # docs site: staged pages, built site and the MkDocs venv (dev/docs-site/build.sh)
 /dev/docs-site/build/
+
+# G3 Swift app: SwiftPM build tree
+/app/.build/
+/app/.swiftpm/
+
+# G3 app bundle (app/bundle.sh)
+/build/

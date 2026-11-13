@@ -1,4 +1,4 @@
-.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run lint docs-site clean
+.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -33,6 +33,8 @@ help:
 	@echo "  build-window-host - compile the M3.1 window-harness host dylib (WindowHost.m -> build/window-host.dylib)"
 	@echo "  test-render-window - M3.1 window-surface exercise: engine into a CAMetalLayer window surface, --resize via the host's drawableSize (off-screen; CI runs it too)"
 	@echo "  smoke-window   - G2 M3.0 manual gate: NSWindow -> CAMetalLayer -> eglCreateWindowSurface on ANGLE; opens a window ~3 s, writes dev/g2/build/window-smoke.ppm (needs a GUI session)"
+	@echo "  app            - G3 app bundle: build/MacTAK.app, the SwiftUI app around the map (app/bundle.sh; dev Mac)"
+	@echo "  test-app       - G3 Swift package: build every product and run swift test (app/)"
 	@echo "  exit-run       - G2 exit run (dev Mac): real imagery + vector + elevation in the shell window, 10 s gesture tour, zero dropped frames (dev/g2/shell/test/exit-run.sh)"
 	@echo "  lint           - shellcheck + bash -n over dev/**/*.sh; markdownlint/actionlint if installed"
 	@echo "  docs-site      - build the docs site (MkDocs, strict) into dev/docs-site/build/site"
@@ -139,8 +141,8 @@ test-render-window: build-window-host
 		--layer dev/g1/headless/test/fixtures/sf-landmarks.geojson \
 		--out dev/g2/build/render-window-layer.png
 
-# M3.2 shell compile (no run): swiftc/clang over dev/g2/shell — what CI can
-# do without a GUI session.
+# M3.2 shell compile (no run): since G3.0 the harness is a product of the
+# Swift package at app/ (swift build) — what CI can do without a GUI session.
 build-shell:
 	bash dev/g2/shell/run.sh --compile-only
 
@@ -162,6 +164,17 @@ test-shell: build-shell
 exit-run: build-shell
 	bash dev/g2/shell/test/exit-run.sh
 
+# G3: the SwiftUI app as build/MacTAK.app (engine, ANGLE, classes and the
+# map's starting data inside; a development bundle for this Mac).
+app:
+	bash app/bundle.sh
+
+# G3: every product of the Swift package builds, and its tests pass (no GUI,
+# no engine: CI runs it).
+test-app:
+	swift build --package-path app
+	swift test --package-path app
+
 # M3.0 manual gate (dev Mac, GUI session): `angle` stages the ANGLE pair and
 # runs the headless pbuffer canary first, then the window opens for ~3 s and
 # auto-closes, leaving the pre-swap readback as the artifact.
@@ -174,11 +187,11 @@ smoke-window: angle
 # CI's docs job lints only PR-changed *.md, so it never sees src either);
 # actionlint over the workflows. Optional tools absent on PATH are skipped.
 lint:
-	@git ls-files -z 'dev/**/*.sh' 'dev/g1/headless/atak-headless' | xargs -0 -n1 bash -n
+	@git ls-files -z 'dev/**/*.sh' 'app/*.sh' 'dev/g1/headless/atak-headless' | xargs -0 -n1 bash -n
 	@bash dev/check-trap-exec.sh
 	@bash dev/check-pipefail-grep.sh
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		git ls-files -z 'dev/**/*.sh' 'dev/g1/headless/atak-headless' | xargs -0 -n1 shellcheck -x; \
+		git ls-files -z 'dev/**/*.sh' 'app/*.sh' 'dev/g1/headless/atak-headless' | xargs -0 -n1 shellcheck -x; \
 	else \
 		echo "[lint] skip: shellcheck not installed"; \
 	fi
@@ -197,4 +210,4 @@ docs-site:
 	@bash dev/docs-site/build.sh
 
 clean:
-	rm -rf dev/g1/native-dist dev/g1/build-commo dev/g1/build-ngtcp2 dev/g1/kernel-dist dev/g1/kernel/build dev/g1/headless/build dev/g2/angle-dist dev/g2/build dev/docs-site/build
+	rm -rf build app/.build dev/g1/native-dist dev/g1/build-commo dev/g1/build-ngtcp2 dev/g1/kernel-dist dev/g1/kernel/build dev/g1/headless/build dev/g2/angle-dist dev/g2/build dev/docs-site/build

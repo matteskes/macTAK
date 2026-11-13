@@ -66,6 +66,7 @@ nav:
   - Engineering notes:
       - "G1: JVM host and JNI glue": dev/g1/NOTES.md
       - "G2: map in a native window": dev/g2/NOTES.md
+      - "G3: the core client": dev/g3/NOTES.md
       - "Spike G0: the engine builds": dev/spike/g0/NOTES.md
       - "Spike 5.5: the rebase": dev/spike/g55/NOTES.md
   - Design and studies:

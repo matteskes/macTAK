@@ -69,10 +69,10 @@ jobs:
           fi
           git fetch --no-tags origin "refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
           # Three-dot diff = PR's own changes. dev/ covers the engine, comms and
-          # JVM gates and their scripts; .github/workflows covers this file and
+          # JVM gates and their scripts; app/ the Swift app (G3); .github/workflows covers this file and
           # the pinned upstream commit; Makefile wraps the build entry points.
           # A diff failure fails the job loudly rather than silently skipping.
-          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- 'dev' '.github/workflows' 'Makefile')
+          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- 'dev' 'app' '.github/workflows' 'Makefile')
           if [ -n "$changed" ]; then
             printf '%s\n' "$changed"
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -404,31 +404,27 @@ jobs:
 
   shell-compile:
     name: shell compile (macOS arm64)
-    # G2 M3.2: the Swift/AppKit shell compiles on CI (clang over jni_boot.c +
-    # swiftc over main.swift against the JDK's jni.h — no engine, no GUI
-    # session). The run itself opens an NSWindow, so it stays the dev-Mac
-    # manual gate (`make test-shell`), the same split as M3.0's compile-only
-    # smoke-window step in the render-angle job.
+    # The Swift package at app/ (G3.0): every product builds — the G2 test
+    # harness mactak-shell and the SwiftUI app — and swift test passes. No
+    # engine, no JDK (jni.h is the repo's pinned copy), no GUI session: the
+    # runs that open windows stay dev-Mac gates (`make test-shell`,
+    # `make exit-run`, `make app`).
     needs: changes
     runs-on: macos-26 # Xcode 26 toolchain — matches the verified local build
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out macTAK
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set up Zulu 21 (arm64)
-        # the shell boots JDK 21 in-process; build-shell.sh takes its jni.h
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: zulu
-          java-version: '21'
-          architecture: aarch64
-
-      - name: Compile the shell (build-shell.sh, no run)
+      - name: Compile the harness (build-shell.sh, no run)
         if: needs.changes.outputs.changed == 'true'
         run: make build-shell
+
+      - name: Build every product and run the Swift tests (make test-app)
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-app
 
       - name: Shell argument canary (a missing option value is exit 2, not a crash)
         # Runs the compiled shell; parsing ends before the JVM or a window
@@ -629,12 +625,12 @@ jobs:
         # them (G1 security audit, dev/g1/NOTES.md §G1.14).
         run: bash dev/check-transplants.sh
 
-      - name: shellcheck + bash -n (dev/**/*.sh)
+      - name: shellcheck + bash -n (dev/**/*.sh, app/*.sh)
         if: needs.changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           shopt -s globstar nullglob
-          scripts=(dev/**/*.sh dev/g1/headless/atak-headless) # launcher has no .sh suffix
+          scripts=(dev/**/*.sh app/*.sh dev/g1/headless/atak-headless) # launcher has no .sh suffix
           if [ "${#scripts[@]}" -eq 0 ]; then
             echo "error: no scripts matched dev/**/*.sh" >&2
             exit 1

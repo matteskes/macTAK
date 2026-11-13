@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# G2 M3.2 shell run: build + launch the Swift/AppKit shell (dev/g2/shell) —
+# G2 M3.2 shell run: build + launch the Swift/AppKit shell (since G3.0 the
+# mactak-shell product of app/, built by build-shell.sh) —
 # the process that starts the JVM in-process through libjli, opens an
 # NSWindow over a CAMetalLayer, and upcalls WindowApp.start; the JVM's
 # render thread drives the engine into the layer on ANGLE/Metal. After the

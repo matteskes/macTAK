@@ -83,6 +83,8 @@ gate passes, the artifact was really produced this run.
 | `make build-shell` | the Swift/C shell compiles | CI + local |
 | `make docs-site` | the docs site builds in MkDocs strict mode: every link and anchor between the documents resolves | CI (`docs-site.yml`) + local |
 | `make exit-run` | G2's exit run: real imagery, vector and terrain in the shell's window under a 10 s gesture tour; zero dropped frames, no GL error (through ANGLE's debug output); fps, GPU time, GC pauses, memory and cold start reported | **dev Mac only** — a GUI session, and the network once to fetch the real data |
+| `make test-app` | the Swift package at `app/` builds every product, and `swift test` passes | CI (shell job) and local |
+| `make app` | builds `build/MacTAK.app`, the SwiftUI app around the map; open it to check by hand | **dev Mac only**: the bundle carries this Mac's engine build |
 | `make smoke-window` / `make test-shell` | a real window opens and presents frames; `test-shell`'s live leg keeps it rendering through a scripted pan and resize (Retina, frame times logged), and its gestures leg drives the camera with real input events through AppKit | **dev Mac only** — needs a GUI session; CI runners have no WindowServer, so CI compiles the shell but the last mile of every window milestone is a local gate |
 
 Run the affected gates before pushing; CI will re-run the ones it can.
@@ -119,7 +121,8 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 | Engine Java classes (render path) | a Java hunk in `dev/g1/patches/*.patch`, nothing else: `dev/g2/render/env.sh` regenerates the shadowed class from `src/` + the hunk on each compile | the hunk must apply at `--fuzz=0` or the render build fails; there is no committed copy to drift |
 | A newer upstream baseline | the record `dev/spike/g55/NOTES.md` describes; `dev/spike/g55/refresh-patches.py` sorts `dev/g1/patches` against the new tree | the full gate ladder on the new tree |
 | The GLES shim (`android.opengl.GLES20/30` + JNI forwarder) | the generator `dev/g2/gen-gles-shim.py`, then `make gen-gles-shim` and commit the output | `check-gen-gles-shim` fails on hand-edited output ("a miss is loud, not silent") |
-| Native host (Swift/C), render harness, headless tools | `dev/g2/shell/`, `dev/g2/render/`, `dev/g1/headless/` | `shellcheck -x` + `bash -n` via hook and `make lint` |
+| The Swift app and the G2 harness (G3) | `app/` (a Swift package: `CJavaBoot`, `MacTAKCore`, `mactak-shell`, `MacTAK`); the Java side Swift calls is `dev/g2/render/src/mactak/engine/` | `make test-app` (CI): every product builds, and drift tests keep the JNI boundary in step |
+| Render harness and headless tools | `dev/g2/shell/` (scripts and gates), `dev/g2/render/`, `dev/g1/headless/` | `shellcheck -x` + `bash -n` via hook and `make lint` |
 | Docs | the doc itself + `CHANGELOG.md` under **Unreleased** | `docs.yml` (markdownlint + link check) |
 
 ## Branches, commits, pull requests
