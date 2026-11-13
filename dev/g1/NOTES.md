@@ -1621,7 +1621,8 @@ two Shapefiles) and `make test-render` passes every gate.
   Today they open only files the user names (G2's basemap and
   elevation), as layer files did before G6. The same approach applies
   when rasters arrive from data packages or peers: a raster allowlist in
-  those open calls.
+  those open calls ([issue #155](https://github.com/matteskes/macTAK/issues/155)).
 - **A layer format outside the list** (CSV, DXF, MapInfo, GeoJSONSeq and
   others) is now refused. Adding one is a one-line change, after
-  checking that its driver never follows references.
+  checking that its driver never follows references
+  ([issue #156](https://github.com/matteskes/macTAK/issues/156)).
