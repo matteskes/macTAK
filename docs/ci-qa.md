@@ -51,7 +51,10 @@ How the plan above actually materialized once G1 closed:
 - **Tier 1 (`ci.yml`)** runs `native engine`, `JVM tests (Zulu 8)`,
   `comms stack`, and `lint` on hosted **`macos-26`** — the verified local
   build needs Xcode 26, and `macos-14`'s Xcode 15 fails on old libc++ pair
-  constraints. The planned ubuntu-24.04 JVM matrix and the sccache /
+  constraints. Since G3.1, `shell compile` and `comms stack` run on
+  `xcode-27` (macOS 27, a GitHub preview image) instead: they run the
+  Swift package, which is built for the app's floor of macOS 27 and so
+  doesn't launch on 26 (`dev/g3/NOTES.md` trap 3). The planned ubuntu-24.04 JVM matrix and the sccache /
   clang-format / swiftlint tooling did not materialize; lint is actionlint +
   shellcheck + `bash -n` (mirroring the pre-commit hook), and the
   `setup-java` Gradle cache did land.

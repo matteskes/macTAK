@@ -6,19 +6,16 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.0 — 2026-11-13): the app skeleton, and EngineBridge v0
+## State (G3.1 — 2026-11-13): commo from Swift
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens a window with
-a sidebar (placeholders for contacts and chat) and the engine's map,
-live and interactive: `make app` builds `build/MacTAK.app`, which opens
-on the G2 exit run's NAIP imagery, 3DEP terrain and the landmarks when
-`make exit-run` has fetched them. The G2 test harness, `mactak-shell`, is
-now a product of the same package on the shared library `MacTAKCore`,
-with its flags, log lines and exit codes unchanged; `make test-shell`
-and `make exit-run` drive it as before. Swift reaches the engine only
-through `mactak.engine.EngineBridge`, which replaces the 22 positional
-arguments of `WindowApp.start` with a `MapConfig`. Next: G3.1, commo from
-Swift.
+a sidebar (placeholders for contacts and chat) and the engine's live map
+(`make app`; G3.0). Swift now talks to TAK servers too: `CommoClient`, an
+actor in `MacTAKComms`, drives commo's C++ API through `CCommoShim`, and
+two clients through `fake-cot-server.py` see each other's contact, marker
+and presence (`make test-app-comms`, in CI's comms job). The app doesn't
+connect to anything yet: that comes with the CoT model and contacts in
+G3.2. Next: G3.2, the CoT model, contacts and markers on the map.
 
 ## The plan (approved 2026-11-13)
 
@@ -52,7 +49,7 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
 | Milestone | What | Gate |
 |---|---|---|
 | **G3.0** | the package, the SwiftUI skeleton, `EngineBridge` v0, `make app` | `make test-app` (CI); G2's gates unchanged |
-| G3.1 | commo from Swift: a C++ listener shim, a `CommoClient` actor | two clients through `fake-cot-server.py` see each other (CI) |
+| **G3.1** | commo from Swift: a C++ listener shim, a `CommoClient` actor | two clients through `fake-cot-server.py` see each other (CI) |
 | G3.2 | the CoT model in Swift, contacts, markers on the map | CoT parse tests; markers' pixels where expected (CI) |
 | G3.3 | GeoChat: All Chat Rooms and one-to-one | a chat leg in the comms test |
 | G3.4 | servers and the Keychain: `.p12` and data-package import, TLS | a TLS leg against a TLS fake server, in a throwaway keychain |
@@ -124,3 +121,91 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
   A resize by the user in the half second before the surface exists could
   still race; the G2 gates never resize then, and the app shows the
   failure rather than hanging.
+
+## G3.1 — commo from Swift (2026-11-13, branch `g3/commo-from-swift`)
+
+### What changed
+
+- **`CCommoShim`** (C++): one `Forwarder` class implements commo's
+  `CommoLogger`, `CoTMessageListener`, `ContactPresenceListener` and
+  `InterfaceStatusListener` and forwards each callback to a C function
+  pointer with the caller's context. Its API (`commo_shim.h`) is plain C:
+  create and destroy, add and remove a streaming interface (TCP, or SSL
+  with PKCS#12 bytes), broadcast, and send to contacts. No C++ exception
+  leaves the shim; each failure comes back as a message.
+  `mactak_commo_init_libraries` does what the Java binding's
+  `initThirdpartyNativeLibraries` does (libxml2, OpenSSL, curl), finding
+  the functions with `dlsym` because commo has already loaded them, so the
+  shim needs none of their headers or link flags.
+- **`MacTAKComms`**: the `CommoClient` actor (connect, disconnect,
+  broadcast, send, `shutdown`) with one `AsyncStream<CommoEvent>` for CoT,
+  contacts, interface changes and commo's log (filtered by level). Its
+  beacon sends self-SA on a period and once more 500 ms after each
+  interface comes up. `Presence` builds the self-SA, ported from G1's
+  `CotXml.presence` and `xmlEscape`.
+- **`MacTAKCommsTests`**: two clients through `fake-cot-server.py` on a
+  free port. A connects and beacons; B connects, beacons and drops a
+  marker. The test passes when A sees B as a contact and gets B's marker,
+  and B gets A's presence: G1's round-trip contract (`dev/g1/headless/run.sh`).
+  Two smaller tests check that a shut-down client refuses to send and that
+  the presence escapes its text.
+- **`make test-app-comms`** stages commo (`app/stage-commo.sh`) and runs
+  the package's build and tests with `MACTAK_COMMO_LIB` set. CI runs it in
+  the comms job, right after `build-commo.sh`.
+
+### Decided while building
+
+- **A C API, not Swift's C++ interop.** The plan had Swift calling commo's
+  C++ API directly, with a shim only for the callbacks. Swift's C++
+  interop is a per-module compiler mode that can carry over to the
+  modules that import one built with it: here, `MacTAKComms` and then the
+  app. With a plain C header, the shim does the C++ calls as well, and
+  the rest of the package stays ordinary Swift. The shim is about 400
+  lines with its header.
+- **The comms targets are optional, for now.** `Package.swift` adds
+  `CCommoShim`, `MacTAKComms` and their tests only when `MACTAK_COMMO_LIB`
+  is set. Building them needs commo's headers (`src/`) and a built commo,
+  which CI's shell job doesn't have and shouldn't build for every app
+  change. The comms job has both. The switch is an environment variable,
+  so it's explicit; the targets come and go with it (checked with
+  `swift package describe`). G3.2 has to settle this, since the app itself
+  will need commo: the likely answer is that the shell job builds against
+  the comms job's commo artifact.
+- **`MacTAKComms` is its own module**, not `MacTAKCore/Comms` as planned,
+  so that `MacTAKCore` still builds without commo.
+
+### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app-comms` | 3 comms tests pass; the two-client test takes 4.2 s and passed 5 more runs in a row. A/B: with the shim's CoT forwarding disabled, it fails after 15 s waiting for B's marker |
+| `make test-app` | 2 tests pass; the package still builds without commo (the comms targets are absent) |
+| `make lint` | passes |
+
+### Traps
+
+- **2 — commo's install name points next to its loader.**
+  `build-commo.sh` names the dylib `@loader_path/libcommoncommo.dylib`,
+  which is right for the JNI library beside it. A Swift binary linked
+  against it would look for commo in its own directory: the test bundle's,
+  or the app's `MacOS/`. `app/stage-commo.sh` copies it to
+  `app/.build/commo` with the install name `@rpath/libcommoncommo.dylib`
+  (signed again: `install_name_tool` breaks the signature), and the shim's
+  target adds that directory as an rpath. G1's copy is left as it is.
+- **3 — the app claimed macOS 14; its floor is macOS 27.** G3.0 set
+  macOS 14 in `Package.swift` and `Info.plist` without a decision behind
+  it, while every native library the app loads was built for the build
+  machine's macOS: commo and the engine for 27.2, Homebrew's GDAL for
+  27.0 (ANGLE's pair for 12.0). The owner's floor is macOS 27, so both
+  now say 27.0 (2026-11-13). Two consequences:
+  - **CI:** a package built for 27 doesn't launch on 26, so the two jobs
+    that run it, `shell compile` and `comms stack`, moved from `macos-26`
+    to `xcode-27`, GitHub's macOS 27 image. It's a preview: GitHub warns
+    it can be unstable and queue longer. actionlint doesn't know the label
+    yet, so `.github/actionlint.yaml` lists it. The other jobs never
+    launch the app and stay on `macos-26`.
+  - **The libraries:** the linker still warns, because commo is built for
+    27.2, newer than the floor. `build-commo.sh` and `build-native.sh` set
+    no deployment target, so the libraries need whatever macOS built them.
+    G5's self-contained bundle has to build commo, the engine and the
+    Homebrew libraries for 27.0.
