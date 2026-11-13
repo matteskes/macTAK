@@ -1179,7 +1179,7 @@ and its password. Six findings; each lands as its own focused PR.
 | 7 | Low | `--db` tracks DB created under the default umask (0644 on macOS): other local accounts can read every received position | **Fixed** (pass 2, branch `g1/security-audit-pass-2`): `TrackStore` creates it 0600, guarded by `run.sh` |
 | 8 | Note | `TrackStore` appends one row per received CoT with no cap or retention: a chatty or hostile server grows the file for as long as the client runs | Recorded; atak-headless runs bounded by `--duration`, G6 needs retention; [issue #148](https://github.com/matteskes/macTAK/issues/148) |
 | 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | Recorded; only the same user can write `~/.m2`, so no boundary is crossed; [issue #150](https://github.com/matteskes/macTAK/issues/150) |
-| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | Recorded (deep pass, owner's call: no code change now); G6 must restrict drivers before importing overlays it did not choose; [issue #147](https://github.com/matteskes/macTAK/issues/147) |
+| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | **Fixed** (2026-11-13, branch `g1/gdal-open-allowlist`): `patches/ogr-open-driver-allowlist.patch`, guarded by `test/gdal-network.sh` (§G1.19); [issue #147](https://github.com/matteskes/macTAK/issues/147) |
 | 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | Recorded; [issue #151](https://github.com/matteskes/macTAK/issues/151) |
 | 12 | Low | CI: 14 of the 16 checkouts in `ci.yml`, `cot-roundtrip.yml` and `docs.yml` left the job token in `.git/config` while build scripts and Homebrew-installed tools ran | **Fixed** (CI workflow pass, branch `ci/checkout-persist-credentials`): `persist-credentials: false` on each; the two `changes` jobs keep the token for their `git fetch` |
 
@@ -1302,14 +1302,13 @@ Traps found on the way (do not rediscover these):
   the moment it was opened, and sends GETs to hosts the client can
   reach, such as services on localhost or the LAN. Today `LayerCLI`
   opens only files the user names. GDAL has no single switch that turns
-  its network access off. **Guard:** none, by the owner's call on
-  2026-11-10. The fix when G6 imports overlays from data packages or
-  peers: after `GdalLibrary::init`, deregister every vector driver
-  outside an allowlist of formats that never follow references (GeoJSON,
-  GPKG, KML, LIBKML, ESRI Shapefile, GPX, FlatGeobuf; the first four are
-  what `layer.sh` proves), in `dev/g1/jni-extra/mactak_gdal.cpp`, with no
-  engine patch. A denylist (`OGR_VRT`, `GML`, `GMLAS`, `WFS`, `OAPIF`)
-  is the weaker alternative ([issue #147](https://github.com/matteskes/macTAK/issues/147)).
+  its network access off. Recorded without a fix by the owner's call on
+  2026-11-10, which planned to deregister the other vector drivers in
+  `dev/g1/jni-extra/mactak_gdal.cpp`. **Guard** (2026-11-13,
+  [issue #147](https://github.com/matteskes/macTAK/issues/147)): the
+  engine's layer opens pass GDAL an allowlist of drivers instead, and
+  `test/gdal-network.sh` proves it against a loopback listener; §G1.19
+  says why the allowlist went in the open call.
 
 Evidence for #1 (CI, `cot-roundtrip.yml` dispatch runs). Before: the
 test alone on `8b38d91`, unpatched commo (run 42741415679):
@@ -1554,3 +1553,75 @@ legs pass.
    (ATAK's port); with A's QUIC inbound on 4245, B still sent to
    `127.0.0.1:4243` and nothing arrived. The test's receiving peer
    listens on 4243.
+
+## G1.19 — layer files can't reach the network (2026-11-13, branch `g1/gdal-open-allowlist`, issue 147)
+
+Security finding 10 (§G1.14): the engine opened a layer file with
+`GDALOpenEx` and no list of allowed drivers, so any registered driver
+could claim it, and some fetch what the file names. Reproduced on this
+Mac's GDAL 3.13.3 through `atak-headless --layer`, the engine's own
+import path: an OGR VRT whose `SrcDataSource` is `/vsicurl/http://…`
+sent a HEAD to the listener, and a GML file whose `xsi:schemaLocation`
+names a WFS `DescribeFeatureType` URL sent the GET. The GML driver also
+wrote a `.gfs` schema file next to the input: opening a file wrote into
+the user's folder.
+
+### The fix: an allowlist in the open call
+
+`patches/ogr-open-driver-allowlist.patch` (the series is now 43) passes
+`GDALOpenEx` a list of allowed drivers at the engine's two unrestricted
+vector opens:
+
+- `OGR_Content2` (every layer `LayerStore` imports): GeoJSON, GPKG, KML,
+  LIBKML, ESRI Shapefile, GPX and FlatGeobuf, formats that never follow
+  references in a file. They cover what the engine was built to open:
+  it attaches styles only to KML, GPX and Shapefile
+  (`OgrFeatureDataSource.registerDrivers`), and `layer.sh` proves
+  GeoJSON, GPKG, KML and Shapefile. A zipped Shapefile still opens: the
+  driver list applies to the file inside the `/vsizip/` path.
+- `OGDIFeatureDataSource`: only the OGDI driver, the one it exists for.
+  The host doesn't register this source today.
+
+The plan recorded in §G1.14 was to deregister every other vector driver
+in `mactak_gdal.cpp`, with no engine patch. Two things made that the
+weaker choice. First, the drivers come back: GDAL keeps one driver list
+per process, and G2's imagery path calls `gdal.AllRegister()` through
+the Java bindings (`GdalLibrary.init()`), so whichever of the two inits
+ran last decided the list. Second, many drivers handle both rasters and
+vectors, and the imagery and elevation paths need the raster ones.
+A list in the open call has neither problem and touches nothing else.
+
+### The guard
+
+`test/gdal-network.sh` (`make test-gdal-network`, CI's native-engine
+job) writes the two hostile files, pointed at `test/http-witness.py`, a
+loopback listener that records every request.
+
+- **The control:** stock `ogrinfo`, with every driver, must make the
+  listener see a request for each file. That proves the files are
+  hostile on this GDAL.
+- **The engine:** `atak-headless --layer` must open each file without a
+  single request, and must leave no `.gfs` behind.
+
+A/B on the dev Mac:
+
+| Engine | Control | `hostile.vrt` | `hostile.gml` | Canary |
+|---|---|---|---|---|
+| without the patch (42 patches) | both fetched | `HEAD /vrt-source.geojson` | `GET /wfs?…DescribeFeatureType…`, and wrote `hostile.gfs` | FAIL |
+| with the patch (43) | both fetched | refused, no request (exit 1) | refused, no request (exit 1) | PASS |
+
+With the patch, `layer.sh` passes all six legs (GeoJSON, two GPKG, KML,
+two Shapefiles) and `make test-render` passes every gate.
+
+### What it doesn't cover
+
+- **Raster opens.** `GdalTileReader` (through the Java bindings),
+  `GdalBitmapReader` and `GdalDatasetProjection2` open rasters with every
+  raster driver, and a raster VRT can name a `/vsicurl/` source too.
+  Today they open only files the user names (G2's basemap and
+  elevation), as layer files did before G6. The same approach applies
+  when rasters arrive from data packages or peers: a raster allowlist in
+  those open calls.
+- **A layer format outside the list** (CSV, DXF, MapInfo, GeoJSONSeq and
+  others) is now refused. Adding one is a one-line change, after
+  checking that its driver never follows references.

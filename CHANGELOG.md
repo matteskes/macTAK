@@ -26,6 +26,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `shell compile` and `comms stack` jobs, which run the Swift package, move
   to GitHub's macOS 27 image (`xcode-27`, a preview).
 
+### Security
+
+- Opening a layer file can no longer make GDAL reach the network (G1.14
+  finding 10, issue #147; `dev/g1/NOTES.md` §G1.19). The engine opened
+  layers with every GDAL driver allowed, so a hostile OGR VRT fetched its
+  `/vsicurl/` source and a GML file fetched its WFS schema, which also
+  wrote a `.gfs` beside it. `patches/ogr-open-driver-allowlist.patch`
+  limits the layer import to GeoJSON, GPKG, KML, LIBKML, Shapefile, GPX
+  and FlatGeobuf. `make test-gdal-network` (CI) checks it against a
+  loopback listener: stock `ogrinfo` fetches, the engine doesn't.
+
 ## [0.3.2] - 2026-11-13 — G2: the shell, gestures, imagery, terrain and the exit run (gate open on trap 77) + G3.0 app skeleton
 
 G2's gate stays open: the exit run's zero-dropped-frames gate still fails
