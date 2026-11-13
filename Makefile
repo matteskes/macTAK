@@ -1,4 +1,4 @@
-.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app lint docs-site clean
+.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -35,6 +35,7 @@ help:
 	@echo "  smoke-window   - G2 M3.0 manual gate: NSWindow -> CAMetalLayer -> eglCreateWindowSurface on ANGLE; opens a window ~3 s, writes dev/g2/build/window-smoke.ppm (needs a GUI session)"
 	@echo "  app            - G3 app bundle: build/MacTAK.app, the SwiftUI app around the map (app/bundle.sh; dev Mac)"
 	@echo "  test-app       - G3 Swift package: build every product and run swift test (app/)"
+	@echo "  test-app-comms - G3.1 Swift comms: CommoClient over commo, two clients through fake-cot-server.py (needs dev/g1/build-commo.sh)"
 	@echo "  exit-run       - G2 exit run (dev Mac): real imagery + vector + elevation in the shell window, 10 s gesture tour, zero dropped frames (dev/g2/shell/test/exit-run.sh)"
 	@echo "  lint           - shellcheck + bash -n over dev/**/*.sh; markdownlint/actionlint if installed"
 	@echo "  docs-site      - build the docs site (MkDocs, strict) into dev/docs-site/build/site"
@@ -174,6 +175,14 @@ app:
 test-app:
 	swift build --package-path app
 	swift test --package-path app
+
+# G3.1: the Swift package with its comms targets (CCommoShim, MacTAKComms):
+# commo from Swift, two CommoClients through fake-cot-server.py. Needs a
+# built commo (dev/g1/build-commo.sh) and src/; CI's comms job runs it.
+test-app-comms:
+	@lib="$$(bash app/stage-commo.sh)" && \
+		MACTAK_COMMO_LIB="$$lib" swift build --package-path app --build-tests && \
+		MACTAK_COMMO_LIB="$$lib" swift test --package-path app
 
 # M3.0 manual gate (dev Mac, GUI session): `angle` stages the ANGLE pair and
 # runs the headless pbuffer canary first, then the window opens for ~3 s and

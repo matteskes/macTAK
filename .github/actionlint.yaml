@@ -1,0 +1,7 @@
+# actionlint's settings (make lint, CI's lint job).
+self-hosted-runner:
+  # Not self-hosted: GitHub's macOS 27 image, in preview and so not yet in
+  # actionlint's list of hosted labels. The Swift jobs run on it because
+  # the app's floor is macOS 27 (dev/g3/NOTES.md trap 3).
+  labels:
+    - xcode-27

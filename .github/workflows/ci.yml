@@ -410,7 +410,9 @@ jobs:
     # runs that open windows stay dev-Mac gates (`make test-shell`,
     # `make exit-run`, `make app`).
     needs: changes
-    runs-on: macos-26 # Xcode 26 toolchain — matches the verified local build
+    # macOS 27, the app's floor: a package built for 27 doesn't launch on 26.
+    # xcode-27 is GitHub's macOS 27 image, a preview (dev/g3/NOTES.md trap 3).
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - name: Check out macTAK
@@ -435,7 +437,10 @@ jobs:
   commo-stack:
     name: comms stack (macOS arm64)
     needs: changes
-    runs-on: macos-26 # Xcode 26 toolchain — matches the verified local build
+    # macOS 27: make test-app-comms runs the Swift package, built for the
+    # app's floor of 27 (xcode-27 is GitHub's macOS 27 image, a preview;
+    # dev/g3/NOTES.md trap 3). It also matches the dev Mac's toolchain.
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - name: Check out macTAK
@@ -481,6 +486,13 @@ jobs:
         # commo's log (g55 trap 8, patches/commo/0006)
         if: needs.changes.outputs.changed == 'true'
         run: make test-quic
+
+      - name: Swift comms (make test-app-comms)
+        # G3.1: CommoClient over commo through CCommoShim, built against the
+        # commo above; two clients through fake-cot-server.py see each other
+        # (dev/g3/NOTES.md). The shell job builds the package without commo.
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-app-comms
 
       - name: Upload comms artifacts
         # Guarded: if-no-files-found is error, which would fail a no-op run.
