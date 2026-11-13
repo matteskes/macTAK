@@ -9,6 +9,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.0, the app skeleton (`dev/g3/NOTES.md`): a Swift package at `app/`
+  with the SwiftUI app `MacTAK`, a window with a sidebar and the engine's
+  live map. `make app` builds `build/MacTAK.app` (a development bundle for
+  this Mac), and `make test-app` builds every product and runs the Swift
+  tests in CI. The G2 harness `mactak-shell` is now a product of the same
+  package, on the shared library `MacTAKCore`, with unchanged flags and
+  gates.
+- `mactak.engine.EngineBridge`, the Java facade Swift calls, with a
+  `MapConfig` in place of `WindowApp.start`'s 22 positional arguments.
+  Drift tests keep Swift's `MapConfig` and `Gesture` in step with Java.
 - The G2 exit run, `make exit-run` (`dev/g2/NOTES.md` §The exit run;
   dev Mac): real NAIP 2024 imagery, the landmarks and real USGS 3DEP
   terrain in the shell's window under a 10 s gesture tour (`shell

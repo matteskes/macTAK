@@ -39,6 +39,7 @@ PAGES = [
     "docs/ci-qa.md",
     "dev/g1/NOTES.md",
     "dev/g2/NOTES.md",
+    "dev/g3/NOTES.md",
     "dev/spike/g0/NOTES.md",
     "dev/spike/g55/NOTES.md",
     "dev/g1/tools/README.md",
