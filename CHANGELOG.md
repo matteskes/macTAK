@@ -26,6 +26,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `shell compile` and `comms stack` jobs, which run the Swift package, move
   to GitHub's macOS 27 image (`xcode-27`, a preview).
 
+### Fixed
+
+- commo's https paths (certificate enrollment, FTPS file transfers,
+  mission packages) crashed the process or hung whenever they were given
+  a CA, and with none accepted any certificate (issue #157;
+  `dev/g1/NOTES.md` §G1.20). commo linked Apple's libcurl (LibreSSL), and
+  its JNI library Homebrew's (openssl@4), so commo's OpenSSL 3 certificate
+  store landed in another TLS library's `SSL_CTX`. `dev/g1/fetch-curl.sh`
+  now builds curl 8.23.0 static on openssl@3, `libcommoncommo` carries it,
+  the JNI library uses that copy, and `build-commo.sh`'s canary fails on
+  any shared libcurl. Homebrew's curl left the build and the `Brewfile`.
+
 ### Security
 
 - Opening a layer file can no longer make GDAL reach the network (G1.14
@@ -36,6 +48,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   limits the layer import to GeoJSON, GPKG, KML, LIBKML, Shapefile, GPX
   and FlatGeobuf. `make test-gdal-network` (CI) checks it against a
   loopback listener: stock `ogrinfo` fetches, the engine doesn't.
+
+- commo's https paths are settled (G1.14 finding 4, issue #146;
+  §G1.20): given a CA they verify the chain and the TLS-server purpose,
+  and refuse a wrong host name where the caller asks for the check
+  (enrollment's `verifyHost`). With no CA they accept anything, which is
+  upstream's design, so every macTAK call must pass one. `make
+  test-commo-https` (CI) proves each case against loopback servers.
 
 ## [0.3.2] - 2026-11-13 — G2: the shell, gestures, imagery, terrain and the exit run (gate open on trap 77) + G3.0 app skeleton
 

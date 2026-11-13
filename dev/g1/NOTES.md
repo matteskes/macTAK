@@ -1173,7 +1173,7 @@ and its password. Six findings; each lands as its own focused PR.
 | 1 | High | commo accepts any server cert that chains to the truststore CA: no TLS-server purpose check, and no hostname check (deliberate upstream, per ATAK) | **Fixed** (branch `g1/commo-tls-server-purpose`): `patches/commo/0002-sslcertchecker-require-server-purpose.patch`, guarded by `test/tls-purpose.sh` |
 | 2 | Medium | Transplant jars not fully integrity-checked: slf4j jars unlisted, CI never verified hashes | **Fixed here** |
 | 3 | Low | Inbound CoT printed raw to the terminal: escape-sequence injection, and forged `headless:` lines | **Fixed** (branch `g1/sanitize-inbound-log`): `CotXml.printable`, guarded by `CotEventSelfTest` |
-| 4 | Low (dormant) | commo's curl paths (file transfer, mission packages, URL requests) skip the hostname check always, and the chain check when the caller passes no CA or the transfer is peer-hosted | Recorded below (narrowed in pass 2: a caller rule, not a patch); unused by atak-headless today; [issue #146](https://github.com/matteskes/macTAK/issues/146) |
+| 4 | Low (dormant) | commo's curl paths (file transfer, mission packages, URL requests) skip the hostname check always, and the chain check when the caller passes no CA or the transfer is peer-hosted | **Settled** (2026-11-13, §G1.20): given a CA, commo now really verifies (before, the CA crashed it: [issue #157](https://github.com/matteskes/macTAK/issues/157)); with none it accepts anything, so callers must pass one; host names are checked only where commo offers it; guarded by `test/commo-https.sh`; [issue #146](https://github.com/matteskes/macTAK/issues/146) |
 | 5 | Note | `NativeSsl` loads OpenSSL's legacy provider process-wide, not only for the RC2-40 PKCS#12 read | Recorded; [issue #149](https://github.com/matteskes/macTAK/issues/149) |
 | 6 | Note | Reviewed, no issue: data-package importer (Zip-Slip, size caps, XXE, no password in logs, 0700 cert dir), `CotEvent` (XXE + §G1.11 validation), `TrackStore` (bound parameters), fake server (loopback only); deep pass: commo's stream framing (fixed 64 KiB buffer, protobuf length capped at it, overflow discards rather than overruns), its XML parse (`XML_PARSE_NONET`, no entity substitution or external DTD), and no listening socket (the mission-package web server starts only after `setupMissionPackageIO`, which atak-headless never calls); native-code read: the 34 engine patches, 2 commo patches and `jni-extra` add only null/exception guards, GL attribute guards and three upstream memory-bug fixes, and touch no buffer except `vsi_jfile` Read/Write, which keeps upstream's 32-bit length (a read over 2 GB comes back short, never past the buffer); CI workflow pass: every workflow is `contents: read`, triggers on `pull_request` (never `pull_request_target`), uses no repository secrets, pins every action and the upstream checkout by commit, and passes PR-controlled values to scripts through `env`, never inline | — |
 | 7 | Low | `--db` tracks DB created under the default umask (0644 on macOS): other local accounts can read every received position | **Fixed** (pass 2, branch `g1/security-audit-pass-2`): `TrackStore` creates it 0600, guarded by `run.sh` |
@@ -1269,18 +1269,24 @@ Traps found on the way (do not rediscover these):
   ATAK-CIV's `simplefileiomanager.cpp`, `missionpackagemanager.cpp` and
   `urlrequestmanager.cpp` set `CURLOPT_SSL_VERIFYHOST` to 0 on every
   https request (the streaming path skips the hostname check too, by
-  design). `CURLOPT_SSL_VERIFYPEER` goes to 0 only when the caller
+  design). (Corrected in §G1.20: `urlrequestmanager.cpp` checks the host
+  name when its caller asks, as enrollment's `verifyHost` does.) `CURLOPT_SSL_VERIFYPEER` goes to 0 only when the caller
   passes no CA certs (`if (!ioCtx->caCerts)`, "accepts any cert from
   server") and for peer-hosted mission-package downloads. Given CA
   certs, `sslCtxSetup` installs them as the `SSL_CTX` store and curl
   verifies through libssl, which already applies the TLS-server
-  purpose, so finding #1's patch is not needed there. Pass 2 corrected
+  purpose, so finding #1's patch is not needed there. (§G1.20: on macOS
+  this was never true until 2026-11-13. commo linked Apple's libcurl,
+  whose LibreSSL crashed on commo's OpenSSL 3 store; it holds now.) Pass 2 corrected
   the first reading ("patch these first"): the fix is a caller rule,
   not a commo patch, and patching `VERIFYPEER` on would break
   peer-hosted transfers. atak-headless calls none of them today.
-  **Guard:** none yet. Whoever wires data-package or mission sync (G6
-  rung 5) must always pass the truststore's CA certs to these calls;
-  this entry is the reminder ([issue #146](https://github.com/matteskes/macTAK/issues/146)).
+  **Guard** (2026-11-13, §G1.20): `test/commo-https.sh` proves that a
+  CA is verified, that another CA, a wrong host name and a client-only
+  certificate are refused, and that no CA accepts anything. The caller
+  rule stands: whoever wires data-package or mission sync (G3.4, G6
+  rung 5) must always pass the truststore's CA certs to these calls
+  ([issue #146](https://github.com/matteskes/macTAK/issues/146)).
 - **The tracks DB was readable by every local account** (pass 2, #7).
   `--db` handed the path to the engine's sqlite open, which created the
   file under the default umask: 0644 on macOS. The file holds every
@@ -1626,3 +1632,102 @@ two Shapefiles) and `make test-render` passes every gate.
   others) is now refused. Adding one is a one-line change, after
   checking that its driver never follows references
   ([issue #156](https://github.com/matteskes/macTAK/issues/156)).
+
+## G1.20 — commo's https paths verify, and don't crash (2026-11-13, branch `g1/commo-static-curl`, issues 157 and 146)
+
+Started as security finding 4 (§G1.14, issue 146), which held that
+commo's https paths (enrollment, FTPS file transfers, mission packages)
+verify a server whenever the caller passes a CA. Running the real path
+showed that, on macOS, they never had.
+
+### What was wrong ([issue #157](https://github.com/matteskes/macTAK/issues/157))
+
+commo checks a server by giving curl a callback
+(`CURLOPT_SSL_CTX_FUNCTION`), which puts commo's CA into curl's
+`SSL_CTX` with OpenSSL calls of its own (`X509_STORE_new`,
+`SSL_CTX_set_cert_store`). That only works when curl's TLS library is
+the very OpenSSL commo links. In our build it wasn't:
+
+- **`libcommoncommo`** linked Apple's `/usr/lib/libcurl` (LibreSSL).
+  `build-commo.sh` passed `-L$HB/lib -lcurl`, but Homebrew's curl is
+  keg-only, so the linker took the SDK's.
+- **`libcommoncommojni`** linked Homebrew's libcurl, through
+  `curl-config --libs`, and that curl links `openssl@4`.
+- commo itself uses `openssl@3`.
+
+A commo process loaded three TLS libraries. Given a CA, commo put an
+`openssl@3` certificate store into a LibreSSL `SSL_CTX`, and the JVM
+died in LibreSSL's `SSL_CTX_free` (`EXC_BAD_ACCESS`), or the request
+hung until curl timed out. With no CA, any certificate was accepted.
+The Java binding's `curl_global_init` initialized the JNI library's
+curl, not the core's. Canary 3 checked for a second OpenSSL among the
+libraries' direct dependencies, so it never saw the OpenSSL behind a
+shared libcurl. It's the same family as G1.4's trap 5 (two OpenSSL
+runtimes in one process).
+
+### The fix: one curl, static, on commo's OpenSSL
+
+- **`dev/g1/fetch-curl.sh`** builds the curl release that Homebrew pins
+  (8.23.0, same tarball and checksum) against `openssl@3`: static, HTTP,
+  HTTPS, FTP and FTPS only, and no default CA bundle (commo always
+  passes its own CA or turns verification off). Built as
+  `fetch-ngtcp2.sh` builds ngtcp2, in about 30 s, and cached per curl and
+  OpenSSL version.
+- **Symbol hiding is off** in that build. curl's configure builds with
+  `-fvisibility=hidden`, which in a static build leaves even
+  `curl_easy_init` private to whatever links it. `libcommoncommo` must
+  export curl's API, because the JNI library calls `curl_global_init`
+  and has to reach that copy.
+- **`build-commo.sh`** puts `libcurl.a` in its shim, so the core links
+  it, plus curl's static dependencies (zlib, CoreFoundation,
+  CoreServices, SystemConfiguration). It hands the JNI Makefile a
+  `curl-config` that adds nothing, so the JNI library takes curl from
+  `libcommoncommo`.
+- **Canary 3** now fails if either library links any shared libcurl, or
+  if `libcommoncommo` lacks curl or curl's OpenSSL backend.
+- **Homebrew's curl** left the preflight, CI's install lines, the
+  `Brewfile` and its lock: one Homebrew dependency fewer (issue 151).
+
+### The guard: `test/commo-https.sh`
+
+`make test-commo-https`, in CI's comms job. Certificate enrollment's
+first request (`CommoHttpsTest`) against loopback HTTPS servers that
+record each request (`http-witness.py --tls`), with a throwaway PKI:
+
+| Leg | CA, host check, server | Result |
+|---|---|---|
+| trusted | CA 1, off, named 127.0.0.1 | connects; the request arrives |
+| untrusted | CA 2, off, named | `SSL_UNTRUSTED_SERVER` (unable to get local issuer certificate), no request |
+| host-match | CA 1, on, named | connects |
+| host-wrong | CA 1, on, named 10.255.255.1 | `SSL_UNTRUSTED_SERVER` (no subject name matches 127.0.0.1), no request |
+| client-only | CA 1, off, clientAuth-only certificate | `SSL_UNTRUSTED_SERVER` (unsuitable certificate purpose), no request |
+| no-ca | none | connects: commo accepts any certificate |
+
+A/B on the dev Mac: with `main`'s `build-commo.sh` (Apple's curl), the
+five legs that pass a CA all crashed the JVM (exit 134), and only no-ca
+"worked". With the fix, all six pass. `make test-quic`, `make test-tls`,
+`make test-gdal-network`, `make test-app-comms` and the hermetic
+round trip (`run.sh` against `fake-cot-server.py`) pass on the new
+commo.
+
+### Finding 4, settled ([issue #146](https://github.com/matteskes/macTAK/issues/146))
+
+- **Given a CA, commo verifies:** the chain, and the TLS-server purpose
+  (finding 1's rule), as the audit assumed. That's now true and proven.
+- **Given none, commo accepts any certificate.** This is upstream's
+  documented behaviour, and peer-hosted mission packages rely on it.
+  So the rule stays a rule for callers: **every call macTAK makes to
+  enrollment, file transfer, mission packages or cloud IO passes the
+  truststore's CA.** macTAK makes none today. The first will be the
+  Swift app's (G3.4 data packages and enrollment, G6 sync), through
+  `CCommoShim`, which should refuse such a call without a CA.
+- **Host names:** enrollment checks the host name when its caller sets
+  `verifyHost`, as the host-match and host-wrong legs prove; macTAK's
+  enrollment should set it. File transfers and mission packages never
+  check, as in ATAK, whose TAK server certificates often don't name the
+  address clients use. Accepted, as upstream's design, and recorded
+  here.
+- **Corrections to the audit:** `urlrequestmanager.cpp` does check host
+  names when asked (§G1.14 said "every https request"), and the
+  "verifies through libssl" sentence didn't hold on macOS until this
+  fix.
