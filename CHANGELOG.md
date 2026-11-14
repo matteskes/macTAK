@@ -51,6 +51,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A JNI class init whose member lookup fails no longer leaves its
+  `NoSuchMethodError` or `NoSuchFieldError` pending for the caller's next
+  JNI calls (issue #161; `dev/g1/NOTES.md` §G1.28). All 65 guarded inits
+  are cached in 69 `static bool` sites, and
+  `wave7-sweep-class-init-clears-exception.patch` wraps each one in
+  `ATAKMapEngineJNI_clearClassInitException`, which reports and clears
+  whatever the init left. A new missing-member leg of
+  `dev/g1/jni-tests/run.sh` puts a `Uri` without `parse` ahead of the
+  kernel jars, and fails without the patch.
+
 - commo's https paths (certificate enrollment, FTPS file transfers,
   mission packages) crashed the process or hung whenever they were given
   a CA, and with none accepted any certificate (issue #157;

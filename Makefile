@@ -24,7 +24,7 @@ help:
 	@echo "  check-ots-profiles - fail if OpenTAKServer's upstream cert profiles differ from the copy test-tls pins (needs network; nightly CI)"
 	@echo "  test           - run smoke tests (dev/g1/smoke/run.sh)"
 	@echo "  test-kernel    - takkernel's own :port and :shared unit tests on Gradle 8.13 (dev/g1/kernel/test-kernel.sh; after kernel-jars)"
-	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) (dev/g1/jni-tests/run.sh; skips without a JDK)"
+	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) + noslf4j + missing-member (a failed class init leaves a clean JNIEnv) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"
 	@echo "  test-gdal-network - layer files can't make GDAL reach the network: hostile VRT/GML/GeoJSON vs a loopback listener (G1.14 finding 10, issue 167)"
