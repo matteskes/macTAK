@@ -11,6 +11,14 @@
 #     listed files, so an unlisted jar used to pass silently (G1 security
 #     audit: the two slf4j transplants were never listed).
 #
+# Covers the committed jars only: dev/g1/transplants (slf4j-simple, the
+# binding atak-headless runs with) and dev/spike/g0/transplants (the
+# android-port base that dev/g1/kernel/android-port/build-android-port.py
+# extends). The takkernel jars aren't transplants: build-kernel-jars.sh
+# builds them from src/ into the gitignored dev/g1/kernel-dist, and
+# dev/g1/kernel/classpath.sh logs when MACTAK_KERNEL_DIST points elsewhere
+# (issue #150).
+#
 # usage: dev/check-transplants.sh   (from anywhere in the checkout)
 set -euo pipefail
 
