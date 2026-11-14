@@ -5,15 +5,18 @@
 // engine's own native GdalLibrary::init instead (GDALAllRegister + GDAL_DATA
 // + EPSG:4326 spatial reference).
 //
-// It also keeps GDAL offline (issue 155, dev/g1/NOTES.md §G1.26): both
-// inits, this native one and the Java one (patches/gdal-offline-only.patch),
-// call keepOffline() right after registering the drivers.
+// It also keeps GDAL offline (issues 155 and 167, dev/g1/NOTES.md §G1.26,
+// §G1.27): both inits, this native one and the Java one
+// (patches/gdal-offline-only.patch), call keepOffline() right after
+// registering the drivers.
 #include <jni.h>
 
 #include <cstring>
 #include <string>
 
 #include <cpl_conv.h>
+#include <cpl_error.h>
+#include <cpl_http.h>
 #include <gdal.h>
 #include <gdal_priv.h>
 
@@ -43,6 +46,22 @@ const char *const kAllowedDrivers[] = {
 // extension.)
 const char kNoCurlPath[] = "none";
 
+// GDAL's own HTTP client (CPLHTTPFetch) answers through this instead of curl.
+// It refuses every request: OGR resolves a GeoJSON "crs" link with it
+// (issue 167), and other drivers and OSR fetch schemas, xlinks and SRS
+// definitions with it. A null result would fall through to curl, so a failed
+// one goes back; a CLOSE_PERSISTENT call gets one too, which GDAL frees.
+CPLHTTPResult *refuseFetch(const char *url, CSLConstList, GDALProgressFunc, void *,
+                           CPLHTTPFetchWriteFunc, void *, void *)
+{
+    auto *refused = static_cast<CPLHTTPResult *>(CPLCalloc(1, sizeof(CPLHTTPResult)));
+    refused->nStatus = 1;
+    refused->pszErrBuf = CPLStrdup("macTAK keeps GDAL offline");
+    CPLError(CE_Failure, CPLE_AppDefined, "macTAK keeps GDAL offline: refused %s",
+             url ? url : "(no URL)");
+    return refused;
+}
+
 bool isAllowed(const char *name)
 {
     for (const char *allowed : kAllowedDrivers)
@@ -51,7 +70,7 @@ bool isAllowed(const char *name)
     return false;
 }
 
-// Two layers, because each misses what the other catches (§G1.26):
+// Three layers, because each misses what the others catch (§G1.26, §G1.27):
 //  - GDAL_SKIP: every registered driver outside the allowlist, after what the
 //    option already holds (GdalLibrary.java skips MBTiles and GPKG). Every
 //    later GDALAllRegister honours it, including the other init's, so the
@@ -60,6 +79,8 @@ bool isAllowed(const char *name)
 //    because some driver names contain spaces.
 //  - the curl file systems (/vsicurl, /vsis3, /vsiaz, ...) refuse every path,
 //    which stops an allowed driver reading a remote source.
+//  - GDAL's HTTP client refuses every request (refuseFetch), which stops an
+//    allowed driver, or OSR, fetching what a file links to.
 void keepOffline()
 {
     std::string skip;
@@ -76,6 +97,7 @@ void keepOffline()
     CPLSetConfigOption("GDAL_SKIP", skip.c_str());
     GetGDALDriverManager()->AutoSkipDrivers();
     CPLSetConfigOption("CPL_VSIL_CURL_ALLOWED_FILENAME", kNoCurlPath);
+    CPLHTTPSetFetchCallback(refuseFetch, nullptr);
 }
 
 }  // namespace

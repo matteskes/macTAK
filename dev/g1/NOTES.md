@@ -1183,7 +1183,7 @@ and its password. Six findings; each lands as its own focused PR.
 | 7 | Low | `--db` tracks DB created under the default umask (0644 on macOS): other local accounts can read every received position | **Fixed** (pass 2, branch `g1/security-audit-pass-2`): `TrackStore` creates it 0600, guarded by `run.sh` |
 | 8 | Note | `TrackStore` appends one row per received CoT with no cap or retention: a chatty or hostile server grows the file for as long as the client runs | Recorded; atak-headless runs bounded by `--duration`, G6 needs retention; [issue #148](https://github.com/matteskes/macTAK/issues/148) |
 | 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | **Fixed** (2026-11-11, by the 5.5 re-pin, `5169342`): the kernel jars are built from `src/` into `dev/g1/kernel-dist` against a private Maven repo, and `dev/g1/kernel/classpath.sh` reads only that directory, so `~/.m2` is never read; an override (`MACTAK_KERNEL_DIST`) is logged; [issue #150](https://github.com/matteskes/macTAK/issues/150) |
-| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | **Fixed** (2026-11-13, branch `g1/gdal-open-allowlist`): `patches/ogr-open-driver-allowlist.patch`, guarded by `test/gdal-network.sh` (§G1.19); [issue #147](https://github.com/matteskes/macTAK/issues/147). Rasters: **fixed** (2026-11-14), GDAL kept offline for the whole process, guarded by `dev/g2/render/test/gdal-network.sh` (§G1.26); [issue #155](https://github.com/matteskes/macTAK/issues/155) |
+| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | **Fixed** (2026-11-13, branch `g1/gdal-open-allowlist`): `patches/ogr-open-driver-allowlist.patch`, guarded by `test/gdal-network.sh` (§G1.19); [issue #147](https://github.com/matteskes/macTAK/issues/147). Rasters: **fixed** (2026-11-14), GDAL kept offline for the whole process, guarded by `dev/g2/render/test/gdal-network.sh` (§G1.26); [issue #155](https://github.com/matteskes/macTAK/issues/155). GDAL's HTTP client (a GeoJSON `crs` link): **fixed** (2026-11-14, §G1.27); [issue #167](https://github.com/matteskes/macTAK/issues/167) |
 | 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | Recorded; [issue #151](https://github.com/matteskes/macTAK/issues/151) |
 | 12 | Low | CI: 14 of the 16 checkouts in `ci.yml`, `cot-roundtrip.yml` and `docs.yml` left the job token in `.git/config` while build scripts and Homebrew-installed tools ran | **Fixed** (CI workflow pass, branch `ci/checkout-persist-credentials`): `persist-credentials: false` on each; the two `changes` jobs keep the token for their `git fetch` |
 
@@ -1586,7 +1586,8 @@ vector opens:
   LIBKML, ESRI Shapefile, GPX and FlatGeobuf, chosen as formats that never
   follow references in a file. **That held for all but GeoJSON**, which
   fetches the URL in a legacy `crs` link (§Formats: ATAK 5.5 parity,
-  below; [issue #167](https://github.com/matteskes/macTAK/issues/167)).
+  below; [issue #167](https://github.com/matteskes/macTAK/issues/167),
+  fixed in §G1.27).
   They cover what the engine was built to open:
   it attaches styles only to KML, GPX and Shapefile
   (`OgrFeatureDataSource.registerDrivers`), and `layer.sh` proves
@@ -1664,7 +1665,7 @@ export), DXF, MapInfo, TopoJSON, GeoJSONSeq or ESRIJSON.
 | Format | Decision | State |
 |---|---|---|
 | KML/KMZ, GPX, Shapefile, GPKG | keep | allowed |
-| GeoJSON | keep: ATAK 5.5 imports it | allowed. Its `crs` link fetch must be blocked ([#167](https://github.com/matteskes/macTAK/issues/167)) |
+| GeoJSON | keep: ATAK 5.5 imports it | allowed. Its `crs` link fetch is blocked (§G1.27, [#167](https://github.com/matteskes/macTAK/issues/167)) |
 | FlatGeobuf | drop: no ATAK importer | still allowed until the patch changes ([#156](https://github.com/matteskes/macTAK/issues/156)) |
 | GML | add back: ATAK 5.5 imports it | refused until it opens with schema downloads and `.gfs` writing off ([#168](https://github.com/matteskes/macTAK/issues/168)) |
 | CSV, DXF, MapInfo, TopoJSON, GeoJSONSeq, ESRIJSON | stay out | refused |
@@ -1697,7 +1698,8 @@ engine's `LIBKML_RESOLVE_STYLE=YES`. Each file pointed at:
 The GeoJSON fetch also happens through the engine's own import path:
 `atak-headless --layer` imported the feature, and the witness logged
 `GET /crs.wkt`. `test/gdal-network.sh` didn't catch it, because its
-hostile files are a VRT and a GML file only. #167 adds a GeoJSON leg.
+hostile files were a VRT and a GML file only. §G1.27 (#167) adds a
+GeoJSON leg.
 
 ## G1.20 — commo's https paths verify, and don't crash (2026-11-13, branch `g1/commo-static-curl`, issues 157 and 146)
 
@@ -2398,11 +2400,65 @@ it), `layer.sh`'s six legs, `make test-gdal-network` and
 ### What it doesn't cover
 
 - **GeoJSON's `crs` link** ([issue #167](https://github.com/matteskes/macTAK/issues/167))
-  still fetches: `atak-headless --layer` sent `GET /crs.wkt` with this fix
+  still fetched: `atak-headless --layer` sent `GET /crs.wkt` with this fix
   in. OGR resolves the link with GDAL's own HTTP client (`CPLHTTPFetch`),
-  not a curl file system, and GeoJSON is an allowed driver. GDAL exports
-  `CPLHTTPSetFetchCallback`, so a refuse-all callback in `keepOffline()`
-  could close it.
+  not a curl file system, and GeoJSON is an allowed driver. **Fixed in
+  §G1.27.**
 - **MOBAC map sources** reach the network through the engine's own Java
   tile client, by design. When imagery arrives from other people (G6),
   which map sources may load needs a decision of its own.
+
+## G1.27 — GDAL's HTTP client refuses every request (2026-11-14, branch `g1/issue-167-gdal-http-fetch`, issue 167)
+
+**The bug.** A GeoJSON file with a legacy `crs` link
+(`"crs": {"type": "link", "properties": {"href": "http://…"}}`) made
+the engine fetch the `href` when the file was imported. GeoJSON is an
+allowed layer driver (§G1.19), and §G1.26's lockdown didn't stop it:
+OGR resolves the link through GDAL's own HTTP client, `CPLHTTPFetch`,
+not a curl file system, so `CPL_VSIL_CURL_ALLOWED_FILENAME` doesn't
+apply.
+
+**The reference.** ATAK 5.5 (`atak-civ` @ `9f6893d`) sets no option that
+limits GDAL's network use: its `GdalLibrary` inits set `GDAL_SKIP`,
+`GDAL_DATA`, logging and `GDAL_DISABLE_READDIR_ON_OPEN`, and its GDAL
+build (`takthirdparty/mk/gdal.mk`) links curl. So ATAK fetches the link
+too. macTAK closes it, as it did #147 and #155.
+
+**The fix.** `keepOffline()` (`jni-extra/mactak_gdal.cpp`), which both
+GDAL inits call, now also installs a process-wide fetch callback with
+`CPLHTTPSetFetchCallback`. The callback refuses every request: it raises
+a GDAL error naming the URL and returns a failed result. The GDAL 3.13.3
+source (`port/cpl_http.cpp`) set three constraints:
+
+- **The callback can't return null.** `CPLHTTPFetchEx` falls through to
+  curl when the global callback returns null. So it returns a
+  `CPLHTTPResult` with `nStatus` 1 and an error message, which callers
+  free with `CPLHTTPDestroyResult`. A `CLOSE_PERSISTENT` call gets one
+  too, and GDAL frees it.
+- **It has to be the global callback.** The push and pop stack
+  (`CPLHTTPPushFetchCallback`) is per thread, so it would cover only the
+  thread that pushed it.
+- **`CPLHTTPMultiFetch` doesn't use callbacks.** No GDAL code calls it
+  (it's an API entry point only), so the callback covers every
+  `CPLHTTPFetch` caller. Besides the GeoJSON driver, that includes OSR's
+  URL resolution, the GML and GMLAS schema and xlink fetches, and the
+  web-service drivers, which `GDAL_SKIP` already removes.
+
+**The result.** The import still works: the feature is stored at the
+right coordinates, and with no CRS read the file falls back to GeoJSON's
+default, WGS 84. The engine logs
+`ERROR 1: macTAK keeps GDAL offline: refused http://…/crs.wkt`.
+
+### The guard
+
+`test/gdal-network.sh` (`make test-gdal-network`, CI's native-engine
+job) gains a third hostile file, `hostile.geojson`, whose `crs` link
+names the witness. A/B on the dev Mac:
+
+| Engine | Control (`ogrinfo`) | `hostile.vrt` | `hostile.gml` | `hostile.geojson` | Canary |
+|---|---|---|---|---|---|
+| without the callback | all 3 fetched | 0 | 0 | `GET /crs.wkt` | FAIL |
+| with the callback | all 3 fetched | 0 | 0 | 0 | PASS |
+
+With the fix, `layer.sh`, `make test-gdal-projection`, and the render
+tests `gdal-network.sh`, `geotiff.sh` and `elevation.sh` pass.

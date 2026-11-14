@@ -37,8 +37,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`dev/g1/NOTES.md` §G1.19, issue #156). FlatGeobuf is to be dropped,
   GML brought back safely (#168), and nothing outside ATAK's set added.
   The probe behind the decision found that GeoJSON, which the allowlist
-  admits, fetches the URL in a legacy `crs` link (#167, open). No code
-  has changed yet.
+  admits, fetches the URL in a legacy `crs` link (#167, since fixed;
+  see Security).
 - G2's notes and `BasemapLayers` no longer say `DatasetRasterLayer2` is
   deprecated for removal at 5.5. It isn't. What 5.5 deprecates is its old
   GL renderer, `GLDatasetRasterLayer2`, which the engine creates itself.
@@ -118,6 +118,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- Importing a GeoJSON file can no longer make GDAL reach the network
+  (issue #167; `dev/g1/NOTES.md` §G1.27). A legacy `crs` link made the
+  engine fetch its `href`, through GDAL's own HTTP client
+  (`CPLHTTPFetch`), which the #155 lockdown didn't cover. `keepOffline()`
+  now also installs a fetch callback that refuses every request, so
+  nothing in GDAL can use that client. The file still imports, in WGS 84.
+  `make test-gdal-network` (CI) gains a GeoJSON leg that fails without
+  the callback.
+
 - Opening imagery or elevation can no longer make GDAL reach the network
   (issue #155; `dev/g1/NOTES.md` §G1.26). Through the engine's own
   imagery and elevation paths, a raster VRT fetched its `/vsicurl/`
@@ -133,7 +142,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   JP2OpenJPEG), the images in KMZ overlays (PNG, JPEG, GIF), MEM, and the
   layer formats. `dev/g2/render/test/gdal-network.sh`, in
   `make test-render` (CI), fails without it. GeoJSON's `crs` link (#167)
-  is a different path and still fetches.
+  went through a different path; fixed separately (above).
 
 - Opening a layer file can no longer make GDAL reach the network (G1.14
   finding 10, issue #147; `dev/g1/NOTES.md` §G1.19). The engine opened
