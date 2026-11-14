@@ -107,11 +107,11 @@ gradle, no mavenLocal in CI's native job.
 
 ## Smoke runtime contract (dev/g1/smoke/)
 
-`run.sh` needs: JDK 8 (`JAVA_HOME` or `/usr/libexec/java_home -v 1.8`)
-and, per jar, mavenLocal first, else the committed transplant:
-`takkernel-engine/-port/-annotation 0.59.1` at `dev/g1/transplants/`
-(built from the same pinned upstream commit as src/) and
-`android-port-3.1.0` at its G0 home `dev/spike/g0/transplants/`. The
+`run.sh` needs the takkernel jars that `dev/g1/kernel/build-kernel-jars.sh`
+builds from `src/` into `dev/g1/kernel-dist`, put in order by
+`dev/g1/kernel/classpath.sh` (`make kernel-jars`). Before the 5.5 re-pin
+it took them per jar from mavenLocal first, else the committed 0.59.1
+transplants; that order is gone (issue #150). The
 android-port jar provides `android.*` stub signatures the engine jar's
 signatures reference; the happy path never constructs a stub body (any
 engine-side failure would surface as a confusing "Stub!" — stay on the
@@ -1182,7 +1182,7 @@ and its password. Six findings; each lands as its own focused PR.
 | 6 | Note | Reviewed, no issue: data-package importer (Zip-Slip, size caps, XXE, no password in logs, 0700 cert dir), `CotEvent` (XXE + §G1.11 validation), `TrackStore` (bound parameters), fake server (loopback only); deep pass: commo's stream framing (fixed 64 KiB buffer, protobuf length capped at it, overflow discards rather than overruns), its XML parse (`XML_PARSE_NONET`, no entity substitution or external DTD), and no listening socket (the mission-package web server starts only after `setupMissionPackageIO`, which atak-headless never calls); native-code read: the 34 engine patches, 2 commo patches and `jni-extra` add only null/exception guards, GL attribute guards and three upstream memory-bug fixes, and touch no buffer except `vsi_jfile` Read/Write, which keeps upstream's 32-bit length (a read over 2 GB comes back short, never past the buffer); CI workflow pass: every workflow is `contents: read`, triggers on `pull_request` (never `pull_request_target`), uses no repository secrets, pins every action and the upstream checkout by commit, and passes PR-controlled values to scripts through `env`, never inline | — |
 | 7 | Low | `--db` tracks DB created under the default umask (0644 on macOS): other local accounts can read every received position | **Fixed** (pass 2, branch `g1/security-audit-pass-2`): `TrackStore` creates it 0600, guarded by `run.sh` |
 | 8 | Note | `TrackStore` appends one row per received CoT with no cap or retention: a chatty or hostile server grows the file for as long as the client runs | Recorded; atak-headless runs bounded by `--duration`, G6 needs retention; [issue #148](https://github.com/matteskes/macTAK/issues/148) |
-| 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | Recorded; only the same user can write `~/.m2`, so no boundary is crossed; [issue #150](https://github.com/matteskes/macTAK/issues/150) |
+| 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | **Fixed** (2026-11-11, by the 5.5 re-pin, `5169342`): the kernel jars are built from `src/` into `dev/g1/kernel-dist` against a private Maven repo, and `dev/g1/kernel/classpath.sh` reads only that directory, so `~/.m2` is never read; an override (`MACTAK_KERNEL_DIST`) is logged; [issue #150](https://github.com/matteskes/macTAK/issues/150) |
 | 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | **Fixed** (2026-11-13, branch `g1/gdal-open-allowlist`): `patches/ogr-open-driver-allowlist.patch`, guarded by `test/gdal-network.sh` (§G1.19); [issue #147](https://github.com/matteskes/macTAK/issues/147) |
 | 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | Recorded; [issue #151](https://github.com/matteskes/macTAK/issues/151) |
 | 12 | Low | CI: 14 of the 16 checkouts in `ci.yml`, `cot-roundtrip.yml` and `docs.yml` left the job token in `.git/config` while build scripts and Homebrew-installed tools ran | **Fixed** (CI workflow pass, branch `ci/checkout-persist-credentials`): `persist-credentials: false` on each; the two `changes` jobs keep the token for their `git fetch` |

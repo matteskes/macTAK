@@ -15,7 +15,7 @@ the PR's purpose becomes its own focused PR.
 | **Fragility** | A change breaks something unrelated | Context drift in engine patches: applying at `--fuzz=0` makes this fail loudly instead of landing "close enough" |
 | **Immobility** | Code can't be reused elsewhere without dragging its context | Logic stuck in `HeadlessCLI.main` that a test can't reach; the cure is extracting it (as `CotXml` and `ConnectOptions` were) |
 | **Needless complexity** | Machinery for needs that don't exist | Options, env vars or abstractions with no current caller |
-| **Needless repetition** | The same logic copied | The mavenLocal-or-transplant `jar()` classpath helper is copied in `atak-headless`, `smoke/run.sh`, `jni-tests/run.sh`, `compile-gate.sh` and `dev/g2/render/env.sh`. Before adding a sixth copy, factor it into one sourced file in its own PR |
+| **Needless repetition** | The same logic copied | The kernel classpath was once built by a `jar()` helper copied into five scripts; the 5.5 re-pin factored it into one sourced file, `dev/g1/kernel/classpath.sh`. Source a shared file like that instead of adding a copy |
 | **Opacity** | Code is hard to understand | Unnamed literals (`HeadlessCLI`'s exit codes `2`/`3`/`4` against `LayerCLI`'s named `EXIT_*`), unexplained engine quirks with no patch-site comment |
 
 ## Review procedure

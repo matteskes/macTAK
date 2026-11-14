@@ -134,6 +134,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   upstream's design, so every macTAK call must pass one. `make
   test-commo-https` (CI) proves each case against loopback servers.
 
+- G1.14 finding 9 (issue #150) is closed: no script reads kernel jars
+  from `~/.m2` any more. The 5.5 re-pin already builds them from `src/`
+  into `dev/g1/kernel-dist` against a private Maven repo;
+  `dev/g1/kernel/classpath.sh` now logs on stderr when
+  `MACTAK_KERNEL_DIST` points somewhere else, so a run's log shows which
+  jars ran, and `dev/check-transplants.sh` documents which jars it
+  covers.
+
 ## [0.3.2] - 2026-11-13 — G2: the shell, gestures, imagery, terrain and the exit run (gate open on trap 77) + G3.0 app skeleton
 
 G2's gate stays open: the exit run's zero-dropped-frames gate still fails
