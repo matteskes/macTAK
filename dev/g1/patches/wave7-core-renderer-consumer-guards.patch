@@ -1,0 +1,263 @@
+--- a/tmp/takeng-src/jni/interop/core/ManagedLayer.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedLayer.cpp
+@@ -36,6 +36,10 @@
+     mutex(TEMT_Recursive)
+ {
+     static bool clinit = Layer_class_init(env_);
++    // macTAK (issue 142): on a failed class init getName is NULL; the
++    // layer keeps no name, and every consumer bails
++    if(!clinit)
++        return;
+     Java::JNILocalRef mname(env_, env_.CallObjectMethod(impl, Layer_class.getName));
+     JNIStringUTF_get(name, env_, (jstring)mname);
+ 
+@@ -59,6 +63,10 @@
+ }
+ void ManagedLayer::addVisibilityListener (VisibilityListener *clistener)
+ {
++    // macTAK (issue 142): a listener is only registered when its removal
++    // (here and in the destructor) can go through too
++    if(!Layer_class.addOnLayerVisibleChangedListener || !Layer_class.removeOnLayerVisibleChangedListener)
++        return;
+     LockPtr lock(NULL, NULL);
+     Lock_create(lock, mutex);
+     if(visibilityListeners.find(clistener) != visibilityListeners.end())
+@@ -77,6 +85,8 @@
+ }
+ bool ManagedLayer::isVisible () const
+ {
++    if(!Layer_class.isVisible)
++        return false;
+     LocalJNIEnv env;
+     return env->CallBooleanMethod(impl, Layer_class.isVisible);
+ }
+@@ -96,6 +106,8 @@
+ }
+ void ManagedLayer::setVisible (bool visibility)
+ {
++    if(!Layer_class.setVisible)
++        return;
+     LocalJNIEnv env;
+     env->CallVoidMethod(impl, Layer_class.setVisible, visibility);
+ }
+--- a/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.cpp
+@@ -95,11 +95,17 @@
+ }
+ bool ManagedMapRenderer3::isAnimating() const NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!MapRenderer3_class.isAnimating)
++        return false;
+     LocalJNIEnv env;
+     return env->CallBooleanMethod(impl, MapRenderer3_class.isAnimating);
+ }
+ TAKErr ManagedMapRenderer3::setDisplayMode(const TAK::Engine::Core::MapRenderer::DisplayMode cmode) NOTHROWS
+ {
++    if(!MapRenderer3_class.setDisplayMode)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     LocalJNIEnv env;
+     TAKEngineJNI::Interop::Java::JNILocalRef mmode(*env, nullptr);
+@@ -114,6 +120,8 @@
+ }
+ MapRenderer::DisplayMode ManagedMapRenderer3::getDisplayMode() const NOTHROWS
+ {
++    if(!MapRenderer3_class.getDisplayMode)
++        return MapRenderer::DisplayMode::Globe;
+     TAKErr code(TE_Ok);
+     LocalJNIEnv env;
+     TAKEngineJNI::Interop::Java::JNILocalRef mmode(*env, env->CallObjectMethod(impl, MapRenderer3_class.getDisplayMode));
+@@ -122,6 +130,8 @@
+ }
+ MapRenderer::DisplayOrigin ManagedMapRenderer3::getDisplayOrigin() const NOTHROWS
+ {
++    if(!MapRenderer3_class.getDisplayOrigin)
++        return MapRenderer::DisplayOrigin::LowerLeft;
+     TAKErr code(TE_Ok);
+     LocalJNIEnv env;
+     TAKEngineJNI::Interop::Java::JNILocalRef morigin(*env, env->CallObjectMethod(impl, MapRenderer3_class.getDisplayOrigin));
+--- a/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
+@@ -49,6 +49,9 @@
+ }
+ TAKErr ManagedProjection::forward(Point2<double> *proj, const GeoPoint2 &geo) const NOTHROWS
+ {
++    // macTAK (issue 142): forward and inverse joined the getters' guards
++    if(!Projection_class.forward)
++        return TE_Err;
+     if(!proj)
+         return TE_InvalidArg;
+ 
+@@ -79,6 +82,8 @@
+ }
+ TAKErr ManagedProjection::inverse(GeoPoint2 *geo, const Point2<double> &proj) const NOTHROWS
+ {
++    if(!Projection_class.inverse)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     LocalJNIEnv env;
+ 
+--- a/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.cpp
+@@ -43,7 +43,8 @@
+     impl(env_.NewWeakGlobalRef(impl_))
+ {
+     static bool clinit = RenderSurface_init(env_);
+-    isRenderSurface2 = env_.IsInstanceOf(impl_, RenderSurface2_class.id);
++    // macTAK (issue 142): IsInstanceOf on a NULL class when the init failed
++    isRenderSurface2 = clinit && env_.IsInstanceOf(impl_, RenderSurface2_class.id);
+ }
+ ManagedRenderSurface::~ManagedRenderSurface() NOTHROWS
+ {
+@@ -62,11 +63,17 @@
+ 
+ double ManagedRenderSurface::getDpi() const NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!RenderSurface_class.getDpi)
++        return NAN;
+     LocalJNIEnv env;
+     return env->CallDoubleMethod(impl, RenderSurface_class.getDpi);
+ }
+ std::size_t ManagedRenderSurface::getWidth() const NOTHROWS
+ {
++    if(!(isRenderSurface2 ? RenderSurface2_class.getSurfaceWidth : RenderSurface_class.getWidth))
++        return 0u;
+     LocalJNIEnv env;
+     if (isRenderSurface2) {
+         return env->CallIntMethod(impl, RenderSurface2_class.getSurfaceWidth);
+@@ -75,6 +82,8 @@
+ }
+ std::size_t ManagedRenderSurface::getHeight() const NOTHROWS
+ {
++    if(!(isRenderSurface2 ? RenderSurface2_class.getSurfaceHeight : RenderSurface_class.getHeight))
++        return 0u;
+     LocalJNIEnv env;
+     if (isRenderSurface2) {
+         return env->CallIntMethod(impl, RenderSurface2_class.getSurfaceHeight);
+@@ -83,6 +92,11 @@
+ }
+ void ManagedRenderSurface::addOnSizeChangedListener(RenderSurface::OnSizeChangedListener *clistener) NOTHROWS
+ {
++    // macTAK (issue 142): a listener is only registered when its removal
++    // (here and in the destructor) can go through too
++    if(!RenderSurface_class.addOnSizeChangedListener || !RenderSurface_class.removeOnSizeChangedListener ||
++       !NativeRenderSurfaceSizeChangedListener_class.init)
++        return;
+     LocalJNIEnv env;
+     Lock lock(mutex);
+     if(listeners.find(clistener) != listeners.end())
+--- a/tmp/takeng-src/jni/interop/core/ManagedVisibilityListener.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedVisibilityListener.cpp
+@@ -36,6 +36,10 @@
+ }
+ void ManagedVisibilityListener::visibilityChanged(atakmap::core::Layer &csubject)
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!Layer_OnLayerVisibleChangedListener_class.onLayerVisibleChanged)
++        return;
+     LocalJNIEnv env;
+     Java::JNILocalRef msubject(*env, NULL);
+     if(Interop_marshal(msubject, *env, csubject) != TE_Ok)
+--- a/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayer2.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayer2.cpp
+@@ -44,6 +44,13 @@
+     impl(renderable.impl)
+ {
+     static bool clinit = ManagedGLLayer2_class_init(env_);
++    // macTAK (issue 142): on a failed class init getSubject and the GLLayer3
++    // class are NULL; the layer has no subject, and draw, release, start
++    // and stop bail
++    if(!clinit) {
++        gllayer3 = false;
++        return;
++    }
+     std::shared_ptr<atakmap::core::Layer> csub;
+     Java::JNILocalRef msub(env_, env_.CallObjectMethod(impl, GLLayer3_class.getSubject));
+     // macTAK (G2): a Java exception thrown by getSubject() would otherwise
+@@ -69,6 +76,8 @@
+     if(gllayer3) {
+         renderable.draw(cview, crenderPass);
+     } else {
++        if(!GLLayer3_class.draw || !GLMapView_class.syncVersion || !GLMapView_class.syncPass || !GLMapView_class.sync)
++            return;
+         LocalJNIEnv env;
+         if(env->ExceptionCheck())
+             return;
+@@ -99,6 +108,8 @@
+     if(gllayer3) {
+         renderable.release();
+     } else {
++        if(!GLLayer3_class.release)
++            return;
+         LocalJNIEnv env;
+         if(env->ExceptionCheck())
+             return;
+@@ -119,6 +130,8 @@
+ }
+ void ManagedGLLayer2::start() NOTHROWS
+ {
++    if(!GLLayer3_class.start)
++        return;
+     LocalJNIEnv env;
+     if(env->ExceptionCheck())
+         return;
+@@ -130,6 +143,8 @@
+ }
+ void ManagedGLLayer2::stop() NOTHROWS
+ {
++    if(!GLLayer3_class.stop)
++        return;
+     LocalJNIEnv env;
+     if(env->ExceptionCheck())
+         return;
+--- a/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayerSpi2.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayerSpi2.cpp
+@@ -43,6 +43,10 @@
+ }
+ TAKErr ManagedGLLayerSpi2::create(GLLayer2Ptr &value, GLGlobeBase& renderer, Layer2 &subject2) NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!GLLayerSpi2_class.create)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     std::shared_ptr<Layer2> subject2Ptr = std::move(Layer2Ptr(&subject2, Memory_leaker_const<Layer2>));
+     std::shared_ptr<atakmap::core::Layer> subject;
+--- a/tmp/takeng-src/jni/interop/renderer/core/ManagedGLMapRenderable2.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/core/ManagedGLMapRenderable2.cpp
+@@ -53,6 +53,12 @@
+ }
+ void ManagedGLMapRenderable2::draw(const TAK::Engine::Renderer::Core::GLGlobeBase& cview, const int crenderPass) NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!GLMapRenderable2_class.draw)
++        return;
++    if(requiresSync && (!GLMapView_class.syncVersion || !GLMapView_class.syncPass || !GLMapView_class.sync))
++        return;
+     LocalJNIEnv env;
+     if(env->ExceptionCheck())
+         return;
+@@ -84,6 +90,8 @@
+ }
+ void ManagedGLMapRenderable2::release() NOTHROWS
+ {
++    if(!GLMapRenderable2_class.release)
++        return;
+     LocalJNIEnv env;
+     if(env->ExceptionCheck())
+         return;
+@@ -91,6 +99,8 @@
+ }
+ int ManagedGLMapRenderable2::getRenderPass() NOTHROWS
+ {
++    if(!GLMapRenderable2_class.getRenderPass)
++        return 0;
+     LocalJNIEnv env;
+     if(env->ExceptionCheck())
+         return 0;

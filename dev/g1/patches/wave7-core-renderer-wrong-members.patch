@@ -1,0 +1,151 @@
+--- a/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.cpp
+@@ -126,7 +126,10 @@
+     LocalJNIEnv env;
+     TAKEngineJNI::Interop::Java::JNILocalRef mmode(*env, env->CallObjectMethod(impl, MapRenderer3_class.getDisplayMode));
+     MapRenderer::DisplayMode cmode;
+-    return TAKEngineJNI::Interop::Core::Interop_marshal(&cmode, *env, mmode) ? cmode : MapRenderer::DisplayMode::Globe;
++    // macTAK (issue 142): Interop_marshal returns TE_Ok (0) on success;
++    // upstream tested it as a bool, returning Globe on success and an
++    // uninitialized mode on failure
++    return (TAKEngineJNI::Interop::Core::Interop_marshal(&cmode, *env, mmode) == TE_Ok) ? cmode : MapRenderer::DisplayMode::Globe;
+ }
+ MapRenderer::DisplayOrigin ManagedMapRenderer3::getDisplayOrigin() const NOTHROWS
+ {
+@@ -136,7 +139,8 @@
+     LocalJNIEnv env;
+     TAKEngineJNI::Interop::Java::JNILocalRef morigin(*env, env->CallObjectMethod(impl, MapRenderer3_class.getDisplayOrigin));
+     MapRenderer::DisplayOrigin corigin;
+-    return TAKEngineJNI::Interop::Core::Interop_marshal(&corigin, *env, morigin) ? corigin : MapRenderer::DisplayOrigin::LowerLeft;
++    // macTAK (issue 142): as getDisplayMode, the success test was inverted
++    return (TAKEngineJNI::Interop::Core::Interop_marshal(&corigin, *env, morigin) == TE_Ok) ? corigin : MapRenderer::DisplayOrigin::LowerLeft;
+ }
+ TAKErr ManagedMapRenderer3::setFocusPoint(const float focusx, const float focusy) NOTHROWS
+ {
+@@ -176,6 +180,12 @@
+ }
+ 
+ namespace {
++    // macTAK (issue 142; F-1, issue 141): 14 of these lookups named members
++    // 5.5 doesn't have (GeoPoint's and IMapRendererEnums' packages moved,
++    // the focus-point getters are *Offset*, the camera listener is
++    // MapRenderer2's OnCameraChangedListener2, two signatures lacked their
++    // ';', and setFocusPointOffset was looked up as "isAnimating"), so this
++    // init failed on every JVM, at its second lookup
+     bool MapRenderer3_init(JNIEnv &env) NOTHROWS {
+         MapRenderer3_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/map/MapRenderer3");
+         if(!MapRenderer3_class.id)
+@@ -183,49 +193,49 @@
+         MapRenderer3_class.getRenderContext = env.GetMethodID(MapRenderer3_class.id, "getRenderContext", "()Lcom/atakmap/map/RenderContext;");
+         if(!MapRenderer3_class.getRenderContext)
+             return false;
+-        MapRenderer3_class.lookAt__GeoPoint__GeoPoint_Z = env.GetMethodID(MapRenderer3_class.id, "lookAt", "(Lcom/atakmap/coremap/coords/GeoPoint;Lcom/atakmap/coremap/coords/GeoPoint;Lgov/tak/api/map/IMapRendererEnums$CameraCollision;Z)Z");
++        MapRenderer3_class.lookAt__GeoPoint__GeoPoint_Z = env.GetMethodID(MapRenderer3_class.id, "lookAt", "(Lcom/atakmap/coremap/maps/coords/GeoPoint;Lcom/atakmap/coremap/maps/coords/GeoPoint;Lgov/tak/api/engine/map/IMapRendererEnums$CameraCollision;Z)Z");
+         if(!MapRenderer3_class.lookAt__GeoPoint__GeoPoint_Z)
+             return false;
+-        MapRenderer3_class.lookAt__GeoPoint_DDDZ = env.GetMethodID(MapRenderer3_class.id, "lookAt", "(Lcom/atakmap/coremap/coords/GeoPoint;DDDLgov/tak/api/map/IMapRendererEnums$CameraCollision;Z)Z");
++        MapRenderer3_class.lookAt__GeoPoint_DDDZ = env.GetMethodID(MapRenderer3_class.id, "lookAt", "(Lcom/atakmap/coremap/maps/coords/GeoPoint;DDDLgov/tak/api/engine/map/IMapRendererEnums$CameraCollision;Z)Z");
+         if(!MapRenderer3_class.lookAt__GeoPoint_DDDZ)
+             return false;
+-        MapRenderer3_class.lookFrom = env.GetMethodID(MapRenderer3_class.id, "lookFrom", "(Lcom/atakmap/coremap/coords/GeoPoint;DDLgov/tak/api/map/IMapRendererEnums$CameraCollision;Z)Z");
++        MapRenderer3_class.lookFrom = env.GetMethodID(MapRenderer3_class.id, "lookFrom", "(Lcom/atakmap/coremap/maps/coords/GeoPoint;DDLgov/tak/api/engine/map/IMapRendererEnums$CameraCollision;Z)Z");
+         if(!MapRenderer3_class.lookFrom)
+             return false;
+         MapRenderer3_class.isAnimating = env.GetMethodID(MapRenderer3_class.id, "isAnimating", "()Z");
+         if(!MapRenderer3_class.isAnimating)
+             return false;
+-        MapRenderer3_class.getMapSceneModel = env.GetMethodID(MapRenderer3_class.id, "getMapSceneModel", "(ZLgov/tak/api/map/IMapRendererEnums$DisplayOrigin;)Lcom/atakmap/map/MapSceneModel;");
++        MapRenderer3_class.getMapSceneModel = env.GetMethodID(MapRenderer3_class.id, "getMapSceneModel", "(ZLgov/tak/api/engine/map/IMapRendererEnums$DisplayOrigin;)Lcom/atakmap/map/MapSceneModel;");
+         if(!MapRenderer3_class.getMapSceneModel)
+             return false;
+-        MapRenderer3_class.getDisplayMode = env.GetMethodID(MapRenderer3_class.id, "getDisplayMode", "()Lgov/tak/api/map/IMapRendererEnums$DisplayMode;");
++        MapRenderer3_class.getDisplayMode = env.GetMethodID(MapRenderer3_class.id, "getDisplayMode", "()Lgov/tak/api/engine/map/IMapRendererEnums$DisplayMode;");
+         if(!MapRenderer3_class.getDisplayMode)
+             return false;
+-        MapRenderer3_class.setDisplayMode = env.GetMethodID(MapRenderer3_class.id, "setDisplayMode", "(Lgov/tak/api/map/IMapRendererEnums$DisplayMode;)V");
++        MapRenderer3_class.setDisplayMode = env.GetMethodID(MapRenderer3_class.id, "setDisplayMode", "(Lgov/tak/api/engine/map/IMapRendererEnums$DisplayMode;)V");
+         if(!MapRenderer3_class.setDisplayMode)
+             return false;
+-        MapRenderer3_class.setFocusPointOffset = env.GetMethodID(MapRenderer3_class.id, "isAnimating", "(FF)V");
++        MapRenderer3_class.setFocusPointOffset = env.GetMethodID(MapRenderer3_class.id, "setFocusPointOffset", "(FF)V");
+         if(!MapRenderer3_class.setFocusPointOffset)
+             return false;
+-        MapRenderer3_class.getFocusPointOffsetX = env.GetMethodID(MapRenderer3_class.id, "getFocusPointX", "()F");
++        MapRenderer3_class.getFocusPointOffsetX = env.GetMethodID(MapRenderer3_class.id, "getFocusPointOffsetX", "()F");
+         if(!MapRenderer3_class.getFocusPointOffsetX)
+             return false;
+-        MapRenderer3_class.getFocusPointOffsetY = env.GetMethodID(MapRenderer3_class.id, "getFocusPointY", "()F");
++        MapRenderer3_class.getFocusPointOffsetY = env.GetMethodID(MapRenderer3_class.id, "getFocusPointOffsetY", "()F");
+         if(!MapRenderer3_class.getFocusPointOffsetY)
+             return false;
+-        MapRenderer3_class.getDisplayOrigin = env.GetMethodID(MapRenderer3_class.id, "getDisplayOrigin", "()Lgov/tak/api/map/IMapRendererEnums$DisplayOrigin;");
++        MapRenderer3_class.getDisplayOrigin = env.GetMethodID(MapRenderer3_class.id, "getDisplayOrigin", "()Lgov/tak/api/engine/map/IMapRendererEnums$DisplayOrigin;");
+         if(!MapRenderer3_class.getDisplayOrigin)
+             return false;
+-        MapRenderer3_class.addOnCameraChangedListener = env.GetMethodID(MapRenderer3_class.id, "addOnCameraChangedListener", "(Lcom/atakmap/map/MapRenderer3$OnCameraChangedListener)V");
++        MapRenderer3_class.addOnCameraChangedListener = env.GetMethodID(MapRenderer3_class.id, "addOnCameraChangedListener", "(Lcom/atakmap/map/MapRenderer2$OnCameraChangedListener2;)V");
+         if(!MapRenderer3_class.addOnCameraChangedListener)
+             return false;
+-        MapRenderer3_class.removeOnCameraChangedListener = env.GetMethodID(MapRenderer3_class.id, "removeOnCameraChangedListener", "(Lcom/atakmap/map/MapRenderer3$OnCameraChangedListener)V");
++        MapRenderer3_class.removeOnCameraChangedListener = env.GetMethodID(MapRenderer3_class.id, "removeOnCameraChangedListener", "(Lcom/atakmap/map/MapRenderer2$OnCameraChangedListener2;)V");
+         if(!MapRenderer3_class.removeOnCameraChangedListener)
+             return false;
+-        MapRenderer3_class.forward = env.GetMethodID(MapRenderer3_class.id, "forward", "(Lcom/atakmap/coremap/coords/GeoPoint;Lcom/atakmap/math/PointD;Lgov/tak/api/map/IMapRendererEnums$DisplayOrigin;)Z");
++        MapRenderer3_class.forward = env.GetMethodID(MapRenderer3_class.id, "forward", "(Lcom/atakmap/coremap/maps/coords/GeoPoint;Lcom/atakmap/math/PointD;Lgov/tak/api/engine/map/IMapRendererEnums$DisplayOrigin;)Z");
+         if(!MapRenderer3_class.forward)
+             return false;
+-        MapRenderer3_class.inverse = env.GetMethodID(MapRenderer3_class.id, "inverse", "(Lcom/atakmap/math/PointD;Lcom/atakmap/coremap/coords/GeoPoint;Lgov/tak/api/map/IMapRendererEnums$InverseMode;ILgov/tak/api/map/IMapRendererEnums$DisplayOrigin;)Lgov/tak/api/map/IMapRendererEnums$InverseResult;");
++        MapRenderer3_class.inverse = env.GetMethodID(MapRenderer3_class.id, "inverse", "(Lcom/atakmap/math/PointD;Lcom/atakmap/coremap/maps/coords/GeoPoint;Lgov/tak/api/engine/map/IMapRendererEnums$InverseMode;ILgov/tak/api/engine/map/IMapRendererEnums$DisplayOrigin;)Lgov/tak/api/engine/map/IMapRendererEnums$InverseResult;");
+         if(!MapRenderer3_class.inverse)
+             return false;
+         MapRenderer3_class.setElevationExaggerationFactor = env.GetMethodID(MapRenderer3_class.id, "setElevationExaggerationFactor", "(D)V");
+--- a/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.h
++++ b/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.h
+@@ -1,5 +1,7 @@
+-#ifndef TAKENGINEJNI_INTEROP_CORE_MANAGEDLAYER_H_INCLUDED
+-#define TAKENGINEJNI_INTEROP_CORE_MANAGEDLAYER_H_INCLUDED
++// macTAK (issue 142): upstream reused ManagedLayer.h's guard, so a file
++// including both headers lost whichever came second
++#ifndef TAKENGINEJNI_INTEROP_CORE_MANAGEDMAPRENDERER2_H_INCLUDED
++#define TAKENGINEJNI_INTEROP_CORE_MANAGEDMAPRENDERER2_H_INCLUDED
+ 
+ #include <core/MapRenderer3.h>
+ 
+@@ -46,4 +48,4 @@
+     }
+ }
+ 
+-#endif // TAKENGINEJNI_INTEROP_CORE_MANAGEDLAYER_H_INCLUDED
++#endif // TAKENGINEJNI_INTEROP_CORE_MANAGEDMAPRENDERER2_H_INCLUDED
+--- a/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.cpp
+@@ -36,14 +36,15 @@
+     } NativeRenderSurfaceSizeChangedListener_class;
+ 
+     bool RenderSurface_init(JNIEnv &env) NOTHROWS;
+-    bool isRenderSurface2;
+ }
+ 
+ ManagedRenderSurface::ManagedRenderSurface(JNIEnv &env_, jobject impl_) NOTHROWS :
+     impl(env_.NewWeakGlobalRef(impl_))
+ {
+     static bool clinit = RenderSurface_init(env_);
+-    // macTAK (issue 142): IsInstanceOf on a NULL class when the init failed
++    // macTAK (issue 142): IsInstanceOf on a NULL class when the init failed.
++    // isRenderSurface2 is per surface now: upstream kept one flag for the
++    // file, so each new surface decided which getters every other used
+     isRenderSurface2 = clinit && env_.IsInstanceOf(impl_, RenderSurface2_class.id);
+ }
+ ManagedRenderSurface::~ManagedRenderSurface() NOTHROWS
+--- a/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.h
++++ b/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.h
+@@ -25,6 +25,9 @@
+                     void removeOnSizeChangedListener(const TAK::Engine::Core::RenderSurface::OnSizeChangedListener &l) NOTHROWS override;
+                 public :
+                     jobject impl;
++                    // macTAK (issue 142): whether impl is a RenderSurface2, per
++                    // surface (upstream: one flag for every surface)
++                    bool isRenderSurface2;
+                     TAK::Engine::Thread::Mutex mutex;
+                     std::map<const TAK::Engine::Core::RenderSurface::OnSizeChangedListener *, jobject> listeners;
+             };
