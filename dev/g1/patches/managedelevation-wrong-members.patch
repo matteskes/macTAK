@@ -1,0 +1,28 @@
+--- a/tmp/takeng-src/jni/interop/elevation/ManagedElevationSource.cpp
++++ b/tmp/takeng-src/jni/interop/elevation/ManagedElevationSource.cpp
+@@ -445,9 +445,11 @@
+         if(env->ExceptionCheck())
+             return TE_Err;
+         JNILocalRef mtype(*env, env->CallObjectMethod(impl, ElevationSource_Cursor_class.getType));
+-        code = JNIStringUTF_get(uri, *env, (jstring)mtype);
++        // macTAK (issue 142): upstream stored the type in uri, so the next
++        // getUri freed the string getType had returned
++        code = JNIStringUTF_get(type, *env, (jstring)mtype);
+         TE_CHECKRETURN_CODE(code);
+-        *value = uri;
++        *value = type;
+         return code;
+     }
+     TAKErr ManagedElevationChunkCursor::getBounds(const Polygon2 **value) NOTHROWS
+@@ -536,7 +538,10 @@
+         ElevationSource_QueryParameters_class.id = ATAKMapEngineJNI_findClass(env, "com/atakmap/map/elevation/ElevationSource$QueryParameters");
+         if(!ElevationSource_QueryParameters_class.id)
+             return false;
+-        ElevationSource_QueryParameters_class.ctor = env->GetMethodID(ElevationSource_class.id, "<init>", "()V");
++        // macTAK (issue 142): upstream looked the constructor up on
++        // ElevationSource, so query() built its QueryParameters by running
++        // ElevationSource's constructor on it (JNI requires the class's own)
++        ElevationSource_QueryParameters_class.ctor = env->GetMethodID(ElevationSource_QueryParameters_class.id, "<init>", "()V");
+         if(!ElevationSource_QueryParameters_class.ctor)
+             return false;
+         ElevationSource_QueryParameters_class.spatialFilter = env->GetFieldID(ElevationSource_QueryParameters_class.id, "spatialFilter", "Lcom/atakmap/map/layer/feature/geometry/Geometry;");

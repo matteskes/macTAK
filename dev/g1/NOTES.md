@@ -756,7 +756,7 @@ corrected to the tool's own output.)
   Gating the remaining consumers is the wave-7 item now that the init
   bodies themselves report failure honestly ([issue #142](https://github.com/matteskes/macTAK/issues/142);
   on 5.5 the count is 29, and wave 7 works through it by area: §G1.21,
-  §G1.22).
+  §G1.22, §G1.23).
 - F-1, recorded 2026-11-08, deliberately untouched: `MapRenderer3_init`
   binds the `setFocusPointOffset` slot from `GetMethodID(…, "isAnimating",
   "(FF)V")` (`jni-class-init-guards.patch` line 51; pristine
@@ -1921,3 +1921,80 @@ abstract class, so no proxy) whose `createDatabase` records the URI.
   guarded init, and only matters when a lookup fails on a healthy JVM,
   which `check_lookups.py` rules out batch by batch
   ([issue #161](https://github.com/matteskes/macTAK/issues/161)).
+
+## G1.23 — wave 7, batch 3: the elevation wrappers (2026-11-13, branch `g1/wave7-elevation-guards`, issue 142)
+
+The third of §G1.21's five batches: `ManagedElevationChunk` and
+`ManagedElevationSource`, with the chunk cursor that `query()` returns.
+The engine wraps any Java `ElevationSource` it is handed in a
+`ManagedElevationSource` (`elevation/Interop.cpp`'s `Interop_adapt`);
+that file's own lazy init and `checkInit` callers were already guarded.
+
+### What batch 3 found
+
+- **Both constructors call through the IDs.** `ManagedElevationChunk`
+  reads `getType`, `getUri` and `getBounds`; `ManagedElevationSource`
+  reads `getName`. On a failed init that is a NULL-ID call before any
+  consumer runs.
+- **The consumers called through the IDs regardless**, including six
+  getters that return plain values (`double`, `bool`, `unsigned int`)
+  and so have no error code to return.
+- **The cursor's `getType` stored the type in the URI's member.** The
+  string it returned was overwritten, or freed, by the next `getUri`, so
+  a caller holding both read the URI twice. On a healthy JVM.
+- **`QueryParameters`' constructor was looked up on `ElevationSource`.**
+  `query()` built its `QueryParameters` with `NewObject(QueryParameters,
+  ElevationSource.<init>)`, running the abstract base's constructor on an
+  object of another class, which JNI doesn't allow. In 5.5 nothing shows:
+  that constructor only calls `Object.<init>`, and `query()` sets every
+  field `QueryParameters`' own constructor would have (the NaN defaults
+  included). Fixed as hygiene, without a pin of its own.
+
+### The patches
+
+- **`managedelevation-consumer-guards.patch`** (sorts after
+  `jni-class-init-guards`, which touches both files):
+  - both constructors return early on a failed init, so the chunk has no
+    type, URI or bounds and the source no name (all NULL);
+  - the chunk's consumers bail before a NULL ID: `createData` and both
+    `sample`s with `TE_Err`, `getResolution`, `getCE` and `getLE` with
+    NaN, `isAuthoritative` with false, `getFlags` with 0; its destructor
+    skips `dispose`;
+  - `ManagedElevationSource::query` bails `TE_Err` unless every ID that
+    it and the cursor it returns call through resolved (`queryResolved`:
+    the init sets them in order, so a failure part way leaves the later
+    ones NULL); `getBounds` returns NaN bounds;
+  - `addOnContentChangedListener` registers a listener only when its
+    removal can go through too (`listenersResolved`), so `remove` and
+    the destructor's unbinding never meet a NULL ID.
+- **`managedelevation-wrong-members.patch`**: the cursor's `getType`
+  uses its own member, and `QueryParameters`' constructor is looked up on
+  `QueryParameters`.
+
+`check_lookups.py` passes on the patched tree: `ElevationChunk` 16 of 16,
+`ElevationSource` 33 of 33, `elevation/Interop` 7 of 7. As with the
+cursor-level guards in batch 1, the chunk cursor's getters take no guard
+of their own: `query()` is their only way in, and it checks their IDs.
+
+### The guard: `jni-tests/elevation_guards_test.cpp`
+
+In `make test-jni`, both modes:
+
+| Mode | Pin | Without the patches |
+|---|---|---|
+| guards | `ManagedElevationChunk`'s constructor survives; its consumers bail (`TE_Err`, NaN, false, 0); its destructor survives | SIGSEGV |
+| guards | `ManagedElevationSource`'s constructor survives; `query` bails, `getBounds` is NaN, a listener isn't registered | SIGSEGV |
+| kernel | the cursor's `getType` string survives a later `getUri` | reads the URI |
+
+The kernel pin uses `JniTestsMain.RecordingElevation`, an
+`ElevationSource` subclass whose `query` returns a one-row `Cursor`
+proxy.
+
+### Traps
+
+- **`Port::String` keeps strings under 23 characters inline.** The first
+  version of the kernel pin used a long URI and passed without the fix:
+  the type sat in the `uri` member's inline buffer, and the long URI went
+  to the heap, leaving those bytes alone. With both strings short, the
+  upstream `getUri` overwrites the type in place, so the pin fails
+  deterministically, without reading freed memory.

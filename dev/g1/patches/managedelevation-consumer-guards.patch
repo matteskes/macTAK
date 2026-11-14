@@ -1,0 +1,184 @@
+--- a/tmp/takeng-src/jni/interop/elevation/ManagedElevationChunk.cpp
++++ b/tmp/takeng-src/jni/interop/elevation/ManagedElevationChunk.cpp
+@@ -60,6 +60,10 @@
+     bounds(NULL, NULL)
+ {
+     static bool clinit = ElevationChunk_class_init(env_);
++    // macTAK (issue 142): on a failed class init the IDs below are NULL;
++    // the chunk keeps no type, URI or bounds, and every consumer bails
++    if(!clinit)
++        return;
+ 
+     JNILocalRef mtype(*env_, env_->CallObjectMethod(impl, ElevationChunk_class.getType));
+     JNIStringUTF_get(type, *env_, (jstring)mtype.get());
+@@ -73,7 +77,8 @@
+ {
+     if(impl) {
+         LocalJNIEnv env;
+-        env->CallVoidMethod(impl, ElevationChunk_class.dispose);
++        if(ElevationChunk_class.dispose)
++            env->CallVoidMethod(impl, ElevationChunk_class.dispose);
+         env->DeleteGlobalRef(impl);
+         impl = NULL;
+     }
+@@ -88,6 +93,8 @@
+ }
+ double ManagedElevationChunk::getResolution() const NOTHROWS
+ {
++    if(!ElevationChunk_class.getResolution)
++        return NAN;
+     LocalJNIEnv env;
+     return env->CallDoubleMethod(impl, ElevationChunk_class.getResolution);
+ }
+@@ -97,6 +104,16 @@
+ }
+ TAKErr ManagedElevationChunk::createData(ElevationChunkDataPtr &value) NOTHROWS
+ {
++    if(!ElevationChunk_class.createData)
++        return TE_Err;
++    if(!ElevationChunk_Data_class.value)
++        return TE_Err;
++    if(!ElevationChunk_Data_class.srid)
++        return TE_Err;
++    if(!ElevationChunk_Data_class.localFrame)
++        return TE_Err;
++    if(!ElevationChunk_Data_class.interpolated)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     if(!impl)
+         return TE_IllegalState;
+@@ -136,6 +153,8 @@
+ }
+ TAKErr ManagedElevationChunk::sample(double *value, const double latitude, const double longitude) NOTHROWS
+ {
++    if(!ElevationChunk_class.sample_DD)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     if(!impl)
+         return TE_InvalidArg;
+@@ -152,6 +171,8 @@
+ }
+ TAKErr ManagedElevationChunk::sample(double *value, const std::size_t count, const double *srcLat, const double *srcLng, const std::size_t srcLatStride, const std::size_t srcLngStride, const std::size_t dstStride) NOTHROWS
+ {
++    if(!ElevationChunk_class.sample__1DII)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     if(!impl)
+         return TE_InvalidArg;
+@@ -182,21 +203,29 @@
+ }
+ double ManagedElevationChunk::getCE() const NOTHROWS
+ {
++    if(!ElevationChunk_class.getCE)
++        return NAN;
+     LocalJNIEnv env;
+     return env->CallDoubleMethod(impl, ElevationChunk_class.getCE);
+ }
+ double ManagedElevationChunk::getLE() const NOTHROWS
+ {
++    if(!ElevationChunk_class.getLE)
++        return NAN;
+     LocalJNIEnv env;
+     return env->CallDoubleMethod(impl, ElevationChunk_class.getLE);
+ }
+ bool ManagedElevationChunk::isAuthoritative() const NOTHROWS
+ {
++    if(!ElevationChunk_class.isAuthoritative)
++        return false;
+     LocalJNIEnv env;
+     return env->CallBooleanMethod(impl, ElevationChunk_class.isAuthoritative);
+ }
+ unsigned int ManagedElevationChunk::getFlags() const NOTHROWS
+ {
++    if(!ElevationChunk_class.getFlags)
++        return 0u;
+     LocalJNIEnv env;
+     return env->CallIntMethod(impl, ElevationChunk_class.getFlags);
+ }
+--- a/tmp/takeng-src/jni/interop/elevation/ManagedElevationSource.cpp
++++ b/tmp/takeng-src/jni/interop/elevation/ManagedElevationSource.cpp
+@@ -106,12 +106,18 @@
+     };
+ 
+     bool ElevationSource_class_init(JNIEnv *env) NOTHROWS;
++    bool queryResolved() NOTHROWS;
++    bool listenersResolved() NOTHROWS;
+ }
+ 
+ ManagedElevationSource::ManagedElevationSource(JNIEnv *env_, jobject impl_) NOTHROWS :
+     impl(env_->NewGlobalRef(impl_))
+ {
+     static bool clinit = ElevationSource_class_init(env_);
++    // macTAK (issue 142): on a failed class init getName is NULL; the
++    // source keeps no name, and every consumer bails
++    if(!clinit)
++        return;
+ 
+     JNILocalRef mname(*env_, env_->CallObjectMethod(impl, ElevationSource_class.getName));
+     JNIStringUTF_get(name, *env_, (jstring)mname.get());
+@@ -143,6 +149,8 @@
+     TAKErr code(TE_Ok);
+     if (!impl)
+         return TE_IllegalState;
++    if(!queryResolved())
++        return TE_Err;
+ 
+     LocalJNIEnv env;
+     if (env->ExceptionCheck())
+@@ -248,8 +256,10 @@
+ }
+ Envelope2 ManagedElevationSource::getBounds() const NOTHROWS
+ {
+-    LocalJNIEnv env;
+     Envelope2 bounds(NAN, NAN, NAN, NAN, NAN, NAN);
++    if(!ElevationSource_class.getBounds)
++        return bounds;
++    LocalJNIEnv env;
+     JNILocalRef mbounds(*env, env->CallObjectMethod(impl, ElevationSource_class.getBounds));
+     Feature::Interop_copy(&bounds, env, mbounds);
+     return bounds;
+@@ -259,6 +269,10 @@
+     TAKErr code(TE_Ok);
+     if(!l)
+         return TE_InvalidArg;
++    // macTAK (issue 142): a listener is only registered when its removal
++    // (here and in the destructor) can go through too
++    if(!listenersResolved())
++        return TE_Err;
+ 
+     LockPtr lock(NULL, NULL);
+     code = Lock_create(lock, mutex);
+@@ -471,6 +485,33 @@
+         return TE_Ok;
+     }
+ 
++    // macTAK (issue 142): everything query() and the cursor it returns
++    // call through; the init sets them in this order, so a failure part
++    // way leaves the later ones NULL
++    bool queryResolved() NOTHROWS
++    {
++        const auto &params = ElevationSource_QueryParameters_class;
++        const auto &cursor = ElevationSource_Cursor_class;
++        return ElevationSource_class.query &&
++               params.ctor && params.spatialFilter && params.maxResolution &&
++               params.minResolution && params.targetResolution && params.types &&
++               params.authoritative && params.minCE && params.minLE &&
++               params.order && params.flags &&
++               params.Order_enum.CEAsc && params.Order_enum.CEDesc &&
++               params.Order_enum.LEAsc && params.Order_enum.LEDesc &&
++               params.Order_enum.ResolutionAsc && params.Order_enum.ResolutionDesc &&
++               cursor.get && cursor.getResolution && cursor.isAuthoritative &&
++               cursor.getCE && cursor.getLE && cursor.getUri && cursor.getType &&
++               cursor.getBounds && cursor.getFlags;
++    }
++    bool listenersResolved() NOTHROWS
++    {
++        return ElevationSource_class.addOnContentChangedListener &&
++               ElevationSource_class.removeOnContentChangedListener &&
++               NativeOnContentChangedListener_class.ctor &&
++               NativeOnContentChangedListener_class.finalize;
++    }
++
+     bool ElevationSource_class_init(JNIEnv *env) NOTHROWS
+     {
+         ElevationSource_class.id = ATAKMapEngineJNI_findClass(env, "com/atakmap/map/elevation/ElevationSource");

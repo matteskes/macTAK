@@ -61,6 +61,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Pinned in `make test-jni` (`jni-tests/db_guards_test.cpp`), guards and
   kernel mode; kernel mode now runs with G2's runtime `android.net.Uri`
   ahead of android-port's stub, as the app does.
+- Wave 7, batch 3 (issue #142; `dev/g1/NOTES.md` §G1.23): the Java-backed
+  elevation wrappers (`ManagedElevationChunk`, `ManagedElevationSource`
+  and its chunk cursor) no longer call through NULL method IDs when their
+  class init fails: both constructors return early, and the consumers
+  bail with `TE_Err` or a neutral value. Two upstream bugs are fixed as
+  well: the cursor's `getType` stored the type in the URI's member, so a
+  later `getUri` overwrote it, and `query()` built its `QueryParameters`
+  with `ElevationSource`'s constructor. Pinned in `make test-jni`
+  (`jni-tests/elevation_guards_test.cpp`), guards and kernel mode.
 
 ### Security
 
