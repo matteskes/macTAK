@@ -187,4 +187,96 @@ public final class JniTestsMain
             }
         }
     }
+
+    /**
+     * Issue 142, batch 3 (elevation_guards_test.cpp, kernel mode): an
+     * ElevationSource (an abstract class, so a subclass) whose query returns
+     * a one-row Cursor proxy with a distinct URI and type, recording every
+     * call to either. Both are short enough (under 23 characters) for
+     * Port::String's inline buffer, so a getUri that writes into the
+     * type's string overwrites it in place, deterministically.
+     */
+    public static final class RecordingElevation extends com.atakmap.map.elevation.ElevationSource
+        implements java.lang.reflect.InvocationHandler
+    {
+        public static final String URI = "n37w122.dt2";
+        public static final String TYPE = "DTED2";
+
+        private static final java.util.List<String> calls =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+
+        public static Object create()
+        {
+            return new RecordingElevation();
+        }
+
+        /** The calls since the last clear, oldest first. */
+        public static String calls()
+        {
+            synchronized(calls) { return String.join(",", calls); }
+        }
+
+        public static void clear()
+        {
+            calls.clear();
+        }
+
+        @Override
+        public String getName()
+        {
+            return "RecordingElevation";
+        }
+
+        @Override
+        public Cursor query(QueryParameters params)
+        {
+            calls.add("query");
+            return (Cursor)java.lang.reflect.Proxy.newProxyInstance(
+                Cursor.class.getClassLoader(), new Class<?>[] { Cursor.class }, this);
+        }
+
+        @Override
+        public com.atakmap.map.layer.feature.geometry.Envelope getBounds()
+        {
+            return null;
+        }
+
+        @Override
+        public void addOnContentChangedListener(OnContentChangedListener l)
+        {
+            calls.add("addOnContentChangedListener");
+        }
+
+        @Override
+        public void removeOnContentChangedListener(OnContentChangedListener l)
+        {
+            calls.add("removeOnContentChangedListener");
+        }
+
+        /** The cursor proxy's calls. */
+        @Override
+        public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args)
+        {
+            final String name = method.getName();
+            switch(name) {
+                case "equals": return proxy == args[0];
+                case "hashCode": return System.identityHashCode(proxy);
+                case "toString": return "RecordingElevation.Cursor";
+                default: break;
+            }
+            calls.add(name);
+            switch(name) {
+                case "moveToNext": return true;
+                case "getUri": return URI;
+                case "getType": return TYPE;
+                default: break;
+            }
+            final Class<?> type = method.getReturnType();
+            if(type == int.class) return 0;
+            if(type == long.class) return 0L;
+            if(type == boolean.class) return false;
+            if(type == double.class) return 0.0;
+            return null;
+        }
+    }
 }
