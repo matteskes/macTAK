@@ -70,6 +70,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   later `getUri` overwrote it, and `query()` built its `QueryParameters`
   with `ElevationSource`'s constructor. Pinned in `make test-jni`
   (`jni-tests/elevation_guards_test.cpp`), guards and kernel mode.
+- Wave 7, batch 4 (issues #142 and #141; `dev/g1/NOTES.md` §G1.24): the
+  Java-backed core and renderer wrappers (`ManagedLayer`,
+  `ManagedVisibilityListener`, `ManagedProjection`, `ManagedRenderSurface`,
+  `ManagedMapRenderer3`, `ManagedGLLayer2`, `ManagedGLLayerSpi2`,
+  `ManagedGLMapRenderable2`) no longer call through NULL method IDs when
+  their class init fails. Upstream bugs fixed as well:
+  `MapRenderer3_init` failed on every JVM (14 of its 19 lookups, F-1
+  among them, named members 5.5 doesn't have); `getDisplayMode` and
+  `getDisplayOrigin` inverted their success test and returned the
+  default; `ManagedRenderSurface` kept one `isRenderSurface2` flag for
+  every surface; and `ManagedMapRenderer2.h` reused `ManagedLayer.h`'s
+  include guard. Pinned in `make test-jni`
+  (`jni-tests/core_renderer_guards_test.cpp`), guards and kernel mode.
 
 ### Security
 

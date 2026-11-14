@@ -756,7 +756,7 @@ corrected to the tool's own output.)
   Gating the remaining consumers is the wave-7 item now that the init
   bodies themselves report failure honestly ([issue #142](https://github.com/matteskes/macTAK/issues/142);
   on 5.5 the count is 29, and wave 7 works through it by area: §G1.21,
-  §G1.22, §G1.23).
+  §G1.22, §G1.23, §G1.24).
 - F-1, recorded 2026-11-08, deliberately untouched: `MapRenderer3_init`
   binds the `setFocusPointOffset` slot from `GetMethodID(…, "isAnimating",
   "(FF)V")` (`jni-class-init-guards.patch` line 51; pristine
@@ -771,6 +771,8 @@ corrected to the tool's own output.)
   the moment G2/G4 wires it. Wave-7 fix: delete the slot (struct member +
   binding + guard), or bind `"setFocusPointOffset" "(FF)V"` instead if
   that path turns out to need it ([issue #141](https://github.com/matteskes/macTAK/issues/141)).
+  **Fixed in wave 7, batch 4 (§G1.24):** F-1 was one of 14 dead lookups
+  in that init; all are bound to their 5.5 members now.
 - The wave-5 residuals list shrinks by three: scalar getters ×6 (done),
   `Interop_wrap` `NewObject` ×2 (done), systemic class-init masking
   (done); `jnativegllayer3` stays clean.
@@ -1998,3 +2000,133 @@ proxy.
   to the heap, leaving those bytes alone. With both strings short, the
   upstream `getUri` overwrites the type in place, so the pin fails
   deterministically, without reading freed memory.
+
+## G1.24 — wave 7, batch 4: the core and renderer wrappers (2026-11-13, branch `g1/wave7-core-renderer-guards`, issues 142 and 141)
+
+The fourth of §G1.21's five batches: eight wrappers.
+
+- **Core:** `ManagedLayer`, `ManagedVisibilityListener`, `ManagedProjection`,
+  `ManagedRenderSurface`, `ManagedMapRenderer3` (in
+  `ManagedMapRenderer2.cpp`).
+- **Renderer (the GL wrappers G2's render path runs through):**
+  `ManagedGLLayer2`, `ManagedGLLayerSpi2`, `ManagedGLMapRenderable2`.
+
+### What batch 4 found
+
+- **Three constructors call through the IDs:** `ManagedLayer`
+  (`getName`), `ManagedGLLayer2` (`getSubject`, then `IsInstanceOf` on
+  the GLLayer3 class) and `ManagedRenderSurface` (`IsInstanceOf` on the
+  RenderSurface2 class).
+- **Most consumers called through the IDs without checking them.** The
+  exceptions are `ManagedProjection`'s six getters, guarded in wave 6;
+  its `forward` and `inverse` weren't.
+- **`MapRenderer3_init` failed on every JVM, at its second lookup.** F-1
+  (issue 141) was one of **14** of its 19 lookups that name members 5.5
+  doesn't have:
+  - `GeoPoint` is in `com/atakmap/coremap/maps/coords`, not
+    `coremap/coords`;
+  - `IMapRendererEnums` is in `gov/tak/api/engine/map`, not
+    `gov/tak/api/map`;
+  - the focus-point getters are `getFocusPointOffsetX` and
+    `getFocusPointOffsetY`;
+  - the camera listener is `MapRenderer2$OnCameraChangedListener2`, and
+    both of its signatures were missing their `;`;
+  - `setFocusPointOffset` was looked up as `"isAnimating"` (F-1).
+
+  Nothing in 5.5's JNI constructs `ManagedMapRenderer3`, so this never
+  showed.
+- **`getDisplayMode` and `getDisplayOrigin` inverted their success test.**
+  `Interop_marshal` returns `TE_Ok` (0) on success. The getters used that
+  as a bool, so on success they returned the default (`Globe`,
+  `LowerLeft`), and on failure an uninitialized value.
+- **`ManagedRenderSurface` kept one `isRenderSurface2` flag for the whole
+  file.** Each new surface set it for all of them, so an older
+  `RenderSurface2` asked the plain `getWidth` and `getHeight` once a plain
+  surface had been made. A plain surface made before a `RenderSurface2`
+  was then asked `getSurfaceWidth`, which it doesn't implement.
+  `ManagedRenderContext` makes these surfaces, so this is a live path.
+- **`ManagedMapRenderer2.h` reused `ManagedLayer.h`'s include guard.** A
+  file that includes both headers loses whichever comes second. The batch
+  4 test hit this first.
+
+### The patches
+
+- **`wave7-core-renderer-consumer-guards.patch`.** It is named `wave7-` so
+  it sorts after every patch that touches these files (`projection-*`,
+  `jnilayer2-*`, `jnilayerspi2-*`, `jni-renderable-*`,
+  `jni-class-init-guards`).
+  - The three constructors return early on a failed init. `ManagedGLLayer2`
+    also sets `gllayer3` to false, which upstream left uninitialized on
+    that path.
+  - Each consumer bails before a NULL ID: `TE_Err`, or a neutral value
+    (false, NaN, 0, `Globe`, `LowerLeft`), or nothing for `void`s.
+  - The GL draw paths also check the `GLMapView` sync IDs they use.
+  - A layer-visibility or surface-size listener is registered only when
+    its removal can also go through.
+- **`wave7-core-renderer-wrong-members.patch`:**
+  - the 14 `MapRenderer3` lookups;
+  - the two inverted success tests;
+  - `isRenderSurface2` as a member of each surface (in the header);
+  - `ManagedMapRenderer2.h`'s own include guard.
+
+`check_lookups.py` now also reads the `SET_METHOD_DEFINITION` macro used
+by four of these inits. On the patched tree every member lookup resolves:
+
+| Init | Resolved |
+|---|---|
+| `Layer` | 5 of 5 |
+| `OnLayerVisibleChangedListener` | 1 of 1 |
+| `Projection` | 8 of 8 |
+| `RenderSurface` | 8 of 8 |
+| `MapRenderer3` | 19 of 19 (5 of 19 before) |
+| `GLLayer2` | 8 of 8 |
+| `GLLayerSpi2` | 1 of 1 |
+| `GLMapRenderable2` | 6 of 6 |
+
+### The guard: `jni-tests/core_renderer_guards_test.cpp`
+
+In `make test-jni`, both modes:
+
+| Mode | Pin | Without the patches |
+|---|---|---|
+| guards | `ManagedLayer` and `ManagedVisibilityListener` bail; no listener is registered | SIGSEGV (`CallObjectMethod`, the constructor's `getName`) |
+| guards | `ManagedProjection`'s `forward` and `inverse` bail | SIGSEGV (`NewObject`) |
+| guards | `ManagedRenderSurface` bails (NaN dpi, 0×0); no listener is registered | SIGSEGV (`IsInstanceOf`) |
+| guards | `ManagedMapRenderer3` bails (false, `TE_Err`, `Globe`, `LowerLeft`) | SIGSEGV (`CallBooleanMethod`) |
+| guards | `ManagedGLMapRenderable2`'s `release`/`getRenderPass`, and `ManagedGLLayer2`'s `start`/`stop`/`release` | SIGSEGV (`CallVoidMethod`) |
+| kernel | `MapRenderer3_init` succeeds: `isAnimating` reaches Java | init fails; `isAnimating` reads false; Java is never reached |
+| kernel | `getDisplayMode` and `getDisplayOrigin` return Java's `Flat` and `UpperLeft` | `Globe` and `LowerLeft` |
+| kernel | a `RenderSurface2` made before a plain surface still reads 640×480 | 1×1 (the plain getters) |
+
+- **Not pinned:** the GL draw paths and `ManagedGLLayerSpi2::create`,
+  which need a GL view. Every `make test-render` gate runs them on a
+  healthy JVM.
+- **The kernel pins** use `JniTestsMain.RecordingCoreRenderer`, recording
+  proxies for `MapRenderer3`, `RenderSurface` and `RenderSurface2`.
+- **The "without the patches" column for kernel mode** was taken with
+  only the guards patch applied, so it shows the upstream bugs and not
+  the crashes.
+
+### Traps
+
+- **A guards pin run alone needs the `JniGuardsOnLoad` tests in front of
+  it.**
+  - `LocalJNIEnv` reads the global `JavaVM` that `JNI_OnLoad` stores
+    before it fails. In the full suite, `onload_guards_test.cpp` runs
+    first and sets it.
+  - `--gtest_filter=<pin>` alone skips those tests, so every wrapper
+    destructor crashes, **patched or not**. The batch 2 and 3 A/B runs
+    were taken that way, so their "SIGSEGV unpatched" rows had no
+    evidence behind them.
+  - Batch 4 reran every wave 7 guards pin (batches 1 to 4, 16 pins) with
+    `--gtest_filter='JniGuardsOnLoad.*:<pin>'`:
+    - in a build without wave 7's eight patches, each one crashes in the
+      NULL-ID JNI call it targets;
+    - in the patched build, each one passes.
+
+    The tables in §G1.21 to §G1.23 hold on that evidence.
+  - Kernel-mode pins don't have this problem: under the launcher,
+    `System.load` runs `JNI_OnLoad`.
+- **A test that includes both `ManagedLayer.h` and `ManagedMapRenderer2.h`
+  needs the header fix.** So the A/B builds carry the include-guard fix
+  alone, in a throwaway patch, in place of the wrong-members patch.

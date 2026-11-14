@@ -11,8 +11,9 @@ resolves inherited members, e.g. FeatureDataStore2.dispose comes from
 gov.tak.api.util.Disposable).
 
 The `env.` and `env->` forms with a literal name and signature are
-parsed, at any indentation and split over any number of lines; the
-report says how many of the init's lookups that covers.
+parsed, at any indentation and split over any number of lines, and so is
+the `SET_METHOD_DEFINITION(cls, name, "sig")` macro some inits define;
+the report says how many of the init's lookups that covers.
 
 usage: check_lookups.py CLASSPATH SOURCE.cpp INIT_FUNCTION [JAVAP]
   CLASSPATH  the kernel jars, e.g. $(ls dev/g1/kernel-dist/*.jar | paste -sd: -)
@@ -106,6 +107,17 @@ def main():
                          r' ?\( ?([\w.]+?)(?:\.id)?, "([^"]+)", "([^"]+)" ?\)', body):
         var, name, sig = m.groups()
         checked += 1
+        cls = classes.get(var)
+        if not cls:
+            missing.append("no findClass for %s (%s %s)" % (var, name, sig))
+        elif (name, sig) not in members.of(cls):
+            missing.append("MISSING %s.%s %s" % (cls, name, sig))
+    # the SET_METHOD_DEFINITION(cls, name, "sig") macro some inits define:
+    # GetMethodID(cls.id, #name, sig) plus the house guard
+    for m in re.finditer(r'SET_METHOD_DEFINITION ?\( ?([\w.]+), (\w+), "([^"]+)" ?\)', body):
+        var, name, sig = m.groups()
+        checked += 1
+        total += 1
         cls = classes.get(var)
         if not cls:
             missing.append("no findClass for %s (%s %s)" % (var, name, sig))

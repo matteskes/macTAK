@@ -279,4 +279,89 @@ public final class JniTestsMain
             return null;
         }
     }
+
+    /**
+     * Issue 142, batch 4 (core_renderer_guards_test.cpp, kernel mode): a
+     * MapRenderer3 and two RenderSurfaces whose calls are recorded.
+     *  - the MapRenderer3 answers isAnimating true and its display mode and
+     *    origin with the non-default Flat and UpperLeft, so a wrapper that
+     *    drops Java's answer reads the defaults (false, Globe, LowerLeft);
+     *  - the RenderSurface2 answers getSurfaceWidth/Height 640x480 and the
+     *    inherited getWidth/Height 1x1, the plain RenderSurface 320x240, so
+     *    a wrapper that asks the wrong getter reads a different size.
+     */
+    public static final class RecordingCoreRenderer implements java.lang.reflect.InvocationHandler
+    {
+        private static final java.util.List<String> calls =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+
+        private final boolean surface2;
+
+        private RecordingCoreRenderer(boolean surface2)
+        {
+            this.surface2 = surface2;
+        }
+
+        public static Object mapRenderer()
+        {
+            return proxy(com.atakmap.map.MapRenderer3.class, false);
+        }
+
+        public static Object renderSurface()
+        {
+            return proxy(gov.tak.api.engine.map.RenderSurface.class, false);
+        }
+
+        public static Object renderSurface2()
+        {
+            return proxy(gov.tak.api.engine.map.RenderSurface2.class, true);
+        }
+
+        /** The calls since the last clear, oldest first. */
+        public static String calls()
+        {
+            synchronized(calls) { return String.join(",", calls); }
+        }
+
+        public static void clear()
+        {
+            calls.clear();
+        }
+
+        private static Object proxy(Class<?> iface, boolean surface2)
+        {
+            return java.lang.reflect.Proxy.newProxyInstance(
+                iface.getClassLoader(), new Class<?>[] { iface }, new RecordingCoreRenderer(surface2));
+        }
+
+        @Override
+        public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args)
+        {
+            final String name = method.getName();
+            switch(name) {
+                case "equals": return proxy == args[0];
+                case "hashCode": return System.identityHashCode(proxy);
+                case "toString": return "RecordingCoreRenderer";
+                default: break;
+            }
+            calls.add(name);
+            switch(name) {
+                case "isAnimating": return true;
+                case "getDisplayMode": return gov.tak.api.engine.map.IMapRendererEnums.DisplayMode.Flat;
+                case "getDisplayOrigin": return gov.tak.api.engine.map.IMapRendererEnums.DisplayOrigin.UpperLeft;
+                case "getSurfaceWidth": return 640;
+                case "getSurfaceHeight": return 480;
+                case "getWidth": return surface2 ? 1 : 320;
+                case "getHeight": return surface2 ? 1 : 240;
+                default: break;
+            }
+            final Class<?> type = method.getReturnType();
+            if(type == int.class) return 0;
+            if(type == long.class) return 0L;
+            if(type == boolean.class) return false;
+            if(type == double.class) return 0.0;
+            if(type == float.class) return 0.0f;
+            return null;
+        }
+    }
 }

@@ -364,6 +364,7 @@ endif()
         ${SRC}/dev/g1/jni-tests/feature_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/db_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/elevation_guards_test.cpp
+        ${SRC}/dev/g1/jni-tests/core_renderer_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/ioprovider_kernel_test.cpp
         ${SRC}/dev/g1/jni-tests/managedlogger_noslf4j_test.cpp
         # module_main.cpp links into BOTH products (no main() in it): the
@@ -411,6 +412,7 @@ endif()
         ${SRC}/dev/g1/jni-tests/feature_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/db_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/elevation_guards_test.cpp
+        ${SRC}/dev/g1/jni-tests/core_renderer_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/ioprovider_kernel_test.cpp
         ${SRC}/dev/g1/jni-tests/managedlogger_noslf4j_test.cpp
         ${SRC}/dev/g1/jni-tests/module_main.cpp
