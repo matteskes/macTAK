@@ -1,0 +1,33 @@
+# The drivers dev/deps/build-deps.sh's GDAL registers, one per line, checked
+# by dev/deps/check-gdal-drivers.sh. A GDAL bump that adds or drops a driver
+# fails the check until this list (and, for a new allowed driver,
+# dev/g1/jni-extra/mactak_gdal.cpp's allowlist) is updated on purpose.
+#
+# On mactak_gdal.cpp's allowlist:
+DTED
+ESRI Shapefile
+FlatGeobuf
+GIF
+GPKG
+GPX
+GTiff
+GeoJSON
+JP2OpenJPEG
+JPEG
+KML
+LIBKML
+MEM
+NITF
+PNG
+SRTMHGT
+# Built with an allowed driver's source; keepOffline() skips them at runtime:
+BIGGIF
+COG
+ECRGTOC
+ESRIJSON
+GeoJSONSeq
+RPFTOC
+SQLite
+TopoJSON
+# Always built (GDAL uses it internally); skipped at runtime:
+VRT

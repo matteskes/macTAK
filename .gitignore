@@ -35,3 +35,7 @@ __pycache__/
 
 # JVM crash logs (a crashing JNI test or A/B build writes one into its cwd)
 hs_err_pid*.log
+
+# Own GDAL/PROJ/libspatialite build (dev/deps/build-deps.sh): sources and output
+/dev/deps/build/
+/dev/deps/dist/

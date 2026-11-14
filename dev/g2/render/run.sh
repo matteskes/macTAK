@@ -39,8 +39,8 @@ for a in "$@"; do
   prev="$a"
 done
 
-# GDAL_DATA for the engine's GdalLibrary::init (Homebrew gdal; override with GDAL_DATA).
-GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/homebrew/opt/gdal/share/gdal)}"
+# GDAL_DATA for the engine's GdalLibrary::init: env.sh sets GDAL_DATA_DIR
+# (macTAK's own GDAL, dev/deps; GDAL_DATA overrides it).
 
 # $OUT first: it shadows com.atakmap.map.EngineLibrary (the jre/JOGL host
 # bootstrap in the engine jar) with the macOS one, and the android.* classes

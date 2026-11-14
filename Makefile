@@ -1,4 +1,4 @@
-.PHONY: help hooks kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
+.PHONY: help hooks deps check-deps kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -16,8 +16,10 @@ help:
 	@echo "  build          - kernel jars + native + commo (build-kernel-jars.sh, build-native.sh, build-commo.sh)"
 	@echo "  angle          - stage ANGLE (EGL/GLES on Metal) into dev/g2/angle-dist (dev/g2/fetch-angle.sh)"
 	@echo "  build-angle    - kernel jars + native with ANGLE in the GLES slot (MACTAK_GLES=angle) + commo"
-	@echo "  gdal-java      - G2.4b: build the GDAL SWIG Java bindings (org.gdal) against Homebrew libgdal into dev/g2/gdal-java-dist + smoke (dev/g2/fetch-gdal-java.sh)"
+	@echo "  gdal-java      - G2.4b: build the GDAL SWIG Java bindings (org.gdal) against macTAK's own libgdal (dev/deps) into dev/g2/gdal-java-dist + smoke (dev/g2/fetch-gdal-java.sh)"
 	@echo "  test-gdal-projection - G2.4 b.2: the engine's GdalLibrary.init + GdalDatasetProjection2 on GDAL 3 with the axis-order patch (needs build-angle + gdal-java)"
+	@echo "  deps           - build macTAK's own GDAL, PROJ and libspatialite from dev/deps/deps.lock into dev/deps/dist (no curl, no OpenSSL 4; build-native.sh runs it)"
+	@echo "  check-deps     - guards: GDAL registers exactly dev/deps/gdal-drivers.txt; the built libraries' closure has no OpenSSL 4 and one GDAL/PROJ"
 	@echo "  gen-gles-shim  - regenerate the android.opengl GLES shim (Java + JNI + stub) from the transplant jar x gl3.h"
 	@echo "  check-gen-gles-shim - regenerate and fail if the committed shim files differ (CI drift gate)"
 	@echo "  check-transplants - fail if a committed transplant jar is unlisted in, or differs from, its SHA256SUMS (CI gate)"
@@ -63,6 +65,12 @@ gdal-java:
 
 test-gdal-projection:
 	bash dev/g2/render/run-gdal-projection.sh
+
+deps:
+	bash dev/deps/build-deps.sh
+
+check-deps:
+	bash dev/deps/check.sh
 
 gen-gles-shim:
 	python3 $(GLES_SHIM_GEN) $(GLES_SHIM_JAR) $(GLES_SHIM_GL3H) dev/g2/render/src/android/opengl \

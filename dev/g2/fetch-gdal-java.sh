@@ -1,27 +1,30 @@
 #!/usr/bin/env bash
 #
 # G2.4b: build the GDAL SWIG Java bindings (org.gdal.* → gdal.jar +
-# libgdalalljni.dylib) against the Homebrew libgdal the engine already links,
-# and stage them into dev/g2/gdal-java-dist/.
+# libgdalalljni.dylib) against the libgdal the engine already links,
+# macTAK's own (dev/deps/build-deps.sh), and stage them into
+# dev/g2/gdal-java-dist/.
 #
 # Why this exists: the engine's raster path (GdalTileReader, GdalLayerInfo,
 # GdalDatasetProjection2 — 22 classes) binds org.gdal, which the transplant
-# jar does not ship and Homebrew gdal does not build (trap 17, NOTES.md).
+# jar does not ship and macTAK's GDAL build does not ask for (trap 17, NOTES.md).
 # Upstream builds them in takthirdparty/mk/gdal.mk from its gdal-2.4.4-mod
-# tree; here they must match the *installed* GDAL, so the wrapper sources
-# are generated from the matching release tarball and linked against
-# $(gdal-config --libs) — one libgdal instance in the process, shared with
+# tree; here they must match the GDAL the engine links, so the wrapper
+# sources are generated from deps.lock's pinned tarball and linked against
+# dev/deps/dist's $(gdal-config --libs), with an rpath to the lib/ the
+# engine's rpath names — one libgdal instance in the process, shared with
 # libtakengine.
 #
 # What gets done:
-#   - gdal-<ver>.tar.gz (OSGeo release, sha256-pinned) → dev/g2/build/gdal-java/
-#   - swig -java for gdalconst (C) + gdal ogr osr gnm (C++), exactly as
+#   - gdal-<ver>.tar.gz (dev/deps/deps.lock's pin, sha256-checked) → dev/g2/build/gdal-java/
+#   - swig -java for gdalconst (C) + gdal ogr osr (C++), exactly as
 #     swig/java/CMakeLists.txt does (-Wall, -package org.gdal.<pkg>)
 #   - clang++ → libgdalalljni.dylib (install name @rpath/…, adhoc-signed)
 #   - javac --release 21 → gdal.jar
 #   - PROVENANCE.txt: versions, tarball sha256, artifact sha256s
 #
-# Requires: brew swig gdal; JDK 21 (dev/jdk.sh finds it).
+# Requires: brew swig; dev/deps/dist (dev/deps/build-deps.sh); JDK 21
+# (dev/jdk.sh finds it).
 # Usage: dev/g2/fetch-gdal-java.sh [dest-dir]
 set -euo pipefail
 
@@ -33,35 +36,31 @@ WORK="$HERE/build/gdal-java"
 log() { printf '[fetch-gdal-java] %s\n' "$*"; }
 die() { printf '[fetch-gdal-java] FATAL: %s\n' "$*" >&2; exit 1; }
 
-# Pinned release tarballs: the bindings are generated from the SWIG interface
-# files of the *same* GDAL version Homebrew installed (ABI + API must match).
-# Add a case when Homebrew bumps gdal; the script refuses an unpinned version.
-pinned_sha256() {
-  case "$1" in
-    3.13.3) echo 5e0c388d83da2d686cc00a40272882432cdb54edff43d4af173e532844a0a0ea ;;
-    *) echo "" ;;
-  esac
-}
+# The bindings are generated from the SWIG interface files of the *same*
+# GDAL the engine links (ABI + API must match): deps.lock's pin, the one
+# dev/deps/build-deps.sh built. A GDAL bump is that one line.
+DEPS="${MACTAK_DEPS_DIST:-$ROOT/dev/deps/dist}"
+GDAL_CONFIG="$DEPS/bin/gdal-config"
+read -r PIN_VER SHA PIN_URL <<<"$(awk '$1 == "gdal" { print $2, $3, $4 }' "$ROOT/dev/deps/deps.lock")"
 
 command -v swig >/dev/null || die "swig not found (brew install swig)"
-command -v gdal-config >/dev/null || die "gdal-config not found (brew install gdal)"
+[[ -x "$GDAL_CONFIG" ]] || die "no gdal-config at $GDAL_CONFIG — run dev/deps/build-deps.sh"
 # shellcheck source=SCRIPTDIR/../jdk.sh
 source "$ROOT/dev/jdk.sh"
 JDK="$(mactak_jdk_home 21 || true)"
 [[ -n "$JDK" && -x "$JDK/bin/javac" ]] || die "JDK 21 not found (dev/jdk.sh)"
 
-VER="$(gdal-config --version)"
-SHA="$(pinned_sha256 "$VER")"
-[[ -n "$SHA" ]] || die "installed gdal $VER has no pinned tarball sha256 — add it to pinned_sha256 in $0"
-GDAL_LIB="$(gdal-config --prefix)/lib/libgdal.dylib"
+VER="$("$GDAL_CONFIG" --version)"
+[[ "$VER" == "$PIN_VER" ]] || die "dev/deps/dist has GDAL $VER but deps.lock pins $PIN_VER — rerun dev/deps/build-deps.sh"
+GDAL_LIB="$DEPS/lib/libgdal.dylib"
 [[ -f "$GDAL_LIB" ]] || die "libgdal.dylib not at $GDAL_LIB"
-# The engine links Homebrew's libgdal by install name; the wrapper must too.
+# The engine links macTAK's libgdal by install name; the wrapper must too.
 ENGINE="$ROOT/dev/g1/native-dist/libtakengine.dylib"
 if [[ -f "$ENGINE" ]]; then
   eng_gdal="$(otool -L "$ENGINE" | awk '/libgdal/ { print $1 }')"
   [[ -n "$eng_gdal" ]] || die "libtakengine.dylib does not link a libgdal"
   [[ "$(otool -D "$GDAL_LIB" | awk 'NR == 2 { print $1 }')" == "$eng_gdal" ]] \
-    || die "engine links $eng_gdal but gdal-config points at $GDAL_LIB — rebuild one or the other"
+    || die "engine links $eng_gdal but $GDAL_CONFIG points at $GDAL_LIB — rebuild one or the other"
 fi
 
 mkdir -p "$WORK" "$DEST"
@@ -71,7 +70,7 @@ if [[ ! -f "$TARBALL" ]] || ! echo "$SHA  $TARBALL" | shasum -a 256 -c - >/dev/n
   log "downloading gdal-$VER.tar.gz"
   rm -f "$TARBALL"
   curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --retry-max-time 600 \
-    -o "$TARBALL.tmp" "https://github.com/OSGeo/gdal/releases/download/v$VER/gdal-$VER.tar.gz"
+    -o "$TARBALL.tmp" "$PIN_URL"
   echo "$SHA  $TARBALL.tmp" | shasum -a 256 -c - >/dev/null || { rm -f "$TARBALL.tmp"; die "sha256 mismatch for gdal-$VER.tar.gz"; }
   mv "$TARBALL.tmp" "$TARBALL"
 fi
@@ -99,18 +98,20 @@ swig_pkg() {  # <pkg> [-c++]
   log "swig $pkg → $(find "$GEN/org/gdal/$pkg" -name '*.java' | wc -l | tr -d ' ') classes"
 }
 swig_pkg gdalconst
-for pkg in gdal ogr osr gnm; do swig_pkg "$pkg" -c++; done
+# no gnm: macTAK's GDAL is built without GNM (dev/deps/build-deps.sh), and
+# nothing in the engine uses org.gdal.gnm
+for pkg in gdal ogr osr; do swig_pkg "$pkg" -c++; done
 
 # --- native ----------------------------------------------------------------
 JNI_LIB="$DEST/libgdalalljni.dylib"
-log "compiling libgdalalljni.dylib against $(gdal-config --prefix)"
+log "compiling libgdalalljni.dylib against $DEPS"
 OBJ="$WORK/obj"; rm -rf "$OBJ"; mkdir -p "$OBJ"
 # -fno-strict-aliasing: required by SWIG's upcast code (GDAL changeset 16006).
-read -r -a GDAL_CFLAGS <<< "$(gdal-config --cflags)"
+read -r -a GDAL_CFLAGS <<< "$("$GDAL_CONFIG" --cflags)"
 CFLAGS_COMMON=(-arch arm64 -O2 -fno-strict-aliasing -Wno-deprecated-declarations
   "${GDAL_CFLAGS[@]}" -I"$ROOT/dev/g1/jdk-include" -I"$ROOT/dev/g1/jdk-include/darwin")
 : > "$WORK/clang.log"
-for pkg in gdal ogr osr gnm; do
+for pkg in gdal ogr osr; do
   clang++ "${CFLAGS_COMMON[@]}" -std=c++17 -c "$GEN/org/gdal/$pkg/${pkg}_wrap.cpp" -o "$OBJ/$pkg.o" \
     >> "$WORK/clang.log" 2>&1 || { tail -40 "$WORK/clang.log" >&2; die "clang++ failed on $pkg (full log: $WORK/clang.log)"; }
 done
@@ -118,7 +119,7 @@ clang "${CFLAGS_COMMON[@]}" -c "$GEN/org/gdal/gdalconst/gdalconst_wrap.c" -o "$O
   >> "$WORK/clang.log" 2>&1 || { tail -40 "$WORK/clang.log" >&2; die "clang failed on gdalconst (full log: $WORK/clang.log)"; }
 # shellcheck disable=SC2046
 clang++ -arch arm64 -dynamiclib -o "$JNI_LIB" -install_name "@rpath/libgdalalljni.dylib" \
-  "$OBJ"/*.o $(gdal-config --libs) \
+  "$OBJ"/*.o $("$GDAL_CONFIG" --libs) -Wl,-rpath,"$DEPS/lib" \
   >> "$WORK/clang.log" 2>&1 || { tail -40 "$WORK/clang.log" >&2; die "link failed (full log: $WORK/clang.log)"; }
 # Keep stderr: a swallowed codesign failure exits undiagnosable (fetch-angle trap).
 codesign --force --sign - "$JNI_LIB" >/dev/null
@@ -137,11 +138,11 @@ printf 'Manifest-Version: 1.0\nImplementation-Title: GDAL Java bindings\nImpleme
 "$JDK/bin/jar" tf "$DEST/gdal.jar" | grep '^org/gdal/gdal/gdal.class$' >/dev/null || die "gdal.jar lacks org.gdal.gdal.gdal"
 
 {
-  echo "gdal: $VER ($(gdal-config --prefix))"
+  echo "gdal: $VER ($DEPS, dev/deps/deps.lock)"
   echo "libgdal: $(otool -D "$GDAL_LIB" | awk 'NR == 2 { print $1 }')"
   echo "swig: $(swig -version | awk '/SWIG Version/ { print $3 }')"
   echo "jdk: $("$JDK/bin/javac" -version 2>&1)"
-  echo "source: https://github.com/OSGeo/gdal/releases/download/v$VER/gdal-$VER.tar.gz"
+  echo "source: $PIN_URL"
   echo "sha256 gdal-$VER.tar.gz: $SHA"
   echo "staged: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "license: GDAL, MIT/X (https://gdal.org/license.html)"

@@ -56,7 +56,6 @@ fi
 # sets DIST, OUT (the classes), CP (the jars) and GDAL_JAVA.
 # shellcheck source=SCRIPTDIR/../dev/g2/render/env.sh
 source "$REPO/dev/g2/render/env.sh"
-GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/homebrew/opt/gdal/share/gdal)}"
 
 swift build -c release --package-path "$HERE" --product MacTAK
 BIN_DIR="$(swift build -c release --package-path "$HERE" --show-bin-path)"

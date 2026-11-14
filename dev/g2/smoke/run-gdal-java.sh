@@ -20,7 +20,9 @@ DIST="$(cd "$DIST" && pwd)"
 source "$G2/../jdk.sh"
 JDK="$(mactak_jdk_home 21 || true)"
 [[ -n "$JDK" ]] || { echo "run-gdal-java: JDK 21 not found (dev/jdk.sh)" >&2; exit 2; }
-command -v gdal-config >/dev/null || { echo "FATAL: gdal-config not found" >&2; exit 2; }
+# the GDAL the bindings were built against: macTAK's own (dev/deps)
+GDAL_CONFIG="${MACTAK_DEPS_DIST:-$G2/../deps/dist}/bin/gdal-config"
+[[ -x "$GDAL_CONFIG" ]] || { echo "FATAL: no gdal-config at $GDAL_CONFIG — run dev/deps/build-deps.sh" >&2; exit 2; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -30,4 +32,4 @@ trap 'rm -rf "$WORK"' EXIT
 
 # -Djava.library.path: org.gdal.gdal.gdalJNI's static init System.loadLibrary("gdalalljni")
 "$JDK/bin/java" -Djava.library.path="$DIST" -classpath "$WORK:$DIST/gdal.jar" \
-  mactak.smoke.GdalJavaSmoke "$(gdal-config --version)" "$WORK"
+  mactak.smoke.GdalJavaSmoke "$("$GDAL_CONFIG" --version)" "$WORK"
