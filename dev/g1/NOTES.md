@@ -1583,8 +1583,11 @@ the user's folder.
 vector opens:
 
 - `OGR_Content2` (every layer `LayerStore` imports): GeoJSON, GPKG, KML,
-  LIBKML, ESRI Shapefile, GPX and FlatGeobuf, formats that never follow
-  references in a file. They cover what the engine was built to open:
+  LIBKML, ESRI Shapefile, GPX and FlatGeobuf, chosen as formats that never
+  follow references in a file. **That held for all but GeoJSON**, which
+  fetches the URL in a legacy `crs` link (§Formats: ATAK 5.5 parity,
+  below; [issue #167](https://github.com/matteskes/macTAK/issues/167)).
+  They cover what the engine was built to open:
   it attaches styles only to KML, GPX and Shapefile
   (`OgrFeatureDataSource.registerDrivers`), and `layer.sh` proves
   GeoJSON, GPKG, KML and Shapefile. A zipped Shapefile still opens: the
@@ -1633,9 +1636,69 @@ two Shapefiles) and `make test-render` passes every gate.
   when rasters arrive from data packages or peers: a raster allowlist in
   those open calls ([issue #155](https://github.com/matteskes/macTAK/issues/155)).
 - **A layer format outside the list** (CSV, DXF, MapInfo, GeoJSONSeq and
-  others) is now refused. Adding one is a one-line change, after
-  checking that its driver never follows references
-  ([issue #156](https://github.com/matteskes/macTAK/issues/156)).
+  others) is now refused. The decision is ATAK 5.5's formats only
+  ([issue #156](https://github.com/matteskes/macTAK/issues/156); see
+  the next section).
+
+### Formats: ATAK 5.5 parity (2026-11-13, issue 156)
+
+**What ATAK 5.5 imports.** The app's vector overlay importers, at the pin
+(`atak-civ` `9f6893d`, `atak/ATAK/app/…/importfiles/sort`, read from git
+objects; the sparse `src/` leaves the app out):
+
+- KML and KMZ;
+- GPX;
+- Shapefile, plain and zipped;
+- **GeoJSON**, plain and zipped (`ImportGeoJsonSort`, `ImportGeoJsonZSort`,
+  new since 4.6);
+- **GML**, plain and zipped;
+- GeoPackage.
+
+GeoJSON and GML go through the engine's `ogr` provider (`GeoJSONSpatialDb`,
+`GMLSpatialDb`). MVT tiles and ATAK's own DRW and LPT files have importers
+of their own, outside this allowlist. Nothing in the 5.5 app imports
+FlatGeobuf, CSV as an overlay (its CSVs are a contacts list and the track
+export), DXF, MapInfo, TopoJSON, GeoJSONSeq or ESRIJSON.
+
+**The decision:** parity as close as possible.
+
+| Format | Decision | State |
+|---|---|---|
+| KML/KMZ, GPX, Shapefile, GPKG | keep | allowed |
+| GeoJSON | keep: ATAK 5.5 imports it | allowed. Its `crs` link fetch must be blocked ([#167](https://github.com/matteskes/macTAK/issues/167)) |
+| FlatGeobuf | drop: no ATAK importer | still allowed until the patch changes ([#156](https://github.com/matteskes/macTAK/issues/156)) |
+| GML | add back: ATAK 5.5 imports it | refused until it opens with schema downloads and `.gfs` writing off ([#168](https://github.com/matteskes/macTAK/issues/168)) |
+| CSV, DXF, MapInfo, TopoJSON, GeoJSONSeq, ESRIJSON | stay out | refused |
+
+Issue #156 also keeps a usability item: the refusal names the file's
+format when GDAL can identify it. No code has changed yet.
+
+**The probe.** Run on GDAL 3.13.3, the library the engine links. Each
+hostile file was opened with stock `ogrinfo -if <driver>`, with the
+engine's `LIBKML_RESOLVE_STYLE=YES`. Each file pointed at:
+
+- `test/http-witness.py` on loopback, for network fetches;
+- a FIFO outside its folder, whose blocked writer logs any open, for
+  local reads of paths the file names.
+
+| Driver | File | Requests | Opens outside the folder |
+|---|---|---|---|
+| KML, LIBKML | `NetworkLink` (http and path), external `styleUrl` and `schemaUrl` (http and path), icon `href` | 0 | 0 |
+| LIBKML | the same file as a KMZ | 0 | 0 |
+| **GeoJSON** | `crs` `link` with an http `href` | **1** (`GET /crs.wkt`) | 0 |
+| GeoJSON | `crs` `link` with a local path; `crs` `name` set to a URL | 0 | 0 |
+| TopoJSON | `crs` `link` with an http `href` | **1** | 0 |
+| ESRIJSON | `spatialReference.wkt` set to a URL, `exceededTransferLimit` set | 0 | 0 |
+| GeoJSONSeq, GPX (link hrefs), DXF | plain files | 0 | 0 |
+| ESRI Shapefile | `.prj` holding a URL | 0 | 0 |
+| CSV | `.csvt` and a `.prj` holding a URL; a WKT column | 0 | 0 |
+| MapInfo | MIF/MID | 0 | 0 |
+| MapInfo | a "view" TAB naming tables outside the folder | not settled: GDAL didn't recognise the test file | |
+
+The GeoJSON fetch also happens through the engine's own import path:
+`atak-headless --layer` imported the feature, and the witness logged
+`GET /crs.wkt`. `test/gdal-network.sh` didn't catch it, because its
+hostile files are a VRT and a GML file only. #167 adds a GeoJSON leg.
 
 ## G1.20 — commo's https paths verify, and don't crash (2026-11-13, branch `g1/commo-static-curl`, issues 157 and 146)
 
