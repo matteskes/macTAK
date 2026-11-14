@@ -115,6 +115,15 @@ bash "$ROOT/dev/deps/build-deps.sh"
 [[ -f "$DEPS/lib/libgdal.dylib" && -f "$DEPS/lib/libproj.dylib" && -f "$DEPS/lib/libspatialite.dylib" ]] \
   || die "dev/deps/build-deps.sh left no GDAL/PROJ/libspatialite in $DEPS"
 
+# curl, static on openssl@3 (fetch-curl.sh, cached; commo links the same
+# build). The engine's curl users had Apple's /usr/lib/libcurl, whose TLS is
+# LibreSSL: HttpProtocolHandler's CURLOPT_SSL_CTX_FUNCTION edits curl's
+# SSL_CTX with OpenSSL 3 calls, the mix that crashed commo (#157). libtakengine
+# links the archive and exports curl's API; the JNI glue's curl calls reach
+# that copy, as commo's JNI library reaches libcommoncommo's.
+bash "$G1/fetch-curl.sh"
+CURL="$G1/build-curl/prefix"
+
 # --- work tree -----------------------------------------------------------
 rm -rf "$WORK"
 mkdir -p "$WORK/gles-stub" "$WORK/overlay" "$OUT"
@@ -180,6 +189,7 @@ if(TARGET takengine)
     # Homebrew deps replace the ttp-dist bundle the macOS branch expects.
     target_include_directories(takengine PRIVATE
         @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
+        @CURL@/include                  # curl on openssl@3 (fetch-curl.sh), not the SDK's
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api   # GLES3/gl3.h (GLES-stub slot)
         ${SRC}/src/khronos/EGL/api      # EGL + KHR/khrplatform.h
@@ -233,7 +243,12 @@ if(TARGET takengine)
     list(APPEND _libs /opt/homebrew/opt/libxml2/lib/libxml2.dylib)
     list(APPEND _libs
         assimp                          # model/ASSIMPSceneSpi.cpp (5.5)
-        curl                            # util/URIOfflineCache.cpp (5.5)
+        @CURL@/lib/libcurl.a            # util/URIOfflineCache.cpp, HttpProtocolHandler.cpp (5.5);
+        @OPENSSL@/lib/libssl.dylib      # static curl on openssl@3 (fetch-curl.sh)
+        @OPENSSL@/lib/libcrypto.dylib
+        z
+        "-framework CoreFoundation"     # curl's macOS proxy and resolver config
+        "-framework SystemConfiguration"
         @GLIB@/lib/libglib-2.0.dylib    # mdbtools.h's inline g_malloc/g_free
     )
     set_target_properties(takengine PROPERTIES LINK_LIBRARIES "${_libs}")
@@ -265,6 +280,7 @@ if(TARGET takengine)
     target_include_directories(takengine-tests PRIVATE
         ${_takincs}
         @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
+        @CURL@/include                  # curl on openssl@3 (fetch-curl.sh), not the SDK's
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api
         ${SRC}/src/khronos/EGL/api
@@ -331,6 +347,7 @@ if(TARGET takengine)
         ${JNI_DIR}
         ${WORK}/engine/cpp
         @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
+        @CURL@/include                  # curl on openssl@3 (fetch-curl.sh), not the SDK's
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api   # GLES3/gl3.h (GLES-stub slot)
         ${SRC}/src/khronos/EGL/api      # EGL + KHR/khrplatform.h
@@ -346,7 +363,8 @@ if(TARGET takengine)
         /opt/homebrew/opt/sqlite/lib/libsqlite3.dylib
         gdal
         minizip
-        curl                            # jlibcurlhttpclientbuilder.cpp (5.5)
+        # no curl here: jlibcurlhttpclientbuilder.cpp's calls reach
+        # libtakengine's copy (fetch-curl.sh), not a second curl
         @OPENSSL@/lib/libssl.dylib      # ... which also calls OPENSSL_init_ssl
     )
     set_target_properties(takenginejni PROPERTIES
@@ -395,6 +413,7 @@ endif()
     target_include_directories(takengine-jni-tests PRIVATE
         ${_jniincs}
         @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
+        @CURL@/include                  # curl on openssl@3 (fetch-curl.sh), not the SDK's
         /opt/homebrew/include
         ${SRC}/dev/g1/jni-tests
     )
@@ -443,6 +462,7 @@ endif()
     target_include_directories(takengine-jni-tests-module PRIVATE
         ${_jniincs}
         @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
+        @CURL@/include                  # curl on openssl@3 (fetch-curl.sh), not the SDK's
         /opt/homebrew/include
         ${SRC}/dev/g1/jni-tests
     )
@@ -459,7 +479,7 @@ endif()
 CMAKE
 sed -e "s|@ROOT@|$ROOT|g" -e "s|@WORK@|$WORK|g" \
     -e "s|@GLES_LIB@|$GLES_LIB|g" -e "s|@GLES_RPATH@|$GLES_RPATH|g" \
-    -e "s|@GLIB@|$GLIB|g" -e "s|@OPENSSL@|$OPENSSL|g" -e "s|@DEPS@|$DEPS|g" \
+    -e "s|@GLIB@|$GLIB|g" -e "s|@OPENSSL@|$OPENSSL|g" -e "s|@DEPS@|$DEPS|g" -e "s|@CURL@|$CURL|g" \
     "$WORK/wrapper-CMakeLists.txt.in" > "$WORK/CMakeLists.txt"
 rm "$WORK/wrapper-CMakeLists.txt.in"
 

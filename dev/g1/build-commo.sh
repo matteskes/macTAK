@@ -39,6 +39,7 @@ OUT="$G1/native-dist"
 COMMOSRC="$ROOT/src/commoncommo"
 NGTCP2="$G1/build-ngtcp2/prefix"
 CURL="$G1/build-curl/prefix"
+MHD="$G1/build-microhttpd/prefix"
 JOBS="$(sysctl -n hw.ncpu)"
 HB=/opt/homebrew
 
@@ -66,10 +67,10 @@ trap '_rc=$?; if (( _rc != 0 )); then
 for t in make clang++ patch python3 brew rsync protoc git codesign; do
   command -v "$t" >/dev/null 2>&1 || die "missing tool: $t"
 done
-for f in openssl@3 libxml2 protobuf libmicrohttpd; do
+for f in openssl@3 libxml2 protobuf; do
   brew list --versions "$f" >/dev/null 2>&1 \
     || die "brew formula missing: $f
-       → brew install openssl@3 libxml2 protobuf libmicrohttpd"
+       → brew install openssl@3 libxml2 protobuf"
 done
 # shellcheck source=SCRIPTDIR/../jdk.sh
 source "$DEV/jdk.sh"
@@ -86,6 +87,9 @@ bash "$G1/fetch-ngtcp2.sh"
 
 log "curl against openssl@3 (static; issue #157)"
 bash "$G1/fetch-curl.sh"
+
+log "libmicrohttpd without HTTPS (static; no GnuTLS)"
+bash "$G1/fetch-microhttpd.sh"
 
 # --- work tree -----------------------------------------------------------
 rm -rf "$WORK"
@@ -106,11 +110,13 @@ mkdir -p "$WORK/shim/include" "$WORK/shim/PGSC_Utils/include" "$WORK/shim/lib"
 ln -sfn "$HB/opt/libxml2/include/libxml2"               "$WORK/shim/include/libxml2"
 ln -sfn "$HB/opt/openssl@3/include/openssl"             "$WORK/shim/include/openssl"
 ln -sfn "$HB/include/google"                            "$WORK/shim/include/google"
-ln -sf  "$HB/opt/libmicrohttpd/include/microhttpd.h"    "$WORK/shim/include/microhttpd.h"
+# libmicrohttpd, static and without HTTPS (fetch-microhttpd.sh): Homebrew's
+# links GnuTLS, a second TLS stack commo's plain-HTTP web server never uses
+ln -sf  "$MHD/include/microhttpd.h"                     "$WORK/shim/include/microhttpd.h"
 ln -sf  "$HB/opt/libxml2/lib/libxml2.dylib"             "$WORK/shim/lib/"
 ln -sf  "$HB/opt/openssl@3/lib/libssl.dylib"            "$WORK/shim/lib/"
 ln -sf  "$HB/opt/openssl@3/lib/libcrypto.dylib"         "$WORK/shim/lib/"
-ln -sf  "$HB/opt/libmicrohttpd/lib/libmicrohttpd.dylib" "$WORK/shim/lib/"
+ln -sf  "$MHD/lib/libmicrohttpd.a"                     "$WORK/shim/lib/"
 ln -sf  "$HB/lib/libprotobuf-lite.dylib"                "$WORK/shim/lib/"
 # ngtcp2's static archives: the shim's lib dir is searched before $HB/lib,
 # whose libngtcp2_crypto_ossl.dylib links openssl@4

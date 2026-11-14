@@ -48,9 +48,15 @@ the engine adds the geoid itself (`GdalElevationChunk`).
 - **`check-gdal-drivers.sh`:** the built GDAL registers exactly the drivers in
   `gdal-drivers.txt`.
 - **`check-closure.py`:** walks every library the engine, JNI glue, commo and
-  GDAL's Java bindings load, resolving `@rpath` as dyld does. It fails on
-  OpenSSL 4, Homebrew's curl or libpq, Homebrew's GDAL, PROJ or
+  GDAL's Java bindings load, resolving `@rpath` as dyld does. It fails on a
+  TLS stack other than OpenSSL 3 (OpenSSL 4, GnuTLS, or Apple's libcurl with
+  its LibreSSL), Homebrew's curl or libpq, Homebrew's GDAL, PROJ or
   libspatialite, or a second copy of libgdal or libproj.
+
+The other two TLS-free pieces live with commo's other fetched dependencies
+in `dev/g1`: `fetch-microhttpd.sh` builds libmicrohttpd without HTTPS, and
+`fetch-curl.sh`'s static curl on OpenSSL 3 now serves the engine as well as
+commo (`dev/g1/NOTES.md` §G1.31).
 
 ## Bumping a version
 

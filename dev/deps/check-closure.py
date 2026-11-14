@@ -5,13 +5,15 @@ bindings load (their whole dependency closure, resolving @rpath,
 @loader_path and @executable_path as dyld does) and fail when the process
 would load:
 
-  - OpenSSL 4 (libssl.4 / libcrypto.4): macTAK's one TLS stack is OpenSSL 3;
+  - a TLS stack other than OpenSSL 3, which is macTAK's one:
+      OpenSSL 4 (libssl.4 / libcrypto.4),
+      GnuTLS (Homebrew's libmicrohttpd linked it; dev/g1/fetch-microhttpd.sh
+        builds commo's without HTTPS),
+      Apple's /usr/lib/libcurl, whose TLS is LibreSSL (the engine links
+        fetch-curl.sh's static curl on OpenSSL 3, as commo does);
   - Homebrew's curl or libpq, which link OpenSSL 4;
   - Homebrew's GDAL, PROJ or libspatialite: dev/deps builds those;
   - a second copy of libgdal or libproj (two instances in one process).
-
-PR B of the bundling plan adds GnuTLS and Apple's libcurl to the list once
-commo's libmicrohttpd and the engine's curl users move to OpenSSL 3.
 
 Usage: check-closure.py ROOT_DYLIB...   (exit 0 PASS, 1 FAIL, 2 usage)
 """
@@ -22,6 +24,8 @@ import sys
 
 FORBIDDEN = [
     (re.compile(r"/libssl\.4(\.|$)|/libcrypto\.4(\.|$)|/openssl@4/"), "OpenSSL 4"),
+    (re.compile(r"/libgnutls\.\d"), "GnuTLS (a second TLS stack)"),
+    (re.compile(r"^/usr/lib/libcurl\."), "Apple's libcurl (LibreSSL, a second TLS stack)"),
     (re.compile(r"/opt/homebrew/(opt|Cellar)/curl/"), "Homebrew's curl (links OpenSSL 4)"),
     (re.compile(r"/libpq\.\d"), "libpq (links OpenSSL 4)"),
     (re.compile(r"/opt/homebrew/(opt|Cellar)/(gdal|proj|libspatialite)/"),
@@ -102,8 +106,8 @@ def main(roots):
         for f in sorted(set(failures)):
             print("    " + f)
         return 1
-    print("[closure] PASS: %d libraries; no OpenSSL 4, Homebrew curl/libpq or Homebrew GDAL/PROJ; "
-          "one libgdal, one libproj" % len(seen))
+    print("[closure] PASS: %d libraries; one TLS stack (no OpenSSL 4, GnuTLS or Apple's libcurl), "
+          "no Homebrew curl/libpq or Homebrew GDAL/PROJ; one libgdal, one libproj" % len(seen))
     print("[closure]   Homebrew packages still loaded (%d): %s" % (len(homebrew), " ".join(homebrew)))
     return 0
 

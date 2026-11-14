@@ -122,7 +122,7 @@ jobs:
         # atak-headless, which is one JVM with both stacks since G1.4.
         run: >
           brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
-          openssl@3 libxml2 protobuf libmicrohttpd mdbtools glib assimp sqlite libtiff openjpeg libkml uriparser freexl librttopo pkgconf
+          openssl@3 libxml2 protobuf mdbtools glib assimp sqlite libtiff openjpeg libkml uriparser freexl librttopo pkgconf
 
       - name: Set up Zulu 21 (arm64)
         # build-native.sh itself needs no JDK (jni.h is pinned at
@@ -245,7 +245,7 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: >
           brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2
-          openssl@3 protobuf libmicrohttpd swig mdbtools glib assimp sqlite libtiff openjpeg libkml uriparser freexl librttopo pkgconf
+          openssl@3 protobuf swig mdbtools glib assimp sqlite libtiff openjpeg libkml uriparser freexl librttopo pkgconf
 
       - name: Set up Zulu 21 (arm64)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -520,12 +520,14 @@ jobs:
           persist-credentials: false
 
       - name: Install comms dependencies (Homebrew)
-        # build-commo.sh preflight list; protoc ships with protobuf
+        # build-commo.sh preflight list; protoc ships with protobuf; pkgconf
+        # for fetch-curl.sh and fetch-ngtcp2.sh. libmicrohttpd is built
+        # without HTTPS by fetch-microhttpd.sh, not taken from Homebrew.
         if: needs.changes.outputs.changed == 'true'
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
-        run: brew install openssl@3 libxml2 protobuf libmicrohttpd
+        run: brew install openssl@3 libxml2 protobuf pkgconf
 
       - name: Set up Zulu 21 (arm64) — javac -h writes the JNI headers, 21 runs the canaries
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -555,6 +557,13 @@ jobs:
         # rule). On Apple's libcurl the CA legs crashed the JVM.
         if: needs.changes.outputs.changed == 'true'
         run: make test-commo-https
+
+      - name: commo's mission-package web server answers (make test-mp-server)
+        # libmicrohttpd is built without HTTPS (fetch-microhttpd.sh: no
+        # GnuTLS); commo's HTTPS port is its own OpenSSL proxy in front of the
+        # plain server. Both must answer a GET (dev/g1/headless/test/mp-server.sh).
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-mp-server
 
       - name: Swift comms (make test-app-comms)
         # G3.1: CommoClient over commo through CCommoShim, built against the

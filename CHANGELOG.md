@@ -21,6 +21,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The process now has one TLS stack, OpenSSL 3 (`dev/g1/NOTES.md` §G1.31;
+  bundling plan PR B). commo's libmicrohttpd is built without HTTPS
+  (`dev/g1/fetch-microhttpd.sh`), which drops GnuTLS and six packages it
+  pulled in; commo's HTTPS port was always its own OpenSSL proxy. The
+  engine's curl users link `fetch-curl.sh`'s static curl on OpenSSL 3
+  instead of Apple's libcurl (LibreSSL), which also removes a latent #157:
+  `HttpProtocolHandler` edits curl's `SSL_CTX` with OpenSSL calls. The
+  closure guard rejects GnuTLS and Apple's libcurl, and a new test,
+  `make test-mp-server`, checks that commo's mission-package web server
+  answers on its plain and HTTPS ports. Homebrew packages loaded at
+  runtime: 22.
+
 - GDAL, PROJ and libspatialite are now macTAK's own builds, not Homebrew's
   (`dev/deps`, `dev/g1/NOTES.md` §G1.30; bundling plan PR A, toward #151
   and #152). Homebrew's GDAL links OpenSSL 4 and pulls in 86 packages
