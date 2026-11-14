@@ -13,7 +13,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g2/render
 # shellcheck source-path=SCRIPTDIR source=env.sh
 source "$HERE/env.sh"
 
-GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/homebrew/opt/gdal/share/gdal)}"
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 export MACTAK_HOME="${MACTAK_HOME:-$SCRATCH}"

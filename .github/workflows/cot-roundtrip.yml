@@ -63,7 +63,7 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: >
           brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
-          openssl@3 libxml2 protobuf libmicrohttpd mdbtools glib assimp
+          openssl@3 libxml2 protobuf libmicrohttpd mdbtools glib assimp sqlite libtiff openjpeg libkml uriparser freexl librttopo pkgconf
 
       - name: Set up Zulu 21 (arm64)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -75,6 +75,16 @@ jobs:
 
       - name: Kernel jars (dev/g1/kernel/build-kernel-jars.sh, verbatim)
         run: bash dev/g1/kernel/build-kernel-jars.sh
+
+      - name: Cache macTAK's own GDAL/PROJ/libspatialite (dev/deps/dist)
+        # dev/deps/build-deps.sh (run by build-native.sh) builds them from
+        # deps.lock's pins, without curl or OpenSSL 4, and skips the build
+        # when dist/BUILD-STAMP matches. Keyed on the pins, the script and
+        # the Homebrew libraries they link (Brewfile.lock.json).
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: dev/deps/dist
+          key: deps-macos-arm64-${{ hashFiles('dev/deps/deps.lock', 'dev/deps/build-deps.sh', 'Brewfile.lock.json') }}
 
       - name: Build engine + canary (dev/g1/build-native.sh, verbatim)
         run: bash dev/g1/build-native.sh

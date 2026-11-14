@@ -21,3 +21,15 @@ brew "ninja"
 brew "mdbtools"
 brew "glib"
 brew "assimp"
+# macTAK's own GDAL/PROJ/libspatialite (dev/deps/build-deps.sh) link these:
+# sqlite (one runtime for the process), libtiff (PROJ's grids), openjpeg
+# (JP2OpenJPEG), libkml + uriparser (LIBKML), freexl + librttopo
+# (libspatialite); pkgconf finds them, and openssl@3 for fetch-curl.sh.
+brew "sqlite"
+brew "libtiff"
+brew "openjpeg"
+brew "libkml"
+brew "uriparser"
+brew "freexl"
+brew "librttopo"
+brew "pkgconf"

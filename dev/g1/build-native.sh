@@ -78,11 +78,13 @@ gzip -t "$TINYGLTF_TGZ" 2>/dev/null \
 compgen -G "$G1/jni-include/*.h" >/dev/null \
   || die "no JNI headers in $G1/jni-include — run dev/g1/kernel/build-kernel-jars.sh"
 # 5.5 adds mdbtools + glib (formats/msaccess; mdbtools.h includes glib.h),
-# assimp (the ASSIMP scene SPI) and openssl@3 (the glue's libcurl client)
-for f in proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2 mdbtools glib assimp openssl@3; do
+# assimp (the ASSIMP scene SPI) and openssl@3 (the glue's libcurl client).
+# GDAL, PROJ and libspatialite are not Homebrew's: dev/deps builds them
+# (below), without curl or OpenSSL 4.
+for f in geos sqlite minizip nlohmann-json laszip googletest libxml2 mdbtools glib assimp openssl@3; do
   brew list --versions "$f" >/dev/null 2>&1 \
     || die "brew formula missing: $f
-       → brew install proj geos gdal libspatialite laszip minizip nlohmann-json googletest libxml2 mdbtools glib assimp openssl@3 ninja"
+       → brew bundle (see Brewfile)"
 done
 GLIB="$(brew --prefix glib)"
 OPENSSL="$(brew --prefix openssl@3)"
@@ -101,6 +103,17 @@ case "$GLES" in
 esac
 
 log "preflight ok (root=$ROOT, -j$JOBS, GLES=$GLES)"
+
+# macTAK's own GDAL, PROJ and libspatialite (dev/deps/deps.lock): a no-op
+# when dev/deps/dist already matches the pins. They stay in dev/deps/dist:
+# the engine finds them through an rpath to it (BUILD_RPATH below), as GDAL's
+# Java bindings do (dev/g2/fetch-gdal-java.sh), so the process loads one
+# libgdal. A copy next to the engine would be a second one. Bundling them
+# for an app is dev/stage-runtime.sh's job (#152).
+DEPS="${MACTAK_DEPS_DIST:-$ROOT/dev/deps/dist}"
+bash "$ROOT/dev/deps/build-deps.sh"
+[[ -f "$DEPS/lib/libgdal.dylib" && -f "$DEPS/lib/libproj.dylib" && -f "$DEPS/lib/libspatialite.dylib" ]] \
+  || die "dev/deps/build-deps.sh left no GDAL/PROJ/libspatialite in $DEPS"
 
 # --- work tree -----------------------------------------------------------
 rm -rf "$WORK"
@@ -166,6 +179,7 @@ set_target_properties(takengine PROPERTIES COMPILE_DEFINITIONS "${_takdefs}")
 if(TARGET takengine)
     # Homebrew deps replace the ttp-dist bundle the macOS branch expects.
     target_include_directories(takengine PRIVATE
+        @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api   # GLES3/gl3.h (GLES-stub slot)
         ${SRC}/src/khronos/EGL/api      # EGL + KHR/khrplatform.h
@@ -173,7 +187,7 @@ if(TARGET takengine)
         @GLIB@/include/glib-2.0         # mdbtools.h includes glib.h
         @GLIB@/lib/glib-2.0/include     # glibconfig.h
     )
-    target_link_directories(takengine PRIVATE /opt/homebrew/lib)
+    target_link_directories(takengine PRIVATE @DEPS@/lib /opt/homebrew/lib)
 
     # libkml's renamed minizip -> Homebrew minizip (same signatures); the
     # JNI glue below needs the same renames
@@ -224,7 +238,7 @@ if(TARGET takengine)
     )
     set_target_properties(takengine PROPERTIES LINK_LIBRARIES "${_libs}")
     set_target_properties(takengine PROPERTIES
-        BUILD_RPATH "@loader_path;@GLES_RPATH@"
+        BUILD_RPATH "@loader_path;@DEPS@/lib;@GLES_RPATH@"
     )
 
     # ---------------------------------------------------------------
@@ -250,6 +264,7 @@ if(TARGET takengine)
     )
     target_include_directories(takengine-tests PRIVATE
         ${_takincs}
+        @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api
         ${SRC}/src/khronos/EGL/api
@@ -264,7 +279,7 @@ if(TARGET takengine)
     )
     target_link_libraries(takengine-tests PRIVATE takengine GTest::gtest_main)
     set_target_properties(takengine-tests PROPERTIES
-        BUILD_RPATH "${CMAKE_BINARY_DIR}/engine-cpp;@GLES_RPATH@"
+        BUILD_RPATH "${CMAKE_BINARY_DIR}/engine-cpp;@DEPS@/lib;@GLES_RPATH@"
     )
 
     # ---------------------------------------------------------------
@@ -315,6 +330,7 @@ if(TARGET takengine)
     target_include_directories(takenginejni PRIVATE
         ${JNI_DIR}
         ${WORK}/engine/cpp
+        @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
         /opt/homebrew/include
         ${SRC}/src/khronos/OpenGL/api   # GLES3/gl3.h (GLES-stub slot)
         ${SRC}/src/khronos/EGL/api      # EGL + KHR/khrplatform.h
@@ -324,7 +340,7 @@ if(TARGET takengine)
         ${SRC}/dev/g1/jni-include       # javac -h output (kernel/build-kernel-jars.sh)
         ${SRC}/dev/g1/jdk-include       # pinned jni.h + jni_md.h
     )
-    target_link_directories(takenginejni PRIVATE /opt/homebrew/lib)
+    target_link_directories(takenginejni PRIVATE @DEPS@/lib /opt/homebrew/lib)
     target_link_libraries(takenginejni PRIVATE takengine
         @GLES_LIB@
         /opt/homebrew/opt/sqlite/lib/libsqlite3.dylib
@@ -336,7 +352,7 @@ if(TARGET takengine)
     set_target_properties(takenginejni PROPERTIES
         CXX_STANDARD 17                 # as upstream's jni/CMakeLists.txt: util/Tasking.h
         CXX_STANDARD_REQUIRED ON        # overloads on noexcept function types
-        BUILD_RPATH "@loader_path;${CMAKE_BINARY_DIR}/engine-cpp;@GLES_RPATH@"
+        BUILD_RPATH "@loader_path;${CMAKE_BINARY_DIR}/engine-cpp;@DEPS@/lib;@GLES_RPATH@"
     )
 endif()
 
@@ -378,13 +394,14 @@ endif()
     )
     target_include_directories(takengine-jni-tests PRIVATE
         ${_jniincs}
+        @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
         /opt/homebrew/include
         ${SRC}/dev/g1/jni-tests
     )
     target_compile_definitions(takengine-jni-tests PRIVATE
         ${takenginejni_DEFS}
     )
-    target_link_directories(takengine-jni-tests PRIVATE /opt/homebrew/lib)
+    target_link_directories(takengine-jni-tests PRIVATE @DEPS@/lib /opt/homebrew/lib)
     target_link_libraries(takengine-jni-tests PRIVATE takenginejni takengine GTest::gtest_main)
     set_target_properties(takengine-jni-tests PROPERTIES
         # brew GTest (>=1.16) requires C++17 via its imported-target
@@ -393,7 +410,7 @@ endif()
         CXX_STANDARD 17
         # @loader_path: the binary is staged next to the dylibs in
         # native-dist (canary 3/4 runs it there, and `make test-jni` too)
-        BUILD_RPATH "@loader_path;@loader_path/engine-cpp;${CMAKE_BINARY_DIR};${CMAKE_BINARY_DIR}/engine-cpp;@GLES_RPATH@"
+        BUILD_RPATH "@loader_path;@loader_path/engine-cpp;${CMAKE_BINARY_DIR};${CMAKE_BINARY_DIR}/engine-cpp;@DEPS@/lib;@GLES_RPATH@"
     )
     # the engine codebase is C++14-era: its headers carry throw(X)
     # dynamic-exception specs, which are an error under C++17. Downgrade
@@ -425,23 +442,24 @@ endif()
     )
     target_include_directories(takengine-jni-tests-module PRIVATE
         ${_jniincs}
+        @DEPS@/include                  # own GDAL/PROJ/libspatialite (dev/deps), ahead of Homebrew's
         /opt/homebrew/include
         ${SRC}/dev/g1/jni-tests
     )
     target_compile_definitions(takengine-jni-tests-module PRIVATE
         ${takenginejni_DEFS}
     )
-    target_link_directories(takengine-jni-tests-module PRIVATE /opt/homebrew/lib)
+    target_link_directories(takengine-jni-tests-module PRIVATE @DEPS@/lib /opt/homebrew/lib)
     target_link_libraries(takengine-jni-tests-module PRIVATE takenginejni takengine GTest::gtest)
     set_target_properties(takengine-jni-tests-module PROPERTIES
         CXX_STANDARD 17
-        BUILD_RPATH "@loader_path;@loader_path/engine-cpp;${CMAKE_BINARY_DIR};${CMAKE_BINARY_DIR}/engine-cpp;@GLES_RPATH@"
+        BUILD_RPATH "@loader_path;@loader_path/engine-cpp;${CMAKE_BINARY_DIR};${CMAKE_BINARY_DIR}/engine-cpp;@DEPS@/lib;@GLES_RPATH@"
     )
     target_compile_options(takengine-jni-tests-module PRIVATE -Wno-error=dynamic-exception-spec)
 CMAKE
 sed -e "s|@ROOT@|$ROOT|g" -e "s|@WORK@|$WORK|g" \
     -e "s|@GLES_LIB@|$GLES_LIB|g" -e "s|@GLES_RPATH@|$GLES_RPATH|g" \
-    -e "s|@GLIB@|$GLIB|g" -e "s|@OPENSSL@|$OPENSSL|g" \
+    -e "s|@GLIB@|$GLIB|g" -e "s|@OPENSSL@|$OPENSSL|g" -e "s|@DEPS@|$DEPS|g" \
     "$WORK/wrapper-CMakeLists.txt.in" > "$WORK/CMakeLists.txt"
 rm "$WORK/wrapper-CMakeLists.txt.in"
 

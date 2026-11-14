@@ -14,9 +14,11 @@
 # jar, so there is no committed copy to drift (dev/spike/g55/NOTES.md
 # §Render gates).
 #
-# Sets: DIST OUT JDK CP GDAL_JAVA (plus G2 ROOT G1 ENV_SH_DIR — the sourcing
-# script should use these rather than derive its own). Exports nothing:
-# callers add the JVM's GDAL_DATA / MACTAK_HOME themselves.
+# Sets: DIST OUT JDK CP GDAL_JAVA DEPS GDAL_DATA_DIR (plus G2 ROOT G1
+# ENV_SH_DIR — the sourcing script should use these rather than derive its
+# own). DEPS is macTAK's own GDAL/PROJ build (dev/deps/build-deps.sh) and
+# GDAL_DATA_DIR its data, unless GDAL_DATA overrides it. Exports nothing:
+# callers pass GDAL_DATA_DIR / MACTAK_HOME to the JVM themselves.
 # Exits (killing the sourcing shell) when the environment is unusable.
 
 ENV_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g2/render
@@ -28,6 +30,9 @@ DIST="$(cd "$DIST" && pwd)"
 OUT="$G2/build/render-classes"
 SHADOW_SRC="$G2/build/shadow-src"
 ENGINE_JAVA="$ROOT/src/takkernel/engine/src/main"
+DEPS="${MACTAK_DEPS_DIST:-$ROOT/dev/deps/dist}"
+GDAL_DATA_DIR="${GDAL_DATA:-$DEPS/share/gdal}"
+[[ -d "$GDAL_DATA_DIR" ]] || { echo "render/env.sh: GDAL data not found at $GDAL_DATA_DIR — run: bash dev/deps/build-deps.sh" >&2; exit 2; }
 
 for f in libtakengine.dylib libtakenginejni.dylib libEGL.dylib libGLESv2.dylib; do
   [[ -f "$DIST/$f" ]] || { echo "render/env.sh: $f missing in $DIST — run: MACTAK_GLES=angle bash dev/g1/build-native.sh" >&2; exit 2; }

@@ -54,8 +54,8 @@ for a in "${SHELL_ARGS[@]}"; do
   prev="$a"
 done
 
-# GDAL_DATA for the engine's GdalLibrary::init (Homebrew gdal; override with GDAL_DATA).
-GDAL_DATA_DIR="${GDAL_DATA:-$(gdal-config --datadir 2>/dev/null || echo /opt/homebrew/opt/gdal/share/gdal)}"
+# GDAL_DATA for the engine's GdalLibrary::init: env.sh sets GDAL_DATA_DIR
+# (macTAK's own GDAL, dev/deps; GDAL_DATA overrides it).
 
 # MACTAK_HOME: android.os.Environment's "external storage" (FileSystemUtils'
 # atak/ root); the shell keeps it in a scratch dir unless the caller sets one.

@@ -35,6 +35,11 @@ brew bundle install              # Brewfile = the union of every workflow's brew
 make hooks                       # install the pre-commit gate (core.hooksPath .githooks)
 ```
 
+- **GDAL, PROJ and libspatialite are not Homebrew's.** `dev/g1/build-native.sh`
+  builds them first from the pins in `dev/deps/deps.lock` (`make deps`, about
+  a minute), without curl or OpenSSL 4 and with only the GDAL drivers macTAK
+  allows. Homebrew's `gdal` stays installed for the test controls and fixture
+  scripts (`ogrinfo`, `gdal_translate`). See `dev/deps/README.md`.
 - **JDK 21 (arm64)** for all JVM work: every JVM macTAK starts (canaries,
   `atak-headless`, the render harness, `jni-tests`, the shell's in-process
   `JNI_CreateJavaVM`), the `javac` for macTAK's own Java (`--release 21`)

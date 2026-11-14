@@ -21,6 +21,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- GDAL, PROJ and libspatialite are now macTAK's own builds, not Homebrew's
+  (`dev/deps`, `dev/g1/NOTES.md` §G1.30; bundling plan PR A, toward #151
+  and #152). Homebrew's GDAL links OpenSSL 4 and pulls in 86 packages
+  (196 MB); `dev/deps/build-deps.sh` builds the same versions from the pins
+  in `dev/deps/deps.lock` with no curl or TLS and only the 25 GDAL drivers
+  macTAK allows (35 MB). The engine process now loads no OpenSSL 4, and 30
+  Homebrew packages instead of 86. A GDAL bump is one line in `deps.lock`.
+  New guards, `make check-deps`, run in CI: the GDAL's driver list, and the
+  process closure (no OpenSSL 4, Homebrew curl or libpq, one GDAL and one
+  PROJ). The Brewfile adds the libraries the build links: sqlite, libtiff,
+  openjpeg, libkml, uriparser, freexl, librttopo and pkgconf.
+
 - G3's plan is revised after a check against ATAK 5.5 (`dev/g3/NOTES.md`
   §Plan revision). Eight gaps are adopted: certificate enrollment, QUIC,
   mesh networking, ATAK's SA reporting rates, the self details, GeoChat's

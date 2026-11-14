@@ -2603,3 +2603,70 @@ passes 21 of 21 and the other `run.sh` legs pass, as do `layer.sh`,
 build of the scripted provider failed in `javac` inside
 `build-native.sh`'s canary. Compiling `JniTestsMain.java` against
 `mactak_kernel_classpath` first takes seconds, a full build minutes.
+
+## G1.30 — macTAK builds its own GDAL and PROJ (2026-11-14, branch `deps/own-gdal-proj`, bundling plan PR A)
+
+The first of four PRs toward a bundled, OpenSSL-3-only runtime (for
+issues #151 and #152). The owner's decisions: build GDAL and PROJ from pinned sources with
+only the drivers macTAK allows, stage them by script with CI caching it, and
+land the work as phased PRs. `dev/deps/README.md` is the reference; this
+section records what was found on the way.
+
+**What the inventory found.**
+
+- **Homebrew moved its own builds to OpenSSL 4.** Its GDAL links OpenSSL 4
+  directly and through libpq, thrift and Homebrew's curl, and curl reaches
+  PROJ, poppler, netcdf, cfitsio and xerces-c. The engine process loaded
+  OpenSSL 3 (commo, the JNI glue) and OpenSSL 4 (GDAL) together.
+- **Homebrew's GDAL closure is 86 packages, 221 dylibs, 196 MB.**
+
+**What changed.** `dev/deps/build-deps.sh` builds PROJ 9.9.0, GDAL 3.13.3 and
+libspatialite 5.1.0, the versions Homebrew ships, from `dev/deps/deps.lock`:
+no curl, no TLS, 25 GDAL drivers, 35 MB. `build-native.sh` runs it and puts
+its `include/` and `lib/` ahead of Homebrew's on all five targets.
+`fetch-gdal-java.sh` builds the Java bindings from the same pin, which
+retires its per-version checksum table. The run scripts, `atak-headless` and
+`app/bundle.sh` take GDAL's data from it. Homebrew's `gdal` stays installed,
+for the test controls (an `ogrinfo` that can fetch) and the fixture scripts.
+
+**Result.** The engine, JNI glue, commo and GDAL Java bindings load no
+OpenSSL 4, and one libgdal and one libproj. Homebrew packages loaded at
+runtime: 30, down from 86. GnuTLS and its dependencies, through commo's
+libmicrohttpd, are PR B's.
+
+### Traps
+
+- **GDAL 3.13 registers VRT even with `GDAL_ENABLE_DRIVER_VRT=OFF`.** Its
+  CMake builds VRT as a built-in driver, which defines `FRMT_vrt` anyway.
+  VRT is on `gdal-drivers.txt` as always built; `keepOffline()` skips it.
+- **libspatialite 5.1.0 doesn't build against libxml2 2.15**, which removed
+  the nanoHTTP API its WFS client calls (Homebrew carries a Debian patch).
+  Built with `--disable-libxml2`: the engine uses neither its XmlBLOB
+  functions nor its WFS client.
+- **A blanket `-I$(brew --prefix)/include` puts Homebrew's installed
+  spatialite headers ahead of the tarball's.** Include paths are per
+  package.
+- **Homebrew's libgeotiff links Homebrew's PROJ**, a second PROJ in the
+  process. GDAL uses its internal libgeotiff (symbols renamed).
+- **No copy of the libraries next to the engine.** GDAL's Java bindings and
+  the engine both reach libgdal through an rpath to `dev/deps/dist/lib`;
+  a copy in `native-dist` would have been a second libgdal instance.
+- **GNM is off**, so the Java bindings drop `org.gdal.gnm`; only the
+  android-port transplant jar's GDAL 2.4-era classes name it.
+- **Ninja reuses objects across pins** when the build directory survives;
+  `build-deps.sh` wipes it each time.
+
+### The guards
+
+`make check-deps` (`dev/deps/check.sh`), in CI's native and render jobs:
+
+| Guard | Fails on | Checked against |
+|---|---|---|
+| `check-gdal-drivers.sh` | any registered driver not in `gdal-drivers.txt`, or one missing | the 25 drivers |
+| `check-closure.py` | OpenSSL 4, Homebrew curl or libpq, Homebrew GDAL/PROJ/libspatialite, a second libgdal or libproj | Homebrew's own `libgdal`: FAIL (OpenSSL 4, libpq, Homebrew PROJ and libspatialite); this build: PASS |
+
+With the build, every suite passes on the dev Mac: the engine's four canary
+suites, `layer.sh`, `make test-gdal-network` (with #167's GeoJSON leg),
+`make test-gdal-projection`, `make test`, `make test-render`,
+`make test-shell`, `make app`, and an exit run whose datum check reads
+54.692 m and 215.059 m, as before.
