@@ -28,6 +28,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   formats with MSL altitude, and 2525 marker symbols from the kernel. The
   milestones are re-sequenced as G3.2–G3.8. G4's import list now covers
   ATAK 5.5's formats.
+- The app-level code ATAK 5.5 moved into takkernel's `shared` module is
+  ported to Swift, not called on the JVM (`dev/g3/NOTES.md` §Decided);
+  the kernel's CoT serializer is the oracle for golden tests. The 2525
+  symbol renderer for G3.7 waits on a spike (#171), because the
+  kernel's desktop 2525 code doesn't build from public sources.
 - Layer import formats are decided: ATAK 5.5's set only
   (`dev/g1/NOTES.md` §G1.19, issue #156). FlatGeobuf is to be dropped,
   GML brought back safely (#168), and nothing outside ATAK's set added.
