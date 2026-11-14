@@ -20,6 +20,10 @@
  *     slf4j-api): JNI_OnLoad's ManagedLogger finds no Log class, and
  *     native logging must go quiet instead of crashing the JVM.
  *
+ *   missing-member mode (TAKJNI_TEST_MODE=missingmember, the kernel jars
+ *     behind an android.net.Uri without parse): a class init's member
+ *     lookup fails, and the init must leave the JNIEnv clean (issue 161).
+ *
  * Boot probe order cribbed from dev/g2/shell/jni_boot.c (M3.2 shell —
  * proven against this box's Zulu 8). One JVM per process, never
  * destroyed: DestroyJavaVM on a JVM the engine has registered globals
@@ -251,6 +255,26 @@ protected:
         if(!jnitest::launcher_env())
             GTEST_SKIP() << "noslf4j suite runs under the java launcher "
                             "(dev/g1/jni-tests/run.sh noslf4j leg)";
+    }
+};
+
+/* missing-member mode (issue 161): the kernel jars behind
+ * missing-member/android/net/Uri.java, a Uri without parse(String), under
+ * the java launcher. Every class loads, but an init that looks up Uri.parse
+ * fails that lookup with NoSuchMethodError, which a healthy JVM never
+ * shows. No filesystem install: its Java side parses Uris. */
+class JniMissingMemberTest : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        const char *mode = getenv("TAKJNI_TEST_MODE");
+        if(!mode || strcmp(mode, "missingmember") != 0)
+            GTEST_SKIP() << "missing-member suite: run via dev/g1/jni-tests/run.sh "
+                            "(TAKJNI_TEST_MODE=missingmember, a Uri without parse ahead of the jars)";
+        if(!jnitest::launcher_env())
+            GTEST_SKIP() << "missing-member suite runs under the java launcher "
+                            "(dev/g1/jni-tests/run.sh missing-member leg)";
     }
 };
 

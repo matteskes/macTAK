@@ -1,0 +1,780 @@
+--- a/tmp/takeng-src/jni/common.cpp
++++ b/tmp/takeng-src/jni/common.cpp
+@@ -827,6 +827,21 @@
+     return v;
+ }
+ 
++bool ATAKMapEngineJNI_clearClassInitException(JNIEnv *env, const bool initialized) NOTHROWS
++{
++    // no env when no JVM is attached (a LocalJNIEnv), as findClass allows
++    if(env && env->ExceptionCheck()) {
++        env->ExceptionDescribe();
++        env->ExceptionClear();
++    }
++    return initialized;
++}
++
++bool ATAKMapEngineJNI_clearClassInitException(JNIEnv &env, const bool initialized) NOTHROWS
++{
++    return ATAKMapEngineJNI_clearClassInitException(&env, initialized);
++}
++
+ namespace {
+ 
+         ManagedLogger::ManagedLogger(JNIEnv &env) NOTHROWS :
+--- a/tmp/takeng-src/jni/common.h
++++ b/tmp/takeng-src/jni/common.h
+@@ -146,4 +146,13 @@
+ 
+ bool ATAKMapEngineJNI_ExceptionCheck(JNIEnv &env, const bool clear) NOTHROWS;
+ 
++// macTAK (issue 161): a class init that fails a member lookup returns false
++// with the NoSuchMethodError or NoSuchFieldError still pending, and its
++// caller's next JNI calls would run with it in flight. Each init's result is
++// cached once, in a static bool; wrapping that one call reports and clears
++// whatever the init left pending. Returns initialized. A null JNIEnv* (no
++// JVM attached) is allowed, as ATAKMapEngineJNI_findClass allows it.
++bool ATAKMapEngineJNI_clearClassInitException(JNIEnv *env, const bool initialized) NOTHROWS;
++bool ATAKMapEngineJNI_clearClassInitException(JNIEnv &env, const bool initialized) NOTHROWS;
++
+ #endif
+--- a/tmp/takeng-src/jni/interop/core/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/core/Interop.cpp
+@@ -534,7 +534,7 @@
+ {
+     bool GeoPoint_interop_entry(JNIEnv *env) NOTHROWS
+     {
+-        static bool geopoint_clinit = GeoPoint_class_init(env);
++        static bool geopoint_clinit = ATAKMapEngineJNI_clearClassInitException(env, GeoPoint_class_init(env));
+         return geopoint_clinit;
+     }
+     bool GeoPoint_class_init(JNIEnv *env) NOTHROWS
+@@ -584,7 +584,7 @@
+ 
+     bool NativeProjection_interop_entry(JNIEnv *env) NOTHROWS
+     {
+-        static bool nativeprojection_clinit = NativeProjection_class_init(env);
++        static bool nativeprojection_clinit = ATAKMapEngineJNI_clearClassInitException(env, NativeProjection_class_init(env));
+         return nativeprojection_clinit;
+     }
+     bool NativeProjection_class_init(JNIEnv *env) NOTHROWS
+@@ -601,7 +601,7 @@
+ 
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = Interop_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Interop_class_init(env));
+         return clinit;
+     }
+     bool Interop_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/core/ManagedLayer.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedLayer.cpp
+@@ -35,7 +35,7 @@
+     impl(env_.NewGlobalRef(impl_)),
+     mutex(TEMT_Recursive)
+ {
+-    static bool clinit = Layer_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, Layer_class_init(env_));
+     // macTAK (issue 142): on a failed class init getName is NULL; the
+     // layer keeps no name, and every consumer bails
+     if(!clinit)
+--- a/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedMapRenderer2.cpp
+@@ -37,7 +37,7 @@
+ ManagedMapRenderer3::ManagedMapRenderer3(JNIEnv &env, jobject impl_) NOTHROWS :
+     impl(env.NewGlobalRef(impl_))
+ {
+-    static bool clinit = MapRenderer3_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, MapRenderer3_init(env));
+ }
+ ManagedMapRenderer3::~ManagedMapRenderer3() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedProjection.cpp
+@@ -30,7 +30,7 @@
+ ManagedProjection::ManagedProjection(JNIEnv &env, jobject impl_) NOTHROWS :
+     impl(env.NewGlobalRef(impl_))
+ {
+-    static bool clinit = Projection_class_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Projection_class_init(env));
+ }
+ ManagedProjection::~ManagedProjection() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/core/ManagedRenderContext.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedRenderContext.cpp
+@@ -47,7 +47,7 @@
+     parent(parent_ ? env_.NewGlobalRef(parent_) : NULL),
+     surface(env_, RenderContext_getRenderSurface(env_, impl_))
+ {
+-    static bool clinit = RenderContext_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, RenderContext_class_init(env_));
+ }
+ ManagedRenderContext::~ManagedRenderContext() NOTHROWS
+ {
+@@ -261,7 +261,7 @@
+     }
+     jobject RenderContext_getRenderSurface(JNIEnv &env, jobject mcontext) NOTHROWS
+     {
+-        static bool clinit = RenderContext_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, RenderContext_class_init(env));
+         jobject msurface = env.CallObjectMethod(mcontext, RenderContext_class.getRenderSurface);
+         if(env.ExceptionCheck()) {
+             env.ExceptionDescribe();
+--- a/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedRenderSurface.cpp
+@@ -41,7 +41,7 @@
+ ManagedRenderSurface::ManagedRenderSurface(JNIEnv &env_, jobject impl_) NOTHROWS :
+     impl(env_.NewWeakGlobalRef(impl_))
+ {
+-    static bool clinit = RenderSurface_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, RenderSurface_init(env_));
+     // macTAK (issue 142): IsInstanceOf on a NULL class when the init failed.
+     // isRenderSurface2 is per surface now: upstream kept one flag for the
+     // file, so each new surface decided which getters every other used
+--- a/tmp/takeng-src/jni/interop/core/ManagedVisibilityListener.cpp
++++ b/tmp/takeng-src/jni/interop/core/ManagedVisibilityListener.cpp
+@@ -24,7 +24,7 @@
+ ManagedVisibilityListener::ManagedVisibilityListener(JNIEnv &env_, jobject impl_) NOTHROWS :
+     impl(env_.NewGlobalRef(impl_))
+ {
+-    static bool clinit = Layer_OnLayerVisibleChangedListener_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, Layer_OnLayerVisibleChangedListener_init(env_));
+ }
+ ManagedVisibilityListener::~ManagedVisibilityListener() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/db/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/db/Interop.cpp
+@@ -171,7 +171,7 @@
+ {
+     bool checkInit(JNIEnv *env) NOTHROWS
+     {
+-        static bool clinit = Interop_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Interop_class_init(env));
+         return clinit;
+     }
+     bool Interop_class_init(JNIEnv *env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/db/ManagedDatabase2.cpp
++++ b/tmp/takeng-src/jni/interop/db/ManagedDatabase2.cpp
+@@ -44,7 +44,7 @@
+ 
+     ManagedDatabase2::ManagedDatabase2(JNIEnv &env, jobject instance)
+     {
+-        static bool clinit = DBIface_Managed_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, DBIface_Managed_class_init(env));
+         m_instance = env.NewGlobalRef(instance);
+     }
+ 
+--- a/tmp/takeng-src/jni/interop/db/ManagedDatabaseProvider.cpp
++++ b/tmp/takeng-src/jni/interop/db/ManagedDatabaseProvider.cpp
+@@ -40,7 +40,7 @@
+ 
+ ManagedDatabaseProvider::ManagedDatabaseProvider(JNIEnv& env, jobject instance) : providerType(NULL)
+ {
+-    static bool clinit = JDatabaseProvider_class_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, JDatabaseProvider_class_init(env));
+     m_instance = env.NewGlobalRef(instance);
+ }
+ 
+--- a/tmp/takeng-src/jni/interop/db/ManagedQuery.cpp
++++ b/tmp/takeng-src/jni/interop/db/ManagedQuery.cpp
+@@ -47,7 +47,7 @@
+ }
+ 
+ ManagedQuery::ManagedQuery(JNIEnv &env, jobject instance) NOTHROWS {
+-    static bool clinit = QueryIface_Managed_class_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, QueryIface_Managed_class_init(env));
+     m_instance = env.NewGlobalRef(instance);
+ }
+ 
+--- a/tmp/takeng-src/jni/interop/db/ManagedStatement.cpp
++++ b/tmp/takeng-src/jni/interop/db/ManagedStatement.cpp
+@@ -36,7 +36,7 @@
+ 
+ ManagedStatement::ManagedStatement(JNIEnv& env, jobject instance) NOTHROWS
+ {
+-    static bool clinit = JStatement_class_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, JStatement_class_init(env));
+     m_instance = env.NewGlobalRef(instance);
+ 
+     if (env.ExceptionCheck())
+--- a/tmp/takeng-src/jni/interop/elevation/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/elevation/Interop.cpp
+@@ -222,7 +222,7 @@
+ {
+     bool checkInit(JNIEnv *env) NOTHROWS
+     {
+-        static bool clinit = Interop_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Interop_class_init(env));
+         return clinit;
+     }
+     bool Interop_class_init(JNIEnv *env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/elevation/ManagedElevationChunk.cpp
++++ b/tmp/takeng-src/jni/interop/elevation/ManagedElevationChunk.cpp
+@@ -59,7 +59,7 @@
+     impl(env_->NewGlobalRef(impl_)),
+     bounds(NULL, NULL)
+ {
+-    static bool clinit = ElevationChunk_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, ElevationChunk_class_init(env_));
+     // macTAK (issue 142): on a failed class init the IDs below are NULL;
+     // the chunk keeps no type, URI or bounds, and every consumer bails
+     if(!clinit)
+--- a/tmp/takeng-src/jni/interop/elevation/ManagedElevationSource.cpp
++++ b/tmp/takeng-src/jni/interop/elevation/ManagedElevationSource.cpp
+@@ -113,7 +113,7 @@
+ ManagedElevationSource::ManagedElevationSource(JNIEnv *env_, jobject impl_) NOTHROWS :
+     impl(env_->NewGlobalRef(impl_))
+ {
+-    static bool clinit = ElevationSource_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, ElevationSource_class_init(env_));
+     // macTAK (issue 142): on a failed class init getName is NULL; the
+     // source keeps no name, and every consumer bails
+     if(!clinit)
+--- a/tmp/takeng-src/jni/interop/feature/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/feature/Interop.cpp
+@@ -1012,7 +1012,7 @@
+ 
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = Feature_interop_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Feature_interop_init(env));
+         return clinit;
+     }
+     bool Feature_interop_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureCursor.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureCursor.cpp
+@@ -29,7 +29,7 @@
+     cimpl(env, impl),
+     row(nullptr, nullptr)
+ {
+-    static bool clinit = FeatureCursor_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, FeatureCursor_init(env));
+ }
+ ManagedFeatureCursor::~ManagedFeatureCursor() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataSource2.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataSource2.cpp
+@@ -83,7 +83,7 @@
+ ManagedFeatureDataSource2::ManagedFeatureDataSource2(JNIEnv *env_, jobject impl_) NOTHROWS :
+     impl(env_->NewGlobalRef(impl_))
+ {
+-    static bool clinit = FeatureDataSource2_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, FeatureDataSource2_class_init(env_));
+     // macTAK (issue 142): a failed init leaves getName NULL; the name stays
+     // unset and every consumer below bails
+     if(!clinit)
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataStore2.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDataStore2.cpp
+@@ -98,7 +98,7 @@
+     impl(env_.NewGlobalRef(impl_)),
+     version(2u)
+ {
+-    static bool clinit = FeatureDataStore2_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, FeatureDataStore2_init(env_));
+     // macTAK (issue 142): IsInstanceOf, NewObject and the listener call
+     // below all go through the IDs a failed init leaves NULL
+     if(!clinit)
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureDefinition.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureDefinition.cpp
+@@ -54,7 +54,7 @@
+         feature(NULL, NULL),
+         version(1u)
+ {
+-    static bool clinit = FeatureDefinition2_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, FeatureDefinition2_class_init(env_));
+     // macTAK: IsInstanceOf against a class the init could not find crashes
+     if(!clinit)
+         return;
+--- a/tmp/takeng-src/jni/interop/feature/ManagedFeatureSetCursor.cpp
++++ b/tmp/takeng-src/jni/interop/feature/ManagedFeatureSetCursor.cpp
+@@ -32,7 +32,7 @@
+     impl(env_.NewGlobalRef(impl_)),
+     row(nullptr, nullptr)
+ {
+-    static bool clinit = FeatureSetCursor_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, FeatureSetCursor_init(env_));
+ }
+ ManagedFeatureSetCursor::~ManagedFeatureSetCursor() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/formats/c3dt/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/formats/c3dt/Interop.cpp
+@@ -298,7 +298,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = C3DT_interop_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, C3DT_interop_init(env));
+         return clinit;
+     }
+     bool C3DT_interop_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/formats/c3dt/ManagedAssetAccessor.cpp
++++ b/tmp/takeng-src/jni/interop/formats/c3dt/ManagedAssetAccessor.cpp
+@@ -26,7 +26,7 @@
+ ManagedAssetAccessor::ManagedAssetAccessor(JNIEnv &env_, jobject impl) NOTHROWS :
+  mimpl (env_.NewGlobalRef(impl))
+ {
+-    static bool clinit = AssetAccessor_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, AssetAccessor_init(env_));
+ }
+ 
+ ManagedAssetAccessor::~ManagedAssetAccessor() NOTHROWS
+--- a/tmp/takeng-src/jni/interop/formats/c3dt/ManagedAssetRequest.cpp
++++ b/tmp/takeng-src/jni/interop/formats/c3dt/ManagedAssetRequest.cpp
+@@ -58,7 +58,7 @@
+ ManagedAssetRequest::ManagedAssetRequest(JNIEnv &env_, jobject impl) NOTHROWS :
+         mimpl (env_.NewGlobalRef(impl))
+ {
+-    static bool clinit = AssetRequest_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, AssetRequest_init(env_));
+ }
+ 
+ ManagedAssetRequest::~ManagedAssetRequest() NOTHROWS
+--- a/tmp/takeng-src/jni/interop/formats/c3dt/ManagedAssetResponse.cpp
++++ b/tmp/takeng-src/jni/interop/formats/c3dt/ManagedAssetResponse.cpp
+@@ -38,7 +38,7 @@
+ ManagedAssetResponse::ManagedAssetResponse(JNIEnv &env_, jobject impl) NOTHROWS :
+         mimpl (env_.NewGlobalRef(impl))
+ {
+-    static bool clinit = AssetResponse_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, AssetResponse_init(env_));
+ }
+ 
+ ManagedAssetResponse::~ManagedAssetResponse() NOTHROWS
+--- a/tmp/takeng-src/jni/interop/formats/quantizedmesh/ManagedQMESourceLayer.cpp
++++ b/tmp/takeng-src/jni/interop/formats/quantizedmesh/ManagedQMESourceLayer.cpp
+@@ -56,9 +56,9 @@
+ ManagedQMESourceLayer::ManagedQMESourceLayer(JNIEnv *env, jobject impl) NOTHROWS :
+     impl(env->NewGlobalRef(impl))
+ {
+-    static bool clinit = QMESourceLayer_class_init(env);
+-    static bool teclinit = TileExtents_class_init(env);
+-    static bool fclinit = MiscHelpers_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, QMESourceLayer_class_init(env));
++    static bool teclinit = ATAKMapEngineJNI_clearClassInitException(env, TileExtents_class_init(env));
++    static bool fclinit = ATAKMapEngineJNI_clearClassInitException(env, MiscHelpers_init(env));
+ }
+ 
+ ManagedQMESourceLayer::~ManagedQMESourceLayer() NOTHROWS
+--- a/tmp/takeng-src/jni/interop/java/JNICollection.cpp
++++ b/tmp/takeng-src/jni/interop/java/JNICollection.cpp
+@@ -176,7 +176,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = JNICollection_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, JNICollection_class_init(env));
+         return clinit;
+     }
+     bool JNICollection_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/java/JNIIterator.cpp
++++ b/tmp/takeng-src/jni/interop/java/JNIIterator.cpp
+@@ -66,7 +66,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = JNIIterator_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, JNIIterator_class_init(env));
+         return clinit;
+     }
+     bool JNIIterator_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/java/JNIPair.cpp
++++ b/tmp/takeng-src/jni/interop/java/JNIPair.cpp
+@@ -28,7 +28,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = Pair_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Pair_class_init(env));
+         return clinit;
+     }
+     bool Pair_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/java/JNIPrimitive.cpp
++++ b/tmp/takeng-src/jni/interop/java/JNIPrimitive.cpp
+@@ -105,7 +105,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = JNIPrimitive_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, JNIPrimitive_class_init(env));
+         return clinit;
+     }
+     bool JNIPrimitive_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/java/JNIRunnable.cpp
++++ b/tmp/takeng-src/jni/interop/java/JNIRunnable.cpp
+@@ -38,7 +38,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = NativeRunnable_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, NativeRunnable_class_init(env));
+         return clinit;
+     }
+     bool NativeRunnable_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/math/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/math/Interop.cpp
+@@ -128,7 +128,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = Math_interop_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Math_interop_init(env));
+         return clinit;
+     }
+     bool Math_interop_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/math/ManagedGeometryModel.cpp
++++ b/tmp/takeng-src/jni/interop/math/ManagedGeometryModel.cpp
+@@ -33,7 +33,7 @@
+ ManagedGeometryModel::ManagedGeometryModel(JNIEnv &env, jobject impl_) NOTHROWS :
+         impl(env.NewGlobalRef(impl_))
+ {
+-    static bool clinit = Managed_class_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Managed_class_init(env));
+ }
+ ManagedGeometryModel::~ManagedGeometryModel() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/model/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/model/Interop.cpp
+@@ -382,7 +382,7 @@
+ {
+     bool checkInit(JNIEnv *env) NOTHROWS
+     {
+-        static bool clinit = Interop_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Interop_class_init(env));
+         return clinit;
+     }
+     bool Interop_class_init(JNIEnv *env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/raster/tilematrix/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/raster/tilematrix/Interop.cpp
+@@ -114,8 +114,8 @@
+     }
+ 
+     bool checkInit(JNIEnv &env) NOTHROWS {
+-        static bool v = Interop_class_init(env) &&
+-                CacheRequestListener_class_init(&env);
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, Interop_class_init(env) &&
++                CacheRequestListener_class_init(&env));
+         return v;
+     }
+ 
+--- a/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileClient.cpp
++++ b/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileClient.cpp
+@@ -71,8 +71,8 @@
+     }
+ 
+     bool checkInit(JNIEnv& env) {
+-        static bool v = Init_impl(env) &&
+-                CacheRequest_class_init(&env);
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, Init_impl(env) &&
++                CacheRequest_class_init(&env));
+         return v;
+     }
+ 
+--- a/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileClientSpi.cpp
++++ b/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileClientSpi.cpp
+@@ -37,7 +37,7 @@
+     }
+ 
+     bool checkInit(JNIEnv *env) {
+-        static bool v = TileClientSpi_class_init(env);
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, TileClientSpi_class_init(env));
+         return v;
+     }
+ }
+--- a/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileContainer.cpp
++++ b/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileContainer.cpp
+@@ -34,7 +34,7 @@
+     }
+ 
+     bool checkInit(JNIEnv& env) {
+-        static bool v = Init_impl(env);
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, Init_impl(env));
+         return v;
+     }
+ }
+--- a/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileContainerSpi.cpp
++++ b/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileContainerSpi.cpp
+@@ -34,7 +34,7 @@
+     }
+ 
+     bool checkInit(JNIEnv *env) {
+-        static bool v = TileContainerSpi_class_init(env);
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, TileContainerSpi_class_init(env));
+         return v;
+     }
+ }
+--- a/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileMatrix.cpp
++++ b/tmp/takeng-src/jni/interop/raster/tilematrix/ManagedTileMatrix.cpp
+@@ -68,8 +68,8 @@
+     }
+ 
+     bool checkInit(JNIEnv& env) {
+-        static bool v = TileMatrix_class_init(env) &&
+-                ZoomLevel_class_init(env);
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, TileMatrix_class_init(env) &&
++                ZoomLevel_class_init(env));
+         return v;
+     }
+ }
+--- a/tmp/takeng-src/jni/interop/renderer/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/Interop.cpp
+@@ -56,7 +56,7 @@
+     }
+ 
+     bool checkInit(JNIEnv& env) {
+-        static bool v = Bitmap_class_init(env);
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, Bitmap_class_init(env));
+         return v;
+     }
+ }
+--- a/tmp/takeng-src/jni/interop/renderer/ManagedTextFormat2.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/ManagedTextFormat2.cpp
+@@ -63,7 +63,7 @@
+     mimpl(env_.NewGlobalRef(mtextformat_)),
+     mglyphRenderer(mglyphrenderer_ ? env_.NewGlobalRef(mglyphrenderer_) : env_.NewGlobalRef(mtextformat_))
+ {
+-    static bool clinit = ManagedTextFormat2_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, ManagedTextFormat2_init(env_));
+ }
+ ManagedTextFormat2::~ManagedTextFormat2() NOTHROWS
+ {
+@@ -235,7 +235,7 @@
+ {
+     LocalJNIEnv env;
+ 
+-    static bool cinit = ManagedTextFormatFactory_init(*env);
++    static bool cinit = ATAKMapEngineJNI_clearClassInitException(env, ManagedTextFormatFactory_init(*env));
+     if(!GLText_class.createTextFormat)
+         return TE_Err;
+     Java::JNILocalRef mtext(*env, env->NewStringUTF(params.fontName));
+--- a/tmp/takeng-src/jni/interop/renderer/core/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/core/Interop.cpp
+@@ -243,7 +243,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = Interop_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Interop_class_init(env));
+         return clinit;
+     }
+     bool Interop_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayer2.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayer2.cpp
+@@ -43,7 +43,7 @@
+     renderable(env_, impl_, true),
+     impl(renderable.impl)
+ {
+-    static bool clinit = ManagedGLLayer2_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, ManagedGLLayer2_class_init(env_));
+     // macTAK (issue 142): on a failed class init getSubject and the GLLayer3
+     // class are NULL; the layer has no subject, and draw, release, start
+     // and stop bail
+--- a/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayerSpi2.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/core/ManagedGLLayerSpi2.cpp
+@@ -31,7 +31,7 @@
+ ManagedGLLayerSpi2::ManagedGLLayerSpi2(JNIEnv &env_, jobject impl_) NOTHROWS :
+     impl(env_.NewGlobalRef(impl_))
+ {
+-    static bool clinit = GLLayerSpi2_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, GLLayerSpi2_class_init(env_));
+ }
+ ManagedGLLayerSpi2::~ManagedGLLayerSpi2() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/renderer/core/ManagedGLMapRenderable2.cpp
++++ b/tmp/takeng-src/jni/interop/renderer/core/ManagedGLMapRenderable2.cpp
+@@ -41,7 +41,7 @@
+     impl(env_.NewGlobalRef(impl_)),
+     requiresSync(requiresSync_)
+ {
+-    static bool clinit = ManagedGLRenderable2_class_init(env_);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, ManagedGLRenderable2_class_init(env_));
+ }
+ ManagedGLMapRenderable2::~ManagedGLMapRenderable2() NOTHROWS
+ {
+--- a/tmp/takeng-src/jni/interop/util/ManagedDataInput2.cpp
++++ b/tmp/takeng-src/jni/interop/util/ManagedDataInput2.cpp
+@@ -31,7 +31,7 @@
+ }
+ TAKErr ManagedDataInput2::open(JNIEnv &env, jobject mobject) NOTHROWS
+ {
+-    static bool clinit = ManagedDataInput2_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, ManagedDataInput2_init(env));
+     if(!clinit)
+         return TE_IllegalState;
+     if(!mobject)
+--- a/tmp/takeng-src/jni/interop/util/ManagedDataOutput2.cpp
++++ b/tmp/takeng-src/jni/interop/util/ManagedDataOutput2.cpp
+@@ -32,7 +32,7 @@
+ }
+ TAKErr ManagedDataOutput2::open(JNIEnv &env, jobject mimpl) NOTHROWS
+ {
+-    static bool clinit = ManagedDataOutput2_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, ManagedDataOutput2_init(env));
+     if(!clinit)
+         return TE_IllegalState;
+     if(!mimpl)
+--- a/tmp/takeng-src/jni/jcachingservice.cpp
++++ b/tmp/takeng-src/jni/jcachingservice.cpp
+@@ -119,7 +119,7 @@
+     }
+     bool checkInit(JNIEnv *env) NOTHROWS
+     {
+-        static bool clinit = CachingService_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, CachingService_class_init(env));
+         return clinit;
+     }
+     TAKErr Interop_marshal(std::unique_ptr<TAK::Engine::Port::String[]> &strings, std::size_t&count, JNIEnv *env, jobject stringList) NOTHROWS
+--- a/tmp/takeng-src/jni/jelevationsourcemanager.cpp
++++ b/tmp/takeng-src/jni/jelevationsourcemanager.cpp
+@@ -225,7 +225,7 @@
+ 
+     bool checkInit(JNIEnv *env) NOTHROWS
+     {
+-        static bool clinit = ElevationSourceManager_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, ElevationSourceManager_class_init(env));
+         return clinit;
+     }
+     bool ElevationSourceManager_class_init(JNIEnv *env) NOTHROWS
+--- a/tmp/takeng-src/jni/jgeocalculations.cpp
++++ b/tmp/takeng-src/jni/jgeocalculations.cpp
+@@ -113,7 +113,7 @@
+     }
+     jobject NewGeoPoint(JNIEnv &env, double lat, double lng) NOTHROWS
+     {
+-        static bool initialized = init(env);
++        static bool initialized = ATAKMapEngineJNI_clearClassInitException(env, init(env));
+         if(!initialized) {
+             ATAKMapEngineJNI_checkOrThrow(&env, TE_IllegalState);
+             return NULL;
+@@ -123,7 +123,7 @@
+     }
+     jobject NewGeoPoint(JNIEnv &env, double lat, double lng, double alt) NOTHROWS
+     {
+-        static bool initialized = init(env);
++        static bool initialized = ATAKMapEngineJNI_clearClassInitException(env, init(env));
+         if(!initialized) {
+             ATAKMapEngineJNI_checkOrThrow(&env, TE_IllegalState);
+             return NULL;
+--- a/tmp/takeng-src/jni/jglbitmaploader.cpp
++++ b/tmp/takeng-src/jni/jglbitmaploader.cpp
+@@ -58,7 +58,7 @@
+     LoaderSpiProtocolHandler::LoaderSpiProtocolHandler(JNIEnv &env_, jobject mloaderSpi_) NOTHROWS :
+         impl(env_.NewGlobalRef(mloaderSpi_))
+     {
+-        static bool clinit = AbstractInputStreamLoaderSpi_init(env_);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env_, AbstractInputStreamLoaderSpi_init(env_));
+     }
+     LoaderSpiProtocolHandler::~LoaderSpiProtocolHandler() NOTHROWS
+     {
+--- a/tmp/takeng-src/jni/jglmapview.cpp
++++ b/tmp/takeng-src/jni/jglmapview.cpp
+@@ -1579,7 +1579,7 @@
+ 
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = GLMapView_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, GLMapView_class_init(env));
+         return clinit;
+     }
+     bool GLMapView_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/jglobe.cpp
++++ b/tmp/takeng-src/jni/jglobe.cpp
+@@ -950,7 +950,7 @@
+ 
+     bool checkInit(JNIEnv *env) NOTHROWS
+     {
+-        static bool clinit = Globe_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Globe_class_init(env));
+         return clinit;
+     }
+     bool Globe_class_init(JNIEnv *env) NOTHROWS
+--- a/tmp/takeng-src/jni/jioproviderfactory.cpp
++++ b/tmp/takeng-src/jni/jioproviderfactory.cpp
+@@ -118,7 +118,7 @@
+ {
+     IOProviderFactoryProxy::IOProviderFactoryProxy(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = IOProviderFactory_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, IOProviderFactory_class_init(env));
+     }
+ 
+     // DatabaseProvider
+--- a/tmp/takeng-src/jni/jlibcurlhttpclientbuilder.cpp
++++ b/tmp/takeng-src/jni/jlibcurlhttpclientbuilder.cpp
+@@ -333,7 +333,7 @@
+ JNIEXPORT void JNICALL Java_gov_tak_api_engine_net_LibcurlHttpClientBuilder_setResponseHandler
+         (JNIEnv *env, jclass clazz, jlong ptr, jobject mresponseHandler)
+ {
+-    static bool clinit = ResponseImpl_init(*env, mresponseHandler);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, ResponseImpl_init(*env, mresponseHandler));
+     auto ctx = JLONG_TO_INTPTR(RequestContext, ptr);
+     ctx->mresponse = env->NewGlobalRef(mresponseHandler);
+     Java::JNILocalRef mresponseData(*env, env->GetObjectField(mresponseHandler, ResponseImpl_class._sink));
+--- a/tmp/takeng-src/jni/jnativecontrol.cpp
++++ b/tmp/takeng-src/jni/jnativecontrol.cpp
+@@ -156,7 +156,7 @@
+ namespace {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = NativeControl_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, NativeControl_init(env));
+         return clinit;
+     }
+     bool NativeControl_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/jnativegllayerspi2.cpp
++++ b/tmp/takeng-src/jni/jnativegllayerspi2.cpp
+@@ -147,7 +147,7 @@
+ {
+     bool checkInit(JNIEnv &env) NOTHROWS
+     {
+-        static bool clinit = NativeGLLayerSpi2_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, NativeGLLayerSpi2_class_init(env));
+         return clinit;
+     }
+     bool NativeGLLayerSpi2_class_init(JNIEnv &env) NOTHROWS
+--- a/tmp/takeng-src/jni/jnativetilematrix.cpp
++++ b/tmp/takeng-src/jni/jnativetilematrix.cpp
+@@ -171,11 +171,11 @@
+     }
+ 
+     bool checkInit(JNIEnv *env) {
+-        static bool v = ZoomLevel_class_init(env) &&
++        static bool v = ATAKMapEngineJNI_clearClassInitException(env, ZoomLevel_class_init(env) &&
+                 CacheRequest_class_init(env) &&
+                 TileClientSpi_class_init(env) &&
+                 NativeTileContainerSpi_class_init(env) &&
+-                Visitor_class_init(env);
++                Visitor_class_init(env));
+         return v;
+     }
+ }
+--- a/tmp/takeng-src/jni/jprojectionfactory.cpp
++++ b/tmp/takeng-src/jni/jprojectionfactory.cpp
+@@ -94,7 +94,7 @@
+     ManagedProjectionSpi::ManagedProjectionSpi(JNIEnv &env, jobject impl_) NOTHROWS :
+         impl(env.NewGlobalRef(impl_))
+     {
+-        static bool clinit = ProjectionSpi_class_init(env);
++        static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, ProjectionSpi_class_init(env));
+     }
+     ManagedProjectionSpi::~ManagedProjectionSpi() NOTHROWS
+     {
+--- a/tmp/takeng-src/jni/vsi_jfile.cpp
++++ b/tmp/takeng-src/jni/vsi_jfile.cpp
+@@ -136,7 +136,7 @@
+ VSIJFileHandle::VSIJFileHandle(JNIEnv &env, jobject instance) :
+     m_error(false)
+ {
+-    static bool clinit = Handle_Managed_class_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Handle_Managed_class_init(env));
+     m_instance = env.NewGlobalRef(instance);
+ }
+ 
+@@ -307,7 +307,7 @@
+ 
+ VSIJFileFilesystemHandler::VSIJFileFilesystemHandler(JNIEnv& env, jobject instance)
+ {
+-    static bool clinit = Handler_Managed_class_init(env);
++    static bool clinit = ATAKMapEngineJNI_clearClassInitException(env, Handler_Managed_class_init(env));
+     m_instance = env.NewGlobalRef(instance);
+ }
+ 

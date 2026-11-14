@@ -352,6 +352,8 @@ endif()
     #     and Java failures surface as TE_Err with a clean JNIEnv.
     #   noslf4j mode (kernel jars minus slf4j-api): JNI_OnLoad's
     #     ManagedLogger goes quiet instead of crashing the JVM (G1.17).
+    #   missing-member mode (a Uri without parse ahead of the jars): a
+    #     class init whose lookup fails leaves the JNIEnv clean (issue 161).
     # Needs no JDK to build — dev/g1/jni-tests/run.sh skips when none is
     # present (CI's native job installs JDK 21 before this script).
     # ---------------------------------------------------------------
@@ -368,6 +370,7 @@ endif()
         ${SRC}/dev/g1/jni-tests/rest_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/ioprovider_kernel_test.cpp
         ${SRC}/dev/g1/jni-tests/managedlogger_noslf4j_test.cpp
+        ${SRC}/dev/g1/jni-tests/missing_member_test.cpp
         # module_main.cpp links into BOTH products (no main() in it): the
         # binary needs takengine_jni_tests_env's definition too — weak
         # imports of undefined symbols don't link for executables on ld64
@@ -417,6 +420,7 @@ endif()
         ${SRC}/dev/g1/jni-tests/rest_guards_test.cpp
         ${SRC}/dev/g1/jni-tests/ioprovider_kernel_test.cpp
         ${SRC}/dev/g1/jni-tests/managedlogger_noslf4j_test.cpp
+        ${SRC}/dev/g1/jni-tests/missing_member_test.cpp
         ${SRC}/dev/g1/jni-tests/module_main.cpp
     )
     target_include_directories(takengine-jni-tests-module PRIVATE

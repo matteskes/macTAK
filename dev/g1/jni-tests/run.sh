@@ -22,6 +22,10 @@
 #   noslf4j mode — the kernel jars minus slf4j-api: JNI_OnLoad's
 #                  ManagedLogger finds no Log class, and native logging
 #                  must go quiet instead of crashing the JVM (G1.17).
+#   missing-member mode — the kernel jars behind an android.net.Uri
+#                  without parse (missing-member/): a class init's member
+#                  lookup fails, and the init must leave the JNIEnv clean
+#                  (issue 161).
 #
 # Skips (exit 0) when no JDK 21 is present — the native build itself needs
 # none; CI's native job installs JDK 21 before build-native.sh.
@@ -87,4 +91,15 @@ TAKJNI_TEST_MODE=noslf4j \
   --gtest_filter='JniNoSlf4j*' \
   --gtest_output="xml:$DIST/takengine-jni-noslf4j.xml"
 
-echo "[g1] jni-tests OK — guards, kernel and noslf4j pins green"
+echo "[g1] jni-tests missing-member mode (a Uri without parse ahead of the kernel jars: a class init's lookup fails)"
+MISSING="$DIST/launcher-missing-member"
+mkdir -p "$MISSING"
+"$JDK/bin/javac" -d "$MISSING" "$HERE/missing-member/android/net/Uri.java"
+TAKJNI_TEST_MODE=missingmember \
+  "$JDK/bin/java" \
+  -classpath "$MISSING:$CP:$CLASSES" \
+  JniTestsMain \
+  --gtest_filter='JniMissingMember*' \
+  --gtest_output="xml:$DIST/takengine-jni-missingmember.xml"
+
+echo "[g1] jni-tests OK — guards, kernel, noslf4j and missing-member pins green"
