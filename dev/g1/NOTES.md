@@ -1919,4 +1919,5 @@ abstract class, so no proxy) whose `createDatabase` records the URI.
   the caller runs with an exception pending (`-Xcheck:jni` names it).
   Here it masked the NULL-ID `NewObject`; it is the same in every
   guarded init, and only matters when a lookup fails on a healthy JVM,
-  which `check_lookups.py` rules out batch by batch.
+  which `check_lookups.py` rules out batch by batch
+  ([issue #161](https://github.com/matteskes/macTAK/issues/161)).
