@@ -53,10 +53,10 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
 | **G3.1** | commo from Swift: a C++ listener shim, a `CommoClient` actor | two clients through `fake-cot-server.py` see each other (CI) |
 | G3.2 | servers and identity: `.p12` and data-package import into the Keychain, TLS, **certificate enrollment** (1) and the device profile, **QUIC** (2) | TLS and QUIC legs against fake servers, in a throwaway keychain; an enrollment leg against a fake `signClient` |
 | G3.3 | **mesh networking** (3): multicast SA and chat, direct TCP, with no server | two clients on one Mac see each other with no server |
-| G3.4 | SA: the CoT model, contacts, **`ReportingRate`** (4), and **the self details** (5): a persistent uid, extended roles, `precisionlocation`, the location source | CoT parse tests; the rates and stale times follow `ReportingRate`'s rules |
+| G3.4 | SA: the CoT model, contacts, **`ReportingRate`** (4), and **the self details** (5): a persistent uid, extended roles, `precisionlocation`, the location source | CoT parse tests; golden tests against the kernel's serializer; the rates and stale times follow `ReportingRate`'s rules |
 | G3.5 | **GeoChat** (6): All Chat Rooms, one-to-one, team and role rooms, user groups, delivered, read and pending receipts | a chat leg per room kind, with receipts |
 | G3.6 | **coordinates** (7): MGRS (the default), DD, DM, DMS, UTM; altitude in MSL (the default) or HAE | conversion tests against the engine's |
-| G3.7 | **markers on the map with 2525 symbols** (8), the self marker | markers' pixels where expected (CI) |
+| G3.7 | **markers on the map with 2525 symbols** (8), the self marker; the renderer comes from the #171 spike | markers' pixels where expected (CI) |
 | G3.8 | routes, dropping, editing and deleting points, the layer manager | a route render; a dropped point reaches the other client |
 | Exit | `make g3-exit`: two app instances, TLS, FTS and OTS | each sees the other's contact, marker (on screen) and chat |
 
@@ -129,27 +129,56 @@ from running it.
    shows in MSL by default (`UnitPreferences`), which needs a geoid.
    ADDR waits for a geocoder.
 8. **Marker symbols.** 5.5 renders MIL-STD-2525 symbols through the
-   kernel (`gov.tak.platform.symbology.milstd2525`, on `mil-sym-java`),
-   and that code is already in our JVM. The revised plan uses it through
-   `EngineBridge` instead of drawing an icon set of our own.
+   kernel (`gov.tak.platform.symbology.milstd2525`, on `mil-sym-java`).
+   The revised plan uses a 2525 renderer instead of drawing an icon set
+   of our own. Correction (2026-11-13, §Decided below): that code is not
+   in our JVM and does not build from public sources, so which renderer
+   is a spike (#171).
 
-### Open: reuse the kernel's app-level code, or port it
+### Decided (2026-11-13): port the kernel's app-level code to Swift
 
 5.5 moved code that used to be the app's into takkernel's `shared`
-module, which our JVM already loads:
+module. The question was whether the app calls it on the JVM through
+`EngineBridge` or ports it to Swift. Measured at the pin (`main` and
+`jre` source sets):
 
-- CoT detail handlers and roles (`gov.tak.api.cot.*`);
-- the import resolvers (`gov.tak.api.importfiles`, imported by 52 app
-  files);
-- 2525 symbology;
-- widgets;
-- a contacts API.
+| Package | Lines | ATAK app files importing it | Runs on our JVM? |
+|---|---|---|---|
+| `gov.tak.api.cot` (CoT model, `CotDetailManager`, group and bullseye handlers, roles) | 6.5k | 29, plus 152 on `com.atakmap.coremap.cot.event` | mostly: `CotEvent` imports `Parcel`; `RolesManager` draws with `android.graphics` (Stub! at runtime) |
+| `gov.tak.api.importfiles` (file-type resolvers) | 2.8k | 52 | partly: `android.net.Uri` (G2 has a shim), `android.util.Pair` (stub) |
+| contacts API | 1.1k | 2 | yes |
+| 2525 symbology | 6.4k | about 20 | **no**: the desktop glue compiles only against the TAK artifactory's renderer (G1.15 in `../g1/NOTES.md`) |
+| widgets | 14.3k | — | GL widgets on the map; SwiftUI and AppKit replace them |
 
-That sits between "the Java is the spec for a Swift rewrite" and G6 rung 8
-(no JVM). Each package can either be called through `EngineBridge` now or
-ported to Swift. The owner will discuss the upsides of each later.
-Until then, the kernel's version is the 5.5 behaviour to match. Gap 8 is
-the exception: the owner chose to reuse the kernel's 2525 symbology.
+Two facts settled it:
+
+- **The detail handlers G3.4 needs never moved.** The kernel has the
+  manager and the group and bullseye handlers. The 31 others (contact,
+  track, status, `precisionlocation`, `takv`, link, remarks, …) are
+  still in the app (`com.atakmap.android.cot.detail`), written against
+  `MapItem` and `MapView`, so they are ported to Swift either way.
+- **The app doesn't ship `shared`.** `build/MacTAK.app` carries the
+  engine, port and annotation jars only; `shared` is built for
+  `make test-kernel` alone. The earlier "already in our JVM" was wrong.
+
+**The decision (owner, 2026-11-13):**
+
+- **Port to Swift**: the CoT model and detail manager, contacts and the
+  import resolvers, as the original G3 plan had it. CoT stays on the
+  commo → `CCommoShim` → Swift path with no JNI round trip, no Android
+  stub runs at runtime, the security fixes (#167, #168) land in code we
+  own, and the JVM stays the render engine only, which keeps G6 rung 8
+  open.
+- **The kernel is the test oracle.** Reuse's best upside, emitting what
+  Android peers emit, is kept by golden tests: a test leg runs the
+  kernel's `CotEvent` and `CotDetailManager` (already compiled and
+  tested by `make test-kernel`) over the same inputs as the Swift port
+  and diffs the XML. Upstream's serializer defines correct without being
+  in the runtime path. G3.4 adds the leg.
+- **2525 is decided separately**, after a spike (#171): neither the JVM
+  nor Swift gets the symbols for free from public sources. G3.7 waits
+  on it.
+- **Widgets are skipped.** SwiftUI and AppKit replace them.
 
 ### Not adopted (yet)
 
