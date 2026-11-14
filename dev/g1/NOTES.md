@@ -2670,3 +2670,62 @@ suites, `layer.sh`, `make test-gdal-network` (with #167's GeoJSON leg),
 `make test-gdal-projection`, `make test`, `make test-render`,
 `make test-shell`, `make app`, and an exit run whose datum check reads
 54.692 m and 215.059 m, as before.
+
+## G1.31 — one TLS stack: OpenSSL 3 (2026-11-14, branch `deps/openssl3-only`, bundling plan PR B)
+
+After §G1.30 the process still held two TLS stacks besides OpenSSL 3:
+GnuTLS, through Homebrew's libmicrohttpd (commo), and LibreSSL, through
+Apple's `/usr/lib/libcurl` (the engine).
+
+**commo's web server.** commo serves mission packages from libmicrohttpd,
+started without TLS (`missionpackagemanager.cpp`). Its local HTTPS port is
+commo's own OpenSSL proxy in front of that plain server (`httpsproxy.cpp`),
+so libmicrohttpd's HTTPS code was never used. Homebrew's build linked
+GnuTLS anyway, and with it nettle, gmp, p11-kit, libtasn1, libidn2 and
+libunistring. `dev/g1/fetch-microhttpd.sh` builds the same release
+(1.0.10, Homebrew's checksum) static with `--disable-https`, cached like
+`fetch-curl.sh`; `build-commo.sh` links that archive. Homebrew's
+`libmicrohttpd` leaves the Brewfile and every workflow.
+
+**The engine's curl.** Three engine sources call curl: `HttpProtocolHandler`,
+`URIOfflineCache` and `jlibcurlhttpclientbuilder.cpp`. They linked Apple's
+libcurl, whose TLS is LibreSSL. `HttpProtocolHandler` sets
+`CURLOPT_SSL_CTX_FUNCTION` and edits the `SSL_CTX` with OpenSSL calls
+(`X509_STORE`, its own trust store): the mix that crashed commo in #157,
+latent here because nothing in macTAK reaches it yet (ATAK registers Java
+protocol handlers, and the engine's default HTTP client is OkHttp).
+`build-native.sh` now runs `fetch-curl.sh` and links its static OpenSSL 3
+curl into `libtakengine`, which exports curl's API; the JNI glue links no
+curl, and its calls bind to `libtakengine`'s copy (`nm -m`: "from
+libtakengine"), as commo's JNI library binds to `libcommoncommo`'s. The
+process holds two copies of that curl, the engine's and commo's, on the
+one OpenSSL 3.
+
+**Not decided here.** `fetch-curl.sh`'s curl has no CA bundle, by design
+(commo always passes its CA). `LibcurlHttpClientBuilder` sets a CA path on
+Android only, so over HTTPS on macOS it now fails verification rather
+than trusting the system roots through Apple's curl. Nothing uses it yet;
+when G3 does, it needs a CA decision (for example the system roots through
+`CURLSSLOPT_NATIVE_CA`).
+
+### The guards
+
+- `check-closure.py` now also fails on GnuTLS and on Apple's
+  `/usr/lib/libcurl`. A/B: the engine as built before this change fails
+  (`libtakengine` and `libtakenginejni` load `/usr/lib/libcurl.4.dylib`), and
+  Homebrew's `libmicrohttpd` fails (GnuTLS). This build passes: 151
+  libraries, one TLS stack.
+- `make test-mp-server` (new, `test/mp-server.sh`, CI's comms job):
+  `MissionPackageServerTest` starts commo's web server on its plain port and
+  its HTTPS port, and a GET for an unknown transfer must come back 404 from
+  both, so the server behind the proxy is pinned. It's a guard, not a bug
+  test: nothing tested this server before.
+
+Homebrew packages loaded at runtime: 22 (30 after §G1.30, 86 before it).
+
+With the change, these pass on the dev Mac: the engine's four canary
+suites, `make test-tls`, `make test-commo-https`, `make test-quic`,
+`make test-mp-server`, the hermetic round trip (`run.sh 15` against
+`fake-cot-server.py`), `layer.sh`, `make test-gdal-network`,
+`make test-gdal-projection`, `make test`, `make test-render`,
+`make test-shell` and `make app`.
