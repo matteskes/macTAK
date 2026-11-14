@@ -18,10 +18,13 @@ import java.util.Collections;
  * store was accepted (provider gdal, type native) and then never drawn, with
  * no error (G2.4 b.1, G2 trap #67).
  *
- * <p>{@code DatasetRasterLayer2} is marked deprecated for removal at 5.5 but
- * is present and draws at the pin; 5.5's {@code NativeImageryRasterLayer2}
- * (a mosaic over the datasets) drew nothing for the same GeoTIFF and is not
- * chased here (G2 NOTES §G2.4 b.1, open items).
+ * <p>{@code DatasetRasterLayer2} is not deprecated. What 5.5 deprecates
+ * for removal is its old GL renderer, {@code GLDatasetRasterLayer2}, which
+ * the engine itself still creates from {@code GLDatasetRasterLayer3.SPI} at
+ * the pin; macTAK never names either renderer. 5.5's
+ * {@code NativeImageryRasterLayer2} (a mosaic over the datasets) drew nothing
+ * for the same GeoTIFF and isn't needed (G2 NOTES §G2.4 b.1, open items;
+ * issue 135).
  */
 final class BasemapLayers {
 

@@ -21,6 +21,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- G2's notes and `BasemapLayers` no longer say `DatasetRasterLayer2` is
+  deprecated for removal at 5.5. It isn't. What 5.5 deprecates is its old
+  GL renderer, `GLDatasetRasterLayer2`, which the engine creates itself.
+  So the non-deprecated `NativeImageryRasterLayer2` path that drew nothing
+  isn't needed (issue #135, closed).
 - The app's supported floor is macOS 27, not the macOS 14 that G3.0 set
   without a decision (`Package.swift`, `Info.plist`; G3 trap 3). CI's
   `shell compile` and `comms stack` jobs, which run the Swift package, move
