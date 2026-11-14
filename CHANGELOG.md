@@ -21,6 +21,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Layer import formats are decided: ATAK 5.5's set only
+  (`dev/g1/NOTES.md` §G1.19, issue #156). FlatGeobuf is to be dropped,
+  GML brought back safely (#168), and nothing outside ATAK's set added.
+  The probe behind the decision found that GeoJSON, which the allowlist
+  admits, fetches the URL in a legacy `crs` link (#167, open). No code
+  has changed yet.
 - G2's notes and `BasemapLayers` no longer say `DatasetRasterLayer2` is
   deprecated for removal at 5.5. It isn't. What 5.5 deprecates is its old
   GL renderer, `GLDatasetRasterLayer2`, which the engine creates itself.
