@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# GLES shim Buffer-contract canary (GlesShimSelfTest): glVertexAttribPointer
+# GLES shim canary (GlesShimSelfTest). Buffer contract: glVertexAttribPointer
 # and glVertexAttribIPointer must refuse an array-backed Buffer, as Android
 # does, because GL keeps the pointer past the call; glBufferData must still
-# take one. Runs on a 16x16 ANGLE pbuffer.
+# take one. Bounds (issue 133): every Java (array, offset) entry point
+# throws IllegalArgumentException, as Android does, for a negative offset or
+# an array too short from the offset. Runs on a 16x16 ANGLE pbuffer.
 #
 # Needs what dev/g2/render/run.sh needs (ANGLE-linked engine, JDK 21).
 set -euo pipefail

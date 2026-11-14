@@ -1172,7 +1172,7 @@ fixed on its own branch, in this order.
 | 4 | Low | `Uri.getQueryParameter` leaves `+` as `+`; Android decodes it to a space | **Fixed** (branch `g2/uri-query-plus`), guarded by `render/test/uri.sh` |
 | 5 | Low | `shell/run.sh` leaks its scratch `MACTAK_HOME` every run: the `EXIT` trap never fires after `exec` | **Fixed** (branch `g2/shell-run-scratch-cleanup`): no `exec`, guarded by `dev/check-trap-exec.sh` |
 | 6 | Low | A value option given last crashes the Swift shell (array index out of range); `RenderSmoke` dies with a stack trace instead of usage | **Fixed** (branch `g2/cli-missing-value`), guarded by `shell/test/args.sh` and `render/test/args.sh` |
-| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; ~~`fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents)~~ (fixed on branch `chore/rebase-guards`, with `lipo` twice more, guarded by `dev/check-pipefail-grep.sh`); the GLES shim does not bounds-check array offsets | `WindowApp.teardown`: **fixed in M3.3**; the rest open: [issue #131](https://github.com/matteskes/macTAK/issues/131) (`BitmapRegionDecoder`), [issue #132](https://github.com/matteskes/macTAK/issues/132) (`Canvas`), [issue #133](https://github.com/matteskes/macTAK/issues/133) (GLES shim) |
+| 7 | Low | `WindowApp.teardown` skips EGL destroy when it fails before the context exists; `BitmapRegionDecoder` leaks its file stream; `Canvas.save`/`restore` does not cover the clip; ~~`fetch-angle.sh` pipes `otool` into `grep -q` under `pipefail` (the trap `env.sh` documents)~~ (fixed on branch `chore/rebase-guards`, with `lipo` twice more, guarded by `dev/check-pipefail-grep.sh`); the GLES shim does not bounds-check array offsets | `WindowApp.teardown`: **fixed in M3.3**; the rest **fixed 2026-11-14** (§Audit finding 7's rest): [issue #131](https://github.com/matteskes/macTAK/issues/131) (`BitmapRegionDecoder`), [issue #132](https://github.com/matteskes/macTAK/issues/132) (`Canvas`), [issue #133](https://github.com/matteskes/macTAK/issues/133) (GLES shim) |
 | 8 | High | The Swift shell exited 0 whatever the render did: AppKit's `terminate` ends the process itself, so the code that read `WindowApp`'s exit code never ran and `make test-shell` could not fail | **Fixed** (branch `g2/shell-exit-code`): `applicationWillTerminate` exits with the code, guarded by `shell/test/exit-code.sh` (manual gate) |
 
 Settled on the bench (2026-11-10): the reading left open whether the
@@ -1884,8 +1884,9 @@ world file.
   (section "The exit run").
 - **G2.5 #7's rest** (`BitmapRegionDecoder`'s stream, `Canvas` clip, GLES
   shim bounds) is not on the GDAL path (it reads through GDAL, not
-  `BitmapRegionDecoder`/`Canvas`), so b.1 did not reach it; still open:
-  [issue #131](https://github.com/matteskes/macTAK/issues/131), [issue #132](https://github.com/matteskes/macTAK/issues/132) and [issue #133](https://github.com/matteskes/macTAK/issues/133).
+  `BitmapRegionDecoder`/`Canvas`), so b.1 did not reach it:
+  [issue #131](https://github.com/matteskes/macTAK/issues/131), [issue #132](https://github.com/matteskes/macTAK/issues/132) and [issue #133](https://github.com/matteskes/macTAK/issues/133),
+  fixed in §Audit finding 7's rest.
 - **Hand checks (M3.4):** on 2026-11-12 the owner checked, on real hardware
   with a mouse, drag, wheel (direction fine), ⌥-drag and double-click: all
   as expected. Pinch, rotate and two-finger scroll wait for a trackpad
@@ -2094,3 +2095,85 @@ frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
   whether anything we do starts it, is open. How to reproduce it, what
   was tried and the open leads: [issue #125](https://github.com/matteskes/macTAK/issues/125),
   which asks for drop rates from other Macs and displays.
+
+## Audit finding 7's rest — the stand-ins match Android (2026-11-14, branch `g2/audit-finding-7-stand-ins`, issues 131–133)
+
+The three open parts of G2.5's finding 7, fixed together. #138, which
+would have moved these stand-ins into an engine `macos` source set, was
+closed as future work, so they stay in `dev/g2/render/src`. The reference
+is Android's own behaviour; `atak-civ` carries none of these classes.
+
+### `BitmapRegionDecoder` closes the file it opened (issue 131)
+
+`newInstance(String)` wrapped a `FileInputStream` in ImageIO's cache
+stream, and closing that stream doesn't close what it wraps, so
+`recycle()` left the file open; a failed open leaked it outright. Now
+the path variant opens a `FileImageInputStream`, which owns its file, so
+`recycle()` closes it; and every failure after the open (no reader, a
+header the reader rejects) disposes the reader and closes the stream.
+`newInstance(InputStream)` still leaves the caller's stream to the
+caller, as Android does.
+
+### `Canvas` save/restore covers the clip (issue 132)
+
+`save()` pushed only the transform. It now pushes the transform and the
+clip, and `restore()` puts both back, transform first, because Java2D's
+`getClip`/`setClip` are in the current user space. `restoreToCount()`,
+which the stand-in lacked, is added. The save count follows Android:
+it starts at 1 (the base state), and `save()` returns the count to pass
+to `restoreToCount()`. Nothing in the repo read the old count, which
+started at 0.
+
+### The GLES shim bounds-checks (array, offset) arguments (issue 133)
+
+`gen-gles-shim.py` now emits Android's check before every Java
+(array, offset) pair: `IllegalArgumentException` with Android's messages
+("offset < 0", "length - offset < needed") when the offset is negative or
+the array is too short from it. 107 checks across the generated entry
+points. The count each call needs comes from a table, `NEEDED`:
+
+- `n` for the Gen/Delete families, `glDrawBuffers` and `glShaderBinary`;
+- count × components for `glUniform*v` and `glUniformMatrix*fv`;
+- the vector size for `glVertexAttrib*v`, 4 for `glClearBuffer*`'s
+  `GL_COLOR` (else 1) and for `GL_CURRENT_VERTEX_ATTRIB`;
+- the buffer size for the name and value buffers (`glGetActive*`,
+  `glGetShaderSource`, `glGetSynciv`, `glGetInternalformativ`, …);
+- for `glGet{Boolean,Float,Integer,Integer64}v`, `getNeededCount(pname)`:
+  2 or 4 for the multi-valued ES 2.0/3.0 pnames, the format count for
+  the three `*_FORMATS` lists, else 1.
+
+Arrays not in the table need at least 1 element, Android's minimum. A
+missing entry can only under-check, so the shim never refuses a call
+Android accepts. A script check confirmed all 69 table entries land on a
+real array parameter. All checks run before any array is pinned, so a
+throw leaks nothing. A null array still passes through as NULL, as before:
+some Android entry points accept null, and the issue asked for the bounds.
+
+### The guards
+
+- `render/test/graphics.sh` (new; `GraphicsSelfTest`, pure Java on the
+  render build environment): 20 open-decode-recycle rounds and a failed
+  open must leave the process's `/dev/fd` count unchanged; a clip set
+  inside `save`/`restore` must not clip a later draw; `restoreToCount`
+  undoes two saves. In `make test-render` and its own step in CI's render
+  job.
+- `render/test/gles-shim.sh` gains seven bounds cases: five out-of-bounds
+  calls must throw, two exactly-in-bounds calls must not (one of them,
+  `glGetIntegerv(GL_VIEWPORT)` at offset 1, must write its 4 ints there).
+  The out-of-bounds cases are all reads, so the unchecked shim fails them
+  without writing into the heap.
+
+A/B on the dev Mac:
+
+| Check | Without the fixes | With them |
+|---|---|---|
+| decode x20 by path, descriptors | 57 → 77 | 57 → 57 |
+| failed open, descriptors | 77 → 79 | unchanged |
+| save count of a new `Canvas` | 0 | 1 |
+| draw after `save`/`clipRect`/`restore` | clipped | not clipped |
+| `restoreToCount` | doesn't exist | undoes both saves |
+| five out-of-bounds GLES calls | all pass through; GL error raised | all throw `IllegalArgumentException`; no GL error |
+
+With the fixes, `make test-render` (with no `IllegalArgumentException` in
+its log, so the engine's real GL calls stay in bounds), `make test-shell`
+and `make check-gen-gles-shim` pass.

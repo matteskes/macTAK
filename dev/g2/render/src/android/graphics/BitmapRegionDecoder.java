@@ -1,7 +1,7 @@
 package android.graphics;
 
 import java.awt.image.BufferedImage;
-import java.io.FileInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Iterator;
@@ -26,16 +26,34 @@ public final class BitmapRegionDecoder {
         height = reader.getHeight(0);
     }
 
+    /** The caller keeps {@code is} and closes it, as on Android. */
     public static BitmapRegionDecoder newInstance(InputStream is, boolean isShareable) throws IOException {
-        ImageInputStream iis = ImageIO.createImageInputStream(is);
-        if (iis == null) throw new IOException("unsupported image stream");
-        Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
-        if (!readers.hasNext()) throw new IOException("no ImageIO reader");
-        return new BitmapRegionDecoder(iis, readers.next());
+        return open(ImageIO.createImageInputStream(is));
     }
 
+    /**
+     * Issue 131: a FileImageInputStream owns its file, so {@link #recycle()}
+     * closes it. A FileInputStream wrapped in ImageIO's cache stream stayed
+     * open, because closing the cache stream doesn't close what it wraps.
+     */
     public static BitmapRegionDecoder newInstance(String pathName, boolean isShareable) throws IOException {
-        return newInstance(new FileInputStream(pathName), isShareable);
+        return open(ImageIO.createImageInputStream(new File(pathName)));
+    }
+
+    /** Takes ownership of {@code iis}: closes it when no decoder comes of it. */
+    private static BitmapRegionDecoder open(ImageInputStream iis) throws IOException {
+        if (iis == null) throw new IOException("unsupported image stream");
+        ImageReader reader = null;
+        try {
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) throw new IOException("no ImageIO reader");
+            reader = readers.next();
+            return new BitmapRegionDecoder(iis, reader);
+        } catch (IOException | RuntimeException e) {
+            if (reader != null) reader.dispose();
+            iis.close();
+            throw e;
+        }
     }
 
     public int getWidth() { return width; }

@@ -51,6 +51,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The `android.graphics` and GLES stand-ins now match Android in three
+  places (G2 audit finding 7; issues #131, #132, #133; `dev/g2/NOTES.md`
+  §Audit finding 7's rest). `BitmapRegionDecoder` closes the file it
+  opened by path, on `recycle()` and on a failed open; it used to leak a
+  descriptor per image. `Canvas.save`/`restore` cover the clip as well as
+  the transform, `restoreToCount` is added, and the save count starts at
+  1. The generated GLES shim throws `IllegalArgumentException`, as Android
+  does, for a negative offset or an array too short for the call's count,
+  instead of reading or writing past the array. New canary
+  `dev/g2/render/test/graphics.sh` and new `gles-shim.sh` cases fail
+  without the fixes.
+
 - When the installed Java `IOProvider` fails an `isFile` or
   `isDirectory` query, the engine's filesystem proxy now fails too
   (issue #164; `dev/g1/NOTES.md` §G1.29). Before, a failed `isFile` left
