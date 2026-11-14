@@ -1,0 +1,40 @@
+--- a/tmp/takeng-src/jni/interop/db/Interop.cpp
++++ b/tmp/takeng-src/jni/interop/db/Interop.cpp
+@@ -62,7 +62,9 @@
+         return TE_IllegalState;
+     if(env->ExceptionCheck())
+         return TE_Err;
+-    *value = env->CallBooleanMethod(jrowIterator, RowIterator_class.moveToNext);
++    // macTAK (issue 142): upstream called moveToNext here, so asking
++    // whether a cursor was closed advanced it a row
++    *value = env->CallBooleanMethod(jrowIterator, RowIterator_class.isClosed);
+     if(env->ExceptionCheck())
+         return TE_Err;
+     return TE_Ok;
+--- a/tmp/takeng-src/jni/interop/db/ManagedDatabaseProvider.cpp
++++ b/tmp/takeng-src/jni/interop/db/ManagedDatabaseProvider.cpp
+@@ -92,8 +92,7 @@
+             env->NewObject(
+             JDatabaseProvider_class.dbId,
+             JDatabaseProvider_class.initMethodId,
+-            uri.get(),
+-            nullptr));
++            uri.get()));
+     if (env->ExceptionCheck())
+     {
+         env->ExceptionClear();
+@@ -176,10 +175,13 @@
+         if(!JDatabaseProvider_class.dbId)
+             return false;
+ 
++        // macTAK (issue 142): 5.5's DatabaseInformation has no
++        // (Uri, ProviderChangeRequestedListener) constructor, so this lookup
++        // failed on every JVM; create() passed null for the listener anyway
+         JDatabaseProvider_class.initMethodId = env.GetMethodID(
+                 JDatabaseProvider_class.dbId,
+                 "<init>",
+-                "(Landroid/net/Uri;Lcom/atakmap/coremap/io/ProviderChangeRequestedListener;)V");
++                "(Landroid/net/Uri;)V");
+         if(!JDatabaseProvider_class.initMethodId)
+             return false;
+ 

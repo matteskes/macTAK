@@ -50,6 +50,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   test-jni` (`jni-tests/feature_guards_test.cpp`), guards and kernel mode;
   `dev/g1/tools/wave7/check_lookups.py` checks an init's lookups against
   the kernel jars before it is guarded.
+- Wave 7, batch 2 (issue #142; `dev/g1/NOTES.md` §G1.22): the four
+  Java-backed db wrappers (`ManagedDatabase2`, `ManagedDatabaseProvider`,
+  `ManagedQuery`, `ManagedStatement`) no longer call through NULL method
+  IDs when their class init fails: 23 consumers bail `TE_Err` and two
+  destructors skip `close`. Two upstream bugs are fixed as well:
+  `ManagedDatabaseProvider`'s init looked up a `DatabaseInformation`
+  constructor 5.5 doesn't have, so `create` never worked on any JVM, and
+  `RowIterator_isClosed` called `moveToNext`, advancing the cursor.
+  Pinned in `make test-jni` (`jni-tests/db_guards_test.cpp`), guards and
+  kernel mode; kernel mode now runs with G2's runtime `android.net.Uri`
+  ahead of android-port's stub, as the app does.
 
 ### Security
 
