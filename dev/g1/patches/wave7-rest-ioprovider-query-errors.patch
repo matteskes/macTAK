@@ -1,0 +1,51 @@
+--- a/tmp/takeng-src/jni/jioproviderfactory.cpp
++++ b/tmp/takeng-src/jni/jioproviderfactory.cpp
+@@ -208,11 +208,15 @@
+             return TE_InvalidArg;
+ 
+         code = this->isFile(&b, path);
++        // macTAK (issue 164): a failed query leaves b as the previous one set
++        // it (exists' true), which read as "a file"; fail with it instead
++        TE_CHECKRETURN_CODE(code);
+         if(b) {
+             *value = 1u;
+             return TE_Ok;
+         }
+         code = this->isDirectory(&b, path);
++        TE_CHECKRETURN_CODE(code);
+         if(b) {
+             std::vector<TAK::Engine::Port::String> contents;
+             TAK::Engine::Port::STLVectorAdapter<TAK::Engine::Port::String> contents_w(contents);
+@@ -251,10 +255,14 @@
+             return TE_InvalidArg;
+ 
+         code = this->isFile(&b, path);
++        // macTAK (issue 164): a failed query leaves b as the previous one set
++        // it (exists' true), which read as "a file"; fail with it instead
++        TE_CHECKRETURN_CODE(code);
+         if(b)
+             return TE_InvalidArg;
+ 
+         code = this->isDirectory(&b, path);
++        TE_CHECKRETURN_CODE(code);
+         if(!b)
+             return TE_IllegalState;
+         LocalJNIEnv env;
+@@ -297,6 +305,9 @@
+             return TE_InvalidArg;
+ 
+         code = this->isFile(&b, path);
++        // macTAK (issue 164): a failed query leaves b as the previous one set
++        // it (exists' true), which read as "a file"; fail with it instead
++        TE_CHECKRETURN_CODE(code);
+         if(b) {
+             LocalJNIEnv env;
+             JNILocalRef mpath(*env, env->NewStringUTF(path));
+@@ -309,6 +320,7 @@
+             return TE_Ok;
+         }
+         code = this->isDirectory(&b, path);
++        TE_CHECKRETURN_CODE(code);
+         if(b) {
+             std::vector<TAK::Engine::Port::String> contents;
+             TAK::Engine::Port::STLVectorAdapter<TAK::Engine::Port::String> contents_w(contents);

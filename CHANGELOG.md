@@ -51,6 +51,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- When the installed Java `IOProvider` fails an `isFile` or
+  `isDirectory` query, the engine's filesystem proxy now fails too
+  (issue #164; `dev/g1/NOTES.md` §G1.29). Before, a failed `isFile` left
+  the path reading as a file: `getFileCount` counted it, `length`
+  returned Java's length for it, and `listFiles` refused it as a file.
+  `wave7-rest-ioprovider-query-errors.patch` checks all six queries.
+  Six kernel-mode tests in `ioprovider_kernel_test.cpp` drive the proxy
+  over a scripted `IOProvider` and fail without the patch.
+
 - A JNI class init whose member lookup fails no longer leaves its
   `NoSuchMethodError` or `NoSuchFieldError` pending for the caller's next
   JNI calls (issue #161; `dev/g1/NOTES.md` §G1.28). All 65 guarded inits

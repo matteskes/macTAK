@@ -407,4 +407,87 @@ public final class JniTestsMain
             throw new IllegalStateException("ThrowingProjectionSpi: " + name + " throws on purpose");
         }
     }
+
+    /**
+     * Issue 164 (ioprovider_kernel_test.cpp, kernel mode): an IOProvider
+     * that says every path exists and answers isDirectory from a script,
+     * one character per call: 't' true, 'f' false, 'x' throw (and throw
+     * past the end). IOProviderFactory.isFile is exists && !isDirectory,
+     * so the script decides whether the native proxy's isFile or its
+     * isDirectory fails. length answers LENGTH; nothing else is called.
+     *
+     * registerProvider works once per process, so install() swaps the
+     * factory's provider field in place and restore() puts it back.
+     */
+    public static final class ScriptedIsDirectory extends com.atakmap.coremap.io.IOProvider
+    {
+        public static final long LENGTH = 42L;
+
+        private static java.lang.reflect.Field providerField;
+        private static Object saved;
+
+        private final String script;
+        private int calls;
+
+        private ScriptedIsDirectory(String script)
+        {
+            this.script = script;
+        }
+
+        public static void install(String script) throws ReflectiveOperationException
+        {
+            providerField = com.atakmap.coremap.io.IOProviderFactory.class.getDeclaredField("ioProvider");
+            providerField.setAccessible(true);
+            saved = providerField.get(null);
+            providerField.set(null, new ScriptedIsDirectory(script));
+        }
+
+        public static void restore() throws ReflectiveOperationException
+        {
+            providerField.set(null, saved);
+        }
+
+        @Override
+        public boolean isDirectory(java.io.File f)
+        {
+            final char answer = calls < script.length() ? script.charAt(calls) : 'x';
+            calls++;
+            if(answer == 't')
+                return true;
+            if(answer == 'f')
+                return false;
+            throw new IllegalStateException("ScriptedIsDirectory: isDirectory call " + calls + " fails");
+        }
+
+        @Override public boolean exists(java.io.File f) { return true; }
+        @Override public long length(java.io.File f) { return LENGTH; }
+
+        @Override public String getName() { return "ScriptedIsDirectory"; }
+        @Override public com.atakmap.database.DatabaseIface createDatabase(com.atakmap.coremap.io.DatabaseInformation info) { throw unused(); }
+        @Override public boolean isDatabase(java.io.File f) { throw unused(); }
+        @Override public boolean canRead(java.io.File f) { throw unused(); }
+        @Override public boolean canWrite(java.io.File f) { throw unused(); }
+        @Override public java.io.File createTempFile(String p, String s, java.io.File d) { throw unused(); }
+        @Override public boolean delete(java.io.File f, int flags) { throw unused(); }
+        @Override public java.nio.channels.FileChannel getChannel(java.io.File f, String mode) { throw unused(); }
+        @Override public java.io.FileReader getFileReader(java.io.File f) { throw unused(); }
+        @Override public java.io.FileWriter getFileWriter(java.io.File f) { throw unused(); }
+        @Override public java.io.FileInputStream getInputStream(java.io.File f) { throw unused(); }
+        @Override public java.io.FileOutputStream getOutputStream(java.io.File f, boolean append) { throw unused(); }
+        @Override public java.io.RandomAccessFile getRandomAccessFile(java.io.File f, String mode) { throw unused(); }
+        @Override public long lastModified(java.io.File f) { throw unused(); }
+        @Override public String[] list(java.io.File f) { throw unused(); }
+        @Override public String[] list(java.io.File f, java.io.FilenameFilter filter) { throw unused(); }
+        @Override public boolean mkdir(java.io.File f) { throw unused(); }
+        @Override public boolean mkdirs(java.io.File f) { throw unused(); }
+        @Override public boolean renameTo(java.io.File from, java.io.File to) { throw unused(); }
+        @Override public boolean setReadable(java.io.File f, boolean r, boolean ownerOnly) { throw unused(); }
+        @Override public boolean setWritable(java.io.File f, boolean w, boolean ownerOnly) { throw unused(); }
+        @Override public java.net.URI toURI(java.io.File f) { throw unused(); }
+
+        private static UnsupportedOperationException unused()
+        {
+            return new UnsupportedOperationException("ScriptedIsDirectory: only exists, isDirectory and length answer");
+        }
+    }
 }

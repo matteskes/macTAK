@@ -10,8 +10,13 @@
  *    as TE_Err with a CLEAN JNIEnv (pristine leaves the exception
  *    pending and the next JNI call misfires).
  *
+ *  - issue 164: when the proxy's isFile or isDirectory query fails,
+ *    getFileCount, listFiles and length fail too, instead of reading the
+ *    flag the previous query left (JniKernelFilesystemQueryFails).
+ *
  * Patches under test: ioproviderfactory-guards-and-filecount.patch,
- * ioproviderfactory-sweep-init-guards.patch.
+ * ioproviderfactory-sweep-init-guards.patch,
+ * wave7-rest-ioprovider-query-errors.patch.
  */
 #include <jni.h>
 
@@ -28,6 +33,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <string>
+#include <vector>
+
+#include <port/STLVectorAdapter.h>
 
 #include "jni_test_env.hpp"
 
@@ -37,6 +45,46 @@ namespace
     { };
     class JniKernelDatabase : public JniKernelTest
     { };
+
+    /* The proxy over JniTestsMain$ScriptedIsDirectory: every path exists,
+     * and isDirectory answers from a script ('t', 'f', 'x' = throw), so a
+     * test picks which of the proxy's queries fails. Java's isFile is
+     * exists && !isDirectory, so isFile fails when its isDirectory call
+     * does. TearDown puts the real provider back for the other tests. */
+    class JniKernelFilesystemQueryFails : public JniKernelTest
+    {
+    protected:
+        void script(const char *answers)
+        {
+            JNIEnv &env = *jnitest::launcher_env();
+            call(env, "install", answers);
+        }
+        void TearDown() override
+        {
+            if(JNIEnv *env = jnitest::launcher_env())
+                call(*env, "restore", nullptr);
+        }
+    private:
+        static void call(JNIEnv &env, const char *method, const char *answers)
+        {
+            jclass c = env.FindClass("JniTestsMain$ScriptedIsDirectory");
+            ASSERT_NE(c, nullptr) << "JniTestsMain$ScriptedIsDirectory did not load";
+            if(answers) {
+                jstring s = env.NewStringUTF(answers);
+                env.CallStaticVoidMethod(c, env.GetStaticMethodID(c, method, "(Ljava/lang/String;)V"), s);
+            } else {
+                env.CallStaticVoidMethod(c, env.GetStaticMethodID(c, method, "()V"));
+            }
+            const jboolean threw = env.ExceptionCheck();
+            if(threw) {
+                env.ExceptionDescribe();
+                env.ExceptionClear();
+            }
+            ASSERT_FALSE(threw) << "ScriptedIsDirectory." << method << " threw";
+        }
+    };
+
+    const char kScriptedPath[] = "/takjni-scripted/path";
 
     std::string make_temp_dir()
     {
@@ -142,4 +190,68 @@ TEST_F(JniKernelDatabase, CreateOnABadUriBailsClean)
                   db, TAK::Engine::DB::DatabaseInformation("/nonexistent-takjni/test.db")),
               TAK::Engine::Util::TE_Err);
     EXPECT_FALSE(env->ExceptionCheck());
+}
+
+/* Issue 164. The comment on each test gives the Java isDirectory calls in
+ * order, and what the engine returned before the fix. */
+
+TEST_F(JniKernelFilesystemQueryFails, GetFileCountWhenIsFileFails)
+{
+    /* the proxy's isFile: throws. Before: TE_Ok and a count of 1, because
+     * exists' true was still in the flag */
+    script("x");
+    std::size_t count = 0u;
+    EXPECT_EQ(TAK::Engine::Util::IO_getFileCount(&count, kScriptedPath), TAK::Engine::Util::TE_Err);
+    EXPECT_FALSE(jnitest::launcher_env()->ExceptionCheck());
+}
+
+TEST_F(JniKernelFilesystemQueryFails, GetFileCountWhenIsDirectoryFails)
+{
+    /* isFile: true (not a file); isDirectory: throws. Before: TE_IllegalState */
+    script("tx");
+    std::size_t count = 0u;
+    EXPECT_EQ(TAK::Engine::Util::IO_getFileCount(&count, kScriptedPath), TAK::Engine::Util::TE_Err);
+    EXPECT_FALSE(jnitest::launcher_env()->ExceptionCheck());
+}
+
+TEST_F(JniKernelFilesystemQueryFails, ListFilesWhenIsFileFails)
+{
+    /* IO_listFiles' own isDirectory: true; the proxy's isFile: throws.
+     * Before: TE_InvalidArg, as if the path were a file */
+    script("tx");
+    std::vector<TAK::Engine::Port::String> files;
+    TAK::Engine::Port::STLVectorAdapter<TAK::Engine::Port::String> files_w(files);
+    EXPECT_EQ(TAK::Engine::Util::IO_listFiles(files_w, kScriptedPath), TAK::Engine::Util::TE_Err);
+    EXPECT_FALSE(jnitest::launcher_env()->ExceptionCheck());
+}
+
+TEST_F(JniKernelFilesystemQueryFails, ListFilesWhenIsDirectoryFails)
+{
+    /* IO_listFiles' isDirectory: true; isFile: true (not a file); the
+     * proxy's isDirectory: throws. Before: TE_IllegalState */
+    script("ttx");
+    std::vector<TAK::Engine::Port::String> files;
+    TAK::Engine::Port::STLVectorAdapter<TAK::Engine::Port::String> files_w(files);
+    EXPECT_EQ(TAK::Engine::Util::IO_listFiles(files_w, kScriptedPath), TAK::Engine::Util::TE_Err);
+    EXPECT_FALSE(jnitest::launcher_env()->ExceptionCheck());
+}
+
+TEST_F(JniKernelFilesystemQueryFails, LengthWhenIsFileFails)
+{
+    /* IO_length's own isDirectory: false; the proxy's isFile: throws.
+     * Before: TE_Ok, with Java's length (42) read as a file's */
+    script("fx");
+    int64_t length = 0;
+    EXPECT_EQ(TAK::Engine::Util::IO_length(&length, kScriptedPath), TAK::Engine::Util::TE_Err);
+    EXPECT_FALSE(jnitest::launcher_env()->ExceptionCheck());
+}
+
+TEST_F(JniKernelFilesystemQueryFails, LengthWhenIsDirectoryFails)
+{
+    /* IO_length's isDirectory: false; isFile: true (not a file); the
+     * proxy's isDirectory: throws. Before: TE_IllegalState */
+    script("ftx");
+    int64_t length = 0;
+    EXPECT_EQ(TAK::Engine::Util::IO_length(&length, kScriptedPath), TAK::Engine::Util::TE_Err);
+    EXPECT_FALSE(jnitest::launcher_env()->ExceptionCheck());
 }
