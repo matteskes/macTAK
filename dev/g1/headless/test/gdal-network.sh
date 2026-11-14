@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 #
-# G1 security canary (finding 10, issue 147): opening a layer file must not
-# make GDAL reach the network.
+# G1 security canary (finding 10, issues 147 and 167): opening a layer file
+# must not make GDAL reach the network.
 #
-# Two hostile files, each pointing at a loopback listener that records
+# Three hostile files, each pointing at a loopback listener that records
 # every request (http-witness.py):
-#   hostile.vrt  an OGR VRT whose SrcDataSource is /vsicurl/http://...
-#   hostile.gml  a GML file whose xsi:schemaLocation names a WFS
-#                DescribeFeatureType URL (GDAL downloads it by default)
+#   hostile.vrt      an OGR VRT whose SrcDataSource is /vsicurl/http://...
+#   hostile.gml      a GML file whose xsi:schemaLocation names a WFS
+#                    DescribeFeatureType URL (GDAL downloads it by default)
+#   hostile.geojson  a GeoJSON file with a legacy "crs" link; OGR fetches its
+#                    href through GDAL's HTTP client (CPLHTTPFetch)
 #
 # Control: stock ogrinfo, with every driver, opens each file and must make
 # the listener see a request, which proves the files are hostile on this
@@ -16,7 +18,9 @@
 # driver must not have written a .gfs beside the file either.
 #
 # PASS = the control fetched and the engine did not. Without
-# patches/ogr-open-driver-allowlist.patch the engine fetches both.
+# patches/ogr-open-driver-allowlist.patch the engine fetches the first two;
+# without keepOffline()'s refusing HTTP callback (jni-extra/mactak_gdal.cpp)
+# it fetches the third.
 # Needs: an engine build (dev/g1/build-native.sh), python3, and ogrinfo for
 # the control (skipped with a note when it isn't on PATH).
 # shellcheck disable=SC2317,SC2329  # invoked via trap (SC2317 on shellcheck < 0.10)
@@ -43,7 +47,7 @@ for _ in $(seq 1 50); do [[ -s "$WORK/port" ]] && break; sleep 0.1; done
 PORT="$(tr -d '[:space:]' < "$WORK/port")"
 BASE="http://127.0.0.1:$PORT"
 
-# write_hostile DIR — the two files, fresh (no .gfs from an earlier open)
+# write_hostile DIR — the three files, fresh (no .gfs from an earlier open)
 write_hostile() {
   mkdir -p "$1"
   printf '%s\n' "<OGRVRTDataSource><OGRVRTLayer name=\"x\"><SrcDataSource>/vsicurl/$BASE/vrt-source.geojson</SrcDataSource></OGRVRTLayer></OGRVRTDataSource>" \
@@ -56,7 +60,15 @@ write_hostile() {
   <gml:featureMember><x:t><x:name>a</x:name></x:t></gml:featureMember>
 </wfs:FeatureCollection>
 GML
+  cat > "$1/hostile.geojson" <<GEOJSON
+{"type": "FeatureCollection",
+ "crs": {"type": "link", "properties": {"href": "$BASE/crs.wkt", "type": "ogcwkt"}},
+ "features": [{"type": "Feature", "properties": {"name": "a"},
+               "geometry": {"type": "Point", "coordinates": [-122.4, 37.8]}}]}
+GEOJSON
 }
+
+HOSTILE=(hostile.vrt hostile.gml hostile.geojson)
 
 requests() { wc -l < "$HITS" | tr -d ' '; }
 rc=0
@@ -64,7 +76,7 @@ rc=0
 # --- control: stock GDAL fetches -------------------------------------------
 if command -v ogrinfo >/dev/null 2>&1; then
   write_hostile "$WORK/control"
-  for f in hostile.vrt hostile.gml; do
+  for f in "${HOSTILE[@]}"; do
     before="$(requests)"
     ogrinfo -ro -al -so "$WORK/control/$f" >/dev/null 2>&1 || true
     if [[ "$(requests)" -gt "$before" ]]; then
@@ -79,7 +91,7 @@ fi
 
 # --- the engine's import path must not --------------------------------------
 write_hostile "$WORK/engine"
-for f in hostile.vrt hostile.gml; do
+for f in "${HOSTILE[@]}"; do
   before="$(requests)" ec=0
   log="$WORK/$f.log"
   "$CLI" --layer "$WORK/engine/$f" --layer-db "$WORK/db-$f" > "$log" 2>&1 || ec=$?

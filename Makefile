@@ -27,7 +27,7 @@ help:
 	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
 	@echo "  test-tls       - TLS server-purpose canary: commo accepts server certs, refuses a same-CA client-only impostor (G1.14)"
-	@echo "  test-gdal-network - layer files can't make GDAL reach the network: hostile VRT/GML vs a loopback listener (G1.14 finding 10)"
+	@echo "  test-gdal-network - layer files can't make GDAL reach the network: hostile VRT/GML/GeoJSON vs a loopback listener (G1.14 finding 10, issue 167)"
 	@echo "  test-commo-https - commo's https path (enrollment) verifies the CA it is given, refuses another CA and a wrong host name, doesn't crash"
 	@echo "  test-quic      - QUIC canary: commo streams over QUIC (ngtcp2 ossl backend), refuses a client-only impostor, names a failed handshake's cause"
 	@echo "  test-render    - G2 render smoke: engine GLGlobe into an EGL pbuffer on ANGLE, bare + GeoJSON layer + MBTiles basemap (dev/g2/render/run.sh)"
