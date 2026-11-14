@@ -1863,11 +1863,21 @@ world file.
 
 ### Open items
 
-- **5.5's `NativeImageryRasterLayer2`** (a mosaic over the datasets, the
-  non-deprecated path) drew nothing for the same GeoTIFF; not chased
-  ([issue #135](https://github.com/matteskes/macTAK/issues/135)).
-  `DatasetRasterLayer2` is marked deprecated for removal at 5.5 but is
-  present at the pin and draws.
+- **5.5's `NativeImageryRasterLayer2`** (a mosaic over the datasets) drew
+  nothing for the same GeoTIFF. It wasn't chased, and it isn't needed
+  ([issue #135](https://github.com/matteskes/macTAK/issues/135), closed).
+  - **Correction (2026-11-13):** this item first said `DatasetRasterLayer2`
+    was "deprecated for removal at 5.5". It isn't, neither in the source
+    nor in the pinned `takkernel-engine-8.30.5.jar`.
+  - **What 5.5 does deprecate** is the layer's old GL renderer,
+    `GLDatasetRasterLayer2` (`@DeprecatedApi(since = "5.2", forRemoval =
+    true, removeAt = "5.5")`, "use `GLDatasetRasterLayer3`").
+  - **We never name a renderer.** At the pin, the engine's own
+    `GLDatasetRasterLayer3.SPI` still creates the deprecated
+    `GLDatasetRasterLayer2`, and `Layers.registerAll()` wires it.
+  - **On a re-pin,** the most upstream can do is swap the renderer behind
+    the layer macTAK uses. `render/test/geotiff.sh` fails if that swap
+    changes what draws, or where.
 - **The exit run's real-data clip:** chosen (NAIP 2024 and 3DEP 1/3″, 4 km
   over Golden Gate Park to Twin Peaks, pinned by pixel checksums; "The
   exit run's real data" above). Fetched by `fixtures/fetch-exit-data.sh`
