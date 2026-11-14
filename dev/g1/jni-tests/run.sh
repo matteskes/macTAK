@@ -14,6 +14,8 @@
 #                  the engine's global Filesystem and must behave on
 #                  real files (the getFileCount isDirectory fix) and
 #                  bail TE_Err with a clean JNIEnv on real Java failures.
+#                  G2's runtime android.net.Uri runs ahead of the jars'
+#                  Stub!, as in the app (G1.22).
 #
 # and a third time under the launcher:
 #
@@ -62,9 +64,15 @@ echo "[g1] jni-tests kernel mode (takkernel jars, under the java launcher — th
 CLASSES="$DIST/launcher-classes"
 mkdir -p "$CLASSES"
 "$JDK/bin/javac" -classpath "$CP" -d "$CLASSES" "$HERE/JniTestsMain.java"
+# android-port's android.net.Uri is a Stub! (G2 trap 16), so a kernel pin
+# that reaches Uri.parse ran into it. The app runs with G2's runtime Uri
+# ahead of android-port, and kernel mode does the same (issue 142 batch 2).
+SHIMS="$DIST/launcher-shims"
+mkdir -p "$SHIMS"
+"$JDK/bin/javac" -d "$SHIMS" "$DEV/../g2/render/src/android/net/Uri.java"
 TAKJNI_TEST_MODE=kernel TAKJNI_TEST_CLASSPATH="$CP" \
   "$JDK/bin/java" \
-  -classpath "$CP:$CLASSES" \
+  -classpath "$SHIMS:$CP:$CLASSES" \
   JniTestsMain \
   --gtest_filter='JniKernel*' \
   --gtest_output="xml:$DIST/takengine-jni-kernel.xml"

@@ -19,7 +19,7 @@ nothing; they are run by hand to reproduce, re-audit or extend the waves.
 | `wave6/guard_inits.py` | The sweep's body-editing pass: inserts `if(!x) return <bail>;` guards after unguarded lookups in tree b (authoring; its outcome is baked into the committed patches) |
 | `wave6/fix_inline.py` | The sweep's cleanup pass: rewrites hoisted-`fid` blocks so the `New*Ref` statement uses the hoisted id (authoring, as above) |
 | `wave6/gen_patches.py` | Regenerates the 11 wave-6 patches from the staged authoring trees; replays the full patch set on a pristine copy and asserts the jni tree equals tree b |
-| `wave7/check_lookups.py` | Checks one class init's member lookups (`env.Get*ID(cls, "name", "sig")`) against the kernel jars with `javap`, walking superclasses and interfaces; run before guarding an init with `if(!x) return false;`, which makes one missing lookup disable the whole wrapper |
+| `wave7/check_lookups.py` | Checks one class init's member lookups (`env.Get*ID(cls, "name", "sig")` or `env->`, split over lines or not) against the kernel jars with `javap`, walking superclasses and interfaces; run before guarding an init with `if(!x) return false;`, which makes one missing lookup disable the whole wrapper |
 | `wave6/stage_baseline.py` | Rebuilds both wave-6 staging trees from the repo alone: a/ = pristine + gdal-drift + every committed patch except the wave-6 set (the post-wave-5 baseline), b/ = pristine + gdal-drift + the full set (the post-sweep tree) |
 
 Deliberately not committed (one-offs whose outcomes are already baked into
@@ -153,6 +153,9 @@ python3 dev/g1/tools/wave7/check_lookups.py "$CP" \
   dev/g1/build/engine/jni/interop/feature/ManagedFeatureDataStore2.cpp FeatureDataStore2_init
 ```
 
-Exit 0 when every parsed lookup resolves in the 5.5 jars. Only the `env.`
-form with literal strings is parsed; the summary line says how many of
-the init's lookups that covers (its count includes the `findClass` calls).
+Exit 0 when every parsed lookup resolves in the 5.5 jars. The `env.` and
+`env->` forms with literal strings are parsed, at any indentation and
+split over lines; the summary line says how many of the init's lookups
+that covers (its count includes the `findClass` calls). Batch 2 found
+`ManagedDatabaseProvider`'s missing `DatabaseInformation` constructor
+this way (`dev/g1/NOTES.md` §G1.22).

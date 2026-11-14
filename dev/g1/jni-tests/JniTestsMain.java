@@ -86,4 +86,105 @@ public final class JniTestsMain
             return null;
         }
     }
+
+    /**
+     * Issue 142, batch 2 (db_guards_test.cpp, kernel mode): a RowIterator
+     * and an IOProvider whose calls are recorded, so a pin can see which
+     * Java method the db wrappers reached. isClosed answers true, so a
+     * wrapper that asks moveToNext instead reads false.
+     */
+    public static final class RecordingDb implements java.lang.reflect.InvocationHandler
+    {
+        private static final java.util.List<String> calls =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+
+        public static Object rowIterator()
+        {
+            return proxy(com.atakmap.database.RowIterator.class);
+        }
+
+        public static Object provider()
+        {
+            return new Provider();
+        }
+
+        /** The calls since the last clear, oldest first. */
+        public static String calls()
+        {
+            synchronized(calls) { return String.join(",", calls); }
+        }
+
+        public static void clear()
+        {
+            calls.clear();
+        }
+
+        private static Object proxy(Class<?> iface)
+        {
+            return java.lang.reflect.Proxy.newProxyInstance(
+                iface.getClassLoader(), new Class<?>[] { iface }, new RecordingDb());
+        }
+
+        @Override
+        public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args)
+        {
+            final String name = method.getName();
+            switch(name) {
+                case "equals": return proxy == args[0];
+                case "hashCode": return System.identityHashCode(proxy);
+                case "toString": return "RecordingDb";
+                default: break;
+            }
+            calls.add(name);
+            if(name.equals("isClosed"))
+                return true;
+            final Class<?> type = method.getReturnType();
+            if(type == int.class) return 0;
+            if(type == long.class) return 0L;
+            if(type == boolean.class) return false;
+            if(type == double.class) return 0.0;
+            return null;
+        }
+
+        /** createDatabase records the URI it was given and returns a recorded DatabaseIface. */
+        private static final class Provider extends com.atakmap.coremap.io.IOProvider
+        {
+            @Override
+            public com.atakmap.database.DatabaseIface createDatabase(com.atakmap.coremap.io.DatabaseInformation info)
+            {
+                calls.add("createDatabase " + info.uri);
+                return (com.atakmap.database.DatabaseIface)proxy(com.atakmap.database.DatabaseIface.class);
+            }
+
+            @Override public String getName() { return "RecordingDb"; }
+            @Override public boolean isDatabase(java.io.File f) { throw unused(); }
+            @Override public boolean canRead(java.io.File f) { throw unused(); }
+            @Override public boolean canWrite(java.io.File f) { throw unused(); }
+            @Override public java.io.File createTempFile(String p, String s, java.io.File d) { throw unused(); }
+            @Override public boolean delete(java.io.File f, int flags) { throw unused(); }
+            @Override public boolean exists(java.io.File f) { throw unused(); }
+            @Override public java.nio.channels.FileChannel getChannel(java.io.File f, String mode) { throw unused(); }
+            @Override public java.io.FileReader getFileReader(java.io.File f) { throw unused(); }
+            @Override public java.io.FileWriter getFileWriter(java.io.File f) { throw unused(); }
+            @Override public java.io.FileInputStream getInputStream(java.io.File f) { throw unused(); }
+            @Override public java.io.FileOutputStream getOutputStream(java.io.File f, boolean append) { throw unused(); }
+            @Override public java.io.RandomAccessFile getRandomAccessFile(java.io.File f, String mode) { throw unused(); }
+            @Override public boolean isDirectory(java.io.File f) { throw unused(); }
+            @Override public long lastModified(java.io.File f) { throw unused(); }
+            @Override public long length(java.io.File f) { throw unused(); }
+            @Override public String[] list(java.io.File f) { throw unused(); }
+            @Override public String[] list(java.io.File f, java.io.FilenameFilter filter) { throw unused(); }
+            @Override public boolean mkdir(java.io.File f) { throw unused(); }
+            @Override public boolean mkdirs(java.io.File f) { throw unused(); }
+            @Override public boolean renameTo(java.io.File from, java.io.File to) { throw unused(); }
+            @Override public boolean setReadable(java.io.File f, boolean r, boolean ownerOnly) { throw unused(); }
+            @Override public boolean setWritable(java.io.File f, boolean w, boolean ownerOnly) { throw unused(); }
+            @Override public java.net.URI toURI(java.io.File f) { throw unused(); }
+
+            private static UnsupportedOperationException unused()
+            {
+                return new UnsupportedOperationException("RecordingDb.Provider: only createDatabase is recorded");
+            }
+        }
+    }
 }

@@ -10,7 +10,8 @@ the init found for `cls`, walking superclasses and interfaces (JNI
 resolves inherited members, e.g. FeatureDataStore2.dispose comes from
 gov.tak.api.util.Disposable).
 
-Only the `env.` form with a literal name and signature is parsed; the
+The `env.` and `env->` forms with a literal name and signature are
+parsed, at any indentation and split over any number of lines; the
 report says how many of the init's lookups that covers.
 
 usage: check_lookups.py CLASSPATH SOURCE.cpp INIT_FUNCTION [JAVAP]
@@ -30,11 +31,19 @@ def javap_default():
 
 
 def init_body(source, init):
-    start = re.search(r"^    bool %s\(JNIEnv [&*]env\) NOTHROWS\n    \{\n" % re.escape(init),
+    """The init's body, its whitespace collapsed so a call split over
+    several lines (ManagedDatabaseProvider's) reads as one."""
+    start = re.search(r"^[ \t]*bool %s\(JNIEnv\s*[&*]\s*env\)\s*NOTHROWS\s*\{" % re.escape(init),
                       source, re.M)
     if not start:
         sys.exit("no definition of %s" % init)
-    return source[start.start():source.index("\n    }\n", start.start())]
+    depth, i = 0, start.end() - 1
+    while True:
+        depth += {"{": 1, "}": -1}.get(source[i], 0)
+        if depth == 0:
+            break
+        i += 1
+    return re.sub(r"\s+", " ", source[start.start():i + 1])
 
 
 class Members:
@@ -88,13 +97,13 @@ def main():
     classpath, source_path, init = sys.argv[1:4]
     javap = sys.argv[4] if len(sys.argv) > 4 else javap_default()
     body = init_body(open(source_path).read(), init)
-    classes = dict(re.findall(r'([\w.]+?)(?:\.id)? = ATAKMapEngineJNI_findClass\([^,]+, "([^"]+)"\)', body))
+    classes = dict(re.findall(r'([\w.]+?)(?:\.id)? = ATAKMapEngineJNI_findClass ?\( ?[^,]+, "([^"]+)" ?\)', body))
     members = Members(classpath, javap)
     total = len(re.findall(r"= (?:env[.]|env->)?(?:GetMethodID|GetStaticMethodID|GetFieldID|"
-                           r"GetStaticFieldID)\(|= ATAKMapEngineJNI_findClass\(", body))
+                           r"GetStaticFieldID) ?\(|= ATAKMapEngineJNI_findClass ?\(", body))
     checked, missing = 0, []
-    for m in re.finditer(r'= env\.(?:GetMethodID|GetStaticMethodID|GetFieldID|GetStaticFieldID)'
-                         r'\(([\w.]+?)(?:\.id)?, "([^"]+)", "([^"]+)"\)', body):
+    for m in re.finditer(r'= env(?:\.|->)(?:GetMethodID|GetStaticMethodID|GetFieldID|GetStaticFieldID)'
+                         r' ?\( ?([\w.]+?)(?:\.id)?, "([^"]+)", "([^"]+)" ?\)', body):
         var, name, sig = m.groups()
         checked += 1
         cls = classes.get(var)

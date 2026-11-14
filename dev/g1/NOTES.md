@@ -755,7 +755,8 @@ corrected to the tool's own output.)
   `NativeProjection` clinit locals in core `Interop` are read now).
   Gating the remaining consumers is the wave-7 item now that the init
   bodies themselves report failure honestly ([issue #142](https://github.com/matteskes/macTAK/issues/142);
-  on 5.5 the count is 29, and wave 7 works through it by area: §G1.21).
+  on 5.5 the count is 29, and wave 7 works through it by area: §G1.21,
+  §G1.22).
 - F-1, recorded 2026-11-08, deliberately untouched: `MapRenderer3_init`
   binds the `setFocusPointOffset` slot from `GetMethodID(…, "isAnimating",
   "(FF)V")` (`jni-class-init-guards.patch` line 51; pristine
@@ -1829,3 +1830,94 @@ patches: guards mode 16 of 16, kernel 8 of 8, noslf4j 2 of 2; `layer.sh`,
   the marshal's new `checkInit` guard reached first; that is how the
   unguarded 80-lookup init came to light. Pin each fix by calling it, not
   only the wrapper above it.
+
+## G1.22 — wave 7, batch 2: the db wrappers (2026-11-13, branch `g1/wave7-db-guards`, issue 142)
+
+The second of §G1.21's five batches: `ManagedDatabase2`,
+`ManagedDatabaseProvider`, `ManagedQuery` and `ManagedStatement`, plus
+`db/Interop.cpp`, whose `RowIterator_*` and `Bindable_*` helpers the
+query and statement wrappers call.
+
+### What batch 2 found
+
+- **The inits were already honest.** Unlike batch 1's 5.5 wrappers, all
+  five db inits predate 5.5 and got the house guard in wave 6
+  (`jni-class-init-guards.patch`); `db/Interop.cpp`'s helpers already
+  bail `TE_IllegalState` on a failed `checkInit`. What was left is the
+  four constructors' unread `clinit` and the consumers behind them: 23
+  methods and two destructors called through the IDs regardless.
+- **`ManagedDatabaseProvider`'s init failed on every JVM.** It looks up a
+  `DatabaseInformation(Uri, ProviderChangeRequestedListener)`
+  constructor; 5.5 has only `(Uri)` and `(Uri, int)` (in both
+  `takkernel-engine` and `android-port`). `create()` passed `null` for the
+  listener anyway. On a healthy JVM the init returned false with its
+  `NoSuchMethodError` still pending, and `create()` tripped over that at
+  its first `ExceptionCheck`, returning `TE_Err` before reaching Java; had
+  anything cleared the exception in between, `NewObject` went through the
+  NULL constructor ID. Nothing in 5.5's JNI constructs this wrapper, so
+  it never showed.
+- **`RowIterator_isClosed` asked `moveToNext`.** Asking whether a cursor
+  was closed advanced it a row (and answered whether there was one). It
+  has no callers in 5.5's JNI either.
+
+### The patches
+
+- **`manageddb-consumer-guards.patch`** (sorts after
+  `jni-class-init-guards`, which touches all five files): every consumer
+  bails `TE_Err` before a NULL method ID (11 in `ManagedDatabase2`, 10 in
+  `ManagedQuery`, 1 each in `ManagedStatement` and
+  `ManagedDatabaseProvider::create`, which checks its three IDs); the
+  `ManagedDatabase2` and `ManagedStatement` destructors skip `close` when
+  its ID is NULL. `ManagedQuery::getType` also waits for the init to have
+  read `CursorIface`'s `FIELD_TYPE_*` constants (`fieldTypesRead`, set
+  last); before, a failure after the method lookups left them all 0, so
+  a NULL column read as a blob and every other type as `TE_IllegalState`.
+- **`manageddb-wrong-members.patch`**: the `(Uri)` constructor, and
+  `isClosed` for `RowIterator_isClosed`.
+
+`dev/g1/tools/wave7/check_lookups.py` now reads `env->` lookups, inits at
+any indentation and calls split over lines (`ManagedDatabaseProvider`'s);
+that is how it found the missing constructor. On the patched tree every
+member lookup resolves: `DBIface` 12 of 12, `JDatabaseProvider` 4 of 4,
+`QueryIface` 17 of 17, `JStatement` 2 of 2, `db/Interop` 10 of 10.
+
+The constructors keep their unread `clinit` (none calls through an ID),
+so `class_init_audit.py` still lists the four, as it does batch 1's
+cursors; the consumers are the guard.
+
+### The guard: `jni-tests/db_guards_test.cpp`
+
+In `make test-jni`, both modes:
+
+| Mode | Pin | Without the patches |
+|---|---|---|
+| guards | `ManagedDatabase2`'s 11 consumers bail `TE_Err`; its destructor survives | SIGSEGV |
+| guards | `ManagedQuery`'s 10 getters bail `TE_Err` (moves and binds `TE_IllegalState`) | SIGSEGV |
+| guards | `ManagedStatement::execute` bails; its destructor survives | SIGSEGV |
+| guards | `ManagedDatabaseProvider::create` bails | SIGSEGV |
+| kernel | `ManagedDatabaseProvider::create` reaches `IOProvider.createDatabase` with its URI, and the result's destructor reaches `close` | `TE_Err`, Java never reached |
+| kernel | `RowIterator_isClosed` asks `isClosed` | asks `moveToNext`; reads false |
+
+The kernel pins use `JniTestsMain.RecordingDb`: a recording proxy for
+`RowIterator` and `DatabaseIface`, and an `IOProvider` subclass (an
+abstract class, so no proxy) whose `createDatabase` records the URI.
+
+### Traps
+
+- **`android.net.Uri` is a `Stub!` in kernel mode** (G2 trap 16, met
+  again): `ManagedDatabaseProvider::create` calls `Uri.parse`. Kernel
+  mode now compiles G2's runtime `Uri`
+  (`dev/g2/render/src/android/net/Uri.java`) into
+  `native-dist/launcher-shims` and puts it ahead of the kernel jars, as
+  the app's classpath does. The other kernel pins still pass;
+  `CreateOnABadUriBailsClean`'s Java side (`DefaultIOProvider
+  .createDatabase`) now gets past `Uri` and, in a plain JVM, still throws
+  `Stub!` further in, so it still pins a Java failure surfacing as a
+  clean `TE_Err`.
+- **A failed member lookup leaves its `NoSuchMethodError` pending.** The
+  house guard returns false without clearing it, so the next JNI call in
+  the caller runs with an exception pending (`-Xcheck:jni` names it).
+  Here it masked the NULL-ID `NewObject`; it is the same in every
+  guarded init, and only matters when a lookup fails on a healthy JVM,
+  which `check_lookups.py` rules out batch by batch
+  ([issue #161](https://github.com/matteskes/macTAK/issues/161)).
