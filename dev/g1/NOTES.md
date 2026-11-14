@@ -756,7 +756,7 @@ corrected to the tool's own output.)
   Gating the remaining consumers is the wave-7 item now that the init
   bodies themselves report failure honestly ([issue #142](https://github.com/matteskes/macTAK/issues/142);
   on 5.5 the count is 29, and wave 7 works through it by area: §G1.21,
-  §G1.22, §G1.23, §G1.24).
+  §G1.22, §G1.23, §G1.24, §G1.25; wave 7 is complete).
 - F-1, recorded 2026-11-08, deliberately untouched: `MapRenderer3_init`
   binds the `setFocusPointOffset` slot from `GetMethodID(…, "isAnimating",
   "(FF)V")` (`jni-class-init-guards.patch` line 51; pristine
@@ -2130,3 +2130,102 @@ In `make test-jni`, both modes:
 - **A test that includes both `ManagedLayer.h` and `ManagedMapRenderer2.h`
   needs the header fix.** So the A/B builds carry the include-guard fix
   alone, in a throwaway patch, in place of the wrong-members patch.
+
+## G1.25 — wave 7, batch 5: the rest (2026-11-13, branch `g1/wave7-rest-guards`, issue 142)
+
+The last of §G1.21's five batches. It covers five files:
+
+- `ManagedQMESourceLayer`, which has three inits: the layer, `TileExtents`
+  and `File`/`List`/`Iterator`;
+- `ManagedGeometryModel`;
+- `jglbitmaploader.cpp`'s protocol handler;
+- `jioproviderfactory.cpp`'s `IOProviderFactoryProxy`, which is the
+  engine's filesystem once Java installs it;
+- `jprojectionfactory.cpp`'s `ManagedProjectionSpi`.
+
+### What batch 5 found
+
+- **Every consumer called through the IDs without checking them:** 13 in
+  the quantized-mesh layer, `intersect`, `handleURI`, 12 proxy methods
+  and the SPI's `create`.
+- **`AbstractInputStreamLoaderSpi_init` checked nothing.** It doesn't
+  test `findClass` or `GetMethodID`, and returns true unconditionally.
+  So a failed class lookup went straight into `GetMethodID` on a NULL
+  class, inside the handler's constructor. Wave 6's audit counts this as
+  a "fully masked" init, but the file was never patched.
+- **`ManagedProjectionSpi::create` left a Java exception pending.** A
+  Java SPI that throws returned `TE_InvalidArg` with its exception still
+  pending. `ProjectionFactory3_create` then asked the next SPI, and
+  returned to its caller, with the exception in flight. This is G2's
+  `GLLayerSpi2` bug (G2 notes) in another factory, on a healthy JVM.
+
+### The patches
+
+- **`wave7-rest-consumer-guards.patch`.** It sorts after
+  `jni-class-init-guards` and the three `ioproviderfactory-*` patches.
+  - Each consumer bails with `TE_Err` (`intersect` with false) before a
+    NULL ID, including the helper IDs it uses:
+    - `File.getAbsolutePath`, the `List` iterator and the `TileExtents`
+      getters in the quantized-mesh layer;
+    - `File`'s constructor in the proxy;
+    - `PointD`'s constructor in `intersect`.
+  - The bitmap loader's init gets the house guard.
+- **`wave7-rest-projectionspi-exception.patch`:** `create` reports and
+  clears a Java exception and returns `TE_Err`, as G2's `GLLayerSpi2` fix
+  does.
+
+All seven inits resolve on the kernel jars (`check_lookups.py`): 13 of
+13, 5 of 5, 4 of 4, 3 of 3, 1 of 1, 16 of 16 and 1 of 1.
+
+### The guard: `jni-tests/rest_guards_test.cpp`
+
+| Mode | Pin | Without the patches |
+|---|---|---|
+| guards | `ManagedQMESourceLayer`'s 13 consumers bail | SIGSEGV (`CallIntMethod`) |
+| guards | `ManagedGeometryModel::intersect` is false | SIGSEGV (`NewObject`) |
+| guards | `GLBitmapLoader.registerProtocolHandler` (the JNI entry) survives its handler's init | SIGSEGV (`GetMethodID` on a NULL class) |
+| guards | the `IOProviderFactory` proxy, installed through its JNI entry, answers `TE_Err`; after the uninstall the default filesystem answers again | SIGSEGV (`NewObject`) |
+| kernel | a Java `ProjectionSpi` whose `create` throws leaves the JNIEnv clean after `ProjectionFactory3_create` | the exception is still pending |
+
+The A/B ran each guards pin with the `JniGuardsOnLoad` tests in front of
+it (§G1.24, Traps).
+
+- **Not pinned in guards mode:**
+  - `handleURI` needs `AsyncBitmapLoader2` to drive it;
+  - the projection SPI's guard would leave a registered SPI behind in the
+    guards process. The kernel pin runs its `create` on a healthy JVM.
+- **The kernel pin** uses `JniTestsMain.ThrowingProjectionSpi`, a
+  `ProjectionSpi` proxy whose every call throws. It registers and
+  unregisters through `ProjectionFactory`'s JNI entries.
+
+### Wave 7, done
+
+All 23 files from §G1.21's audit are guarded. `class_init_audit.py`
+still lists 22 unread `clinit` locals. That is by design: those
+constructors don't call through the IDs, so the guard is in their
+consumers. The three constructors that did call through them now return
+early.
+
+Wave 7 also fixed upstream bugs on the way, several of them on a healthy
+JVM:
+
+- the `FeatureDataStore2` method IDs (§G1.21);
+- the `DatabaseInformation` constructor and `RowIterator_isClosed`
+  (§G1.22);
+- the elevation cursor's `getType` and the `QueryParameters` constructor
+  (§G1.23);
+- `MapRenderer3_init`'s 14 lookups (F-1), the inverted display getters,
+  the shared `isRenderSurface2` flag and the reused include guard
+  (§G1.24);
+- the projection SPI's pending exception (here).
+
+Follow-ups:
+
+- **Pending lookup exceptions:**
+  [issue #161](https://github.com/matteskes/macTAK/issues/161).
+- **`IOProviderFactoryProxy` ignores the error from `isFile` and
+  `isDirectory`**, in `getFileCount`, `listFiles` and `length`. After a
+  failed `isFile`, `b` still holds `exists`'s true, so a path whose
+  `isFile` threw counts as one file. This is outside wave 7's class-init
+  scope, so it is recorded here and not fixed
+  ([issue #164](https://github.com/matteskes/macTAK/issues/164)).

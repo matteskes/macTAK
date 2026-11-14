@@ -364,4 +364,47 @@ public final class JniTestsMain
             return null;
         }
     }
+
+    /**
+     * Issue 142, batch 5 (rest_guards_test.cpp, kernel mode): a ProjectionSpi
+     * whose create records the call and throws, so a pin can see whether the
+     * native SPI wrapper clears the exception or leaves it pending.
+     */
+    public static final class ThrowingProjectionSpi implements java.lang.reflect.InvocationHandler
+    {
+        private static final java.util.List<String> calls =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+
+        public static Object create()
+        {
+            final Class<?> iface = com.atakmap.map.projection.ProjectionSpi.class;
+            return java.lang.reflect.Proxy.newProxyInstance(
+                iface.getClassLoader(), new Class<?>[] { iface }, new ThrowingProjectionSpi());
+        }
+
+        /** The calls since the last clear, oldest first. */
+        public static String calls()
+        {
+            synchronized(calls) { return String.join(",", calls); }
+        }
+
+        public static void clear()
+        {
+            calls.clear();
+        }
+
+        @Override
+        public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args)
+        {
+            final String name = method.getName();
+            switch(name) {
+                case "equals": return proxy == args[0];
+                case "hashCode": return System.identityHashCode(proxy);
+                case "toString": return "ThrowingProjectionSpi";
+                default: break;
+            }
+            calls.add(name);
+            throw new IllegalStateException("ThrowingProjectionSpi: " + name + " throws on purpose");
+        }
+    }
 }
