@@ -21,6 +21,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- G3's plan is revised after a check against ATAK 5.5 (`dev/g3/NOTES.md`
+  §Plan revision). Eight gaps are adopted: certificate enrollment, QUIC,
+  mesh networking, ATAK's SA reporting rates, the self details, GeoChat's
+  team, role and group rooms with receipts, the full set of coordinate
+  formats with MSL altitude, and 2525 marker symbols from the kernel. The
+  milestones are re-sequenced as G3.2–G3.8. G4's import list now covers
+  ATAK 5.5's formats.
 - Layer import formats are decided: ATAK 5.5's set only
   (`dev/g1/NOTES.md` §G1.19, issue #156). FlatGeobuf is to be dropped,
   GML brought back safely (#168), and nothing outside ATAK's set added.
