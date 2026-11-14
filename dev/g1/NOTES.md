@@ -1183,7 +1183,7 @@ and its password. Six findings; each lands as its own focused PR.
 | 7 | Low | `--db` tracks DB created under the default umask (0644 on macOS): other local accounts can read every received position | **Fixed** (pass 2, branch `g1/security-audit-pass-2`): `TrackStore` creates it 0600, guarded by `run.sh` |
 | 8 | Note | `TrackStore` appends one row per received CoT with no cap or retention: a chatty or hostile server grows the file for as long as the client runs | Recorded; atak-headless runs bounded by `--duration`, G6 needs retention; [issue #148](https://github.com/matteskes/macTAK/issues/148) |
 | 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | **Fixed** (2026-11-11, by the 5.5 re-pin, `5169342`): the kernel jars are built from `src/` into `dev/g1/kernel-dist` against a private Maven repo, and `dev/g1/kernel/classpath.sh` reads only that directory, so `~/.m2` is never read; an override (`MACTAK_KERNEL_DIST`) is logged; [issue #150](https://github.com/matteskes/macTAK/issues/150) |
-| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | **Fixed** (2026-11-13, branch `g1/gdal-open-allowlist`): `patches/ogr-open-driver-allowlist.patch`, guarded by `test/gdal-network.sh` (§G1.19); [issue #147](https://github.com/matteskes/macTAK/issues/147) |
+| 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | **Fixed** (2026-11-13, branch `g1/gdal-open-allowlist`): `patches/ogr-open-driver-allowlist.patch`, guarded by `test/gdal-network.sh` (§G1.19); [issue #147](https://github.com/matteskes/macTAK/issues/147). Rasters: **fixed** (2026-11-14), GDAL kept offline for the whole process, guarded by `dev/g2/render/test/gdal-network.sh` (§G1.26); [issue #155](https://github.com/matteskes/macTAK/issues/155) |
 | 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | Recorded; [issue #151](https://github.com/matteskes/macTAK/issues/151) |
 | 12 | Low | CI: 14 of the 16 checkouts in `ci.yml`, `cot-roundtrip.yml` and `docs.yml` left the job token in `.git/config` while build scripts and Homebrew-installed tools ran | **Fixed** (CI workflow pass, branch `ci/checkout-persist-credentials`): `persist-credentials: false` on each; the two `changes` jobs keep the token for their `git fetch` |
 
@@ -1629,12 +1629,11 @@ two Shapefiles) and `make test-render` passes every gate.
 ### What it doesn't cover
 
 - **Raster opens.** `GdalTileReader` (through the Java bindings),
-  `GdalBitmapReader` and `GdalDatasetProjection2` open rasters with every
+  `GdalBitmapReader` and `GdalDatasetProjection2` opened rasters with every
   raster driver, and a raster VRT can name a `/vsicurl/` source too.
-  Today they open only files the user names (G2's basemap and
-  elevation), as layer files did before G6. The same approach applies
-  when rasters arrive from data packages or peers: a raster allowlist in
-  those open calls ([issue #155](https://github.com/matteskes/macTAK/issues/155)).
+  **Fixed in §G1.26**, not with an allowlist in those open calls: GDAL
+  opens a raster's `.ovr` with every driver, so the fix keeps GDAL offline
+  for the whole process ([issue #155](https://github.com/matteskes/macTAK/issues/155)).
 - **A layer format outside the list** (CSV, DXF, MapInfo, GeoJSONSeq and
   others) is now refused. The decision is ATAK 5.5's formats only
   ([issue #156](https://github.com/matteskes/macTAK/issues/156); see
@@ -2292,3 +2291,118 @@ Follow-ups:
   `isFile` threw counts as one file. This is outside wave 7's class-init
   scope, so it is recorded here and not fixed
   ([issue #164](https://github.com/matteskes/macTAK/issues/164)).
+
+## G1.26 — imagery and elevation can't reach the network (2026-11-14, branch `g1/issue-155-raster-driver-allowlist`, issue 155)
+
+Issue #155, the raster half of security finding 10 (§G1.19 left it
+open). The engine opened imagery and elevation with every GDAL raster
+driver, and some drivers fetch what a file names.
+
+### Reproduced through the engine
+
+On GDAL 3.13.3, `dev/g2/render/run.sh` opening a hostile file the way the
+app does:
+
+| File | As a basemap (`GdalLayerInfo` → `GdalTileReader`) | As elevation (`GdalElevationChunk`) |
+|---|---|---|
+| a raster VRT whose source is `/vsicurl/http://…` | `HEAD /vrt-source.tif` | `HEAD /vrt-source.tif` |
+| a valid GeoTIFF beside a `.ovr` that is really such a VRT | `HEAD /ovr-source.tif` | no request |
+| a `GDAL_WMS` service description | no request | 1,757 `GET /wms?…GetMap…` in one run |
+
+Importing the VRT as a basemap also made `MobacMapSourceFactory` try to
+parse it. MOBAC XML map sources are online tile definitions, so they are
+a network path of their own, outside GDAL; ATAK has them by design.
+
+### Why not a driver list in each open
+
+The issue planned what §G1.19 did for vectors: a driver allowlist in each
+raster open (`GdalLibrary.openImpl` in Java, `GDALOpen` in
+`GdalBitmapReader` and `GdalDatasetProjection2`). A probe with stock GDAL
+restricted to one driver (`-if`) showed that this can't work. For each
+candidate driver it wrote a valid file and one hostile sidecar beside it,
+then read the file and its smallest overview:
+
+| Driver | `.ovr` is a VRT → `/vsicurl/` | `.msk` is such a VRT | `.aux.xml` with a URL as its SRS | `.aux.xml` naming a remote overview |
+|---|---|---|---|---|
+| GTiff, NITF, DTED, PNG, JPEG, JP2OpenJPEG, SRTMHGT | **fetched** | 0 | 0 | 0 |
+| GPKG | 0 | 0 | 0 | 0 |
+
+GDAL opens a raster's external overview with every registered driver,
+whatever the main open allowed. So a driver list in the open call doesn't
+cover the `.ovr` beside any allowed format. Two more probes found nothing:
+a JPEG 2000 whose GMLJP2 `srsName` is a URL (0 requests), and a PAM
+`<SRS>` holding a URL (0; PAM parses it with network access off).
+
+### The fix: keep GDAL offline for the whole process
+
+`keepOffline()` in `dev/g1/jni-extra/mactak_gdal.cpp` (macTAK's own code,
+not a patch) runs right after each GDAL init registers the drivers: the
+native one (`NativeGdal.init`, atak-headless and G2's `--layer`) and the
+Java one, through `patches/gdal-offline-only.patch` (series of 54), which
+makes `GdalLibrary.initImpl` call it after `gdal.AllRegister()`. It does
+two things, because each misses what the other catches (stock
+`gdal_translate`/`gdalinfo`, same hostile files):
+
+| Setting | `.ovr` VRT → `/vsicurl` | `/vsicurl/<url>` opened directly | `GDAL_WMS` file |
+|---|---|---|---|
+| none | fetched | fetched | fetched |
+| `GDAL_SKIP` = every driver outside the allowlist | 0 | **fetched** | 0 |
+| `CPL_VSIL_CURL_ALLOWED_FILENAME=none` | 0 | 0 | **fetched** |
+| both | 0 | 0 | 0 |
+
+- **`GDAL_SKIP`** lists every registered driver outside one allowlist,
+  appended to what it already holds (upstream's Java init skips MBTiles
+  and GPKG). Every later `GDALAllRegister`, whichever init runs it, honours
+  the option, so the drivers can't come back (§G1.19 found that the two
+  inits re-register each other's drivers). It is comma-separated because
+  driver names can contain spaces. The allowlist:
+  - imagery and elevation, as the engine's `ImageryFileType` names them:
+    GTiff, NITF (CADRG and CIB frames are NITF too), DTED, SRTMHGT,
+    JP2OpenJPEG. MrSID and ECW are in that list too, but this GDAL
+    doesn't have them;
+  - PNG, JPEG and GIF, for the images in KMZ overlays (the engine decodes
+    them itself, not through the KMLSUPEROVERLAY driver) and GeoPackage
+    tiles;
+  - MEM, which the engine creates by name (`BitmapFactory2`,
+    `GriddedCoverage`);
+  - the layer formats of `patches/ogr-open-driver-allowlist.patch`:
+    GeoJSON, GPKG, KML, LIBKML, ESRI Shapefile, GPX, FlatGeobuf, OGDI.
+    The two lists must change together (#156 drops FlatGeobuf, #168 brings
+    GML back).
+- **`CPL_VSIL_CURL_ALLOWED_FILENAME=none`** admits only a path named
+  `none`, compared against the whole `/vsicurl/…` name, so every curl file
+  system refuses every path: `/vsicurl`, `/vsicurl_streaming`,
+  `/vsicurl?url=`, `/vsizip` over curl, `/vsis3` and `/vsiaz` each fetched
+  without it and made no request with it. `CPL_VSIL_CURL_ALLOWED_EXTENSIONS`
+  would not do, because a URL can end in any extension: a URL ending in the
+  allowed one fetched.
+
+The existing vector allowlist in the open calls stays as a second layer.
+
+### The guard
+
+`dev/g2/render/test/gdal-network.sh`, in `make test-render` (CI's render
+job): the three hostile files above, each opened first by stock
+`gdal_translate` (the control, which must fetch), then by the engine in
+the four pairings that fetched before the fix. A/B on the dev Mac:
+
+| Engine | Control | VRT as basemap | VRT as elevation | `.ovr` as basemap | WMS as elevation | Canary |
+|---|---|---|---|---|---|---|
+| without the patch | all 3 fetched | `HEAD /vrt-source.tif` | `HEAD /vrt-source.tif` | `HEAD /ovr-source.tif` | 1,757 GETs | FAIL |
+| with the patch | all 3 fetched | 0 | 0 | 0 | 0 | PASS |
+
+With the fix, `make test-render` (the GeoTIFF and elevation gates among
+it), `layer.sh`'s six legs, `make test-gdal-network` and
+`make test-gdal-projection` all pass.
+
+### What it doesn't cover
+
+- **GeoJSON's `crs` link** ([issue #167](https://github.com/matteskes/macTAK/issues/167))
+  still fetches: `atak-headless --layer` sent `GET /crs.wkt` with this fix
+  in. OGR resolves the link with GDAL's own HTTP client (`CPLHTTPFetch`),
+  not a curl file system, and GeoJSON is an allowed driver. GDAL exports
+  `CPLHTTPSetFetchCallback`, so a refuse-all callback in `keepOffline()`
+  could close it.
+- **MOBAC map sources** reach the network through the engine's own Java
+  tile client, by design. When imagery arrives from other people (G6),
+  which map sources may load needs a decision of its own.

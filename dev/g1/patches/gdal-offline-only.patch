@@ -1,0 +1,30 @@
+--- a/tmp/takeng-src/java/com/atakmap/map/gdal/GdalLibrary.java
++++ b/tmp/takeng-src/java/com/atakmap/map/gdal/GdalLibrary.java
+@@ -72,6 +72,18 @@
+     {
+         return initialized;
+     }
++
++    /**
++     * macTAK (G1 security finding 10 follow-up, issue 155): keep GDAL from
++     * reaching the network for the rest of the process. A driver list in
++     * the open call isn't enough: GDAL opens a raster's {@code .ovr} sidecar
++     * with every driver, so a VRT next to an allowed GeoTIFF fetches its
++     * {@code /vsicurl/} source. Implemented in dev/g1/jni-extra/mactak_gdal.cpp,
++     * which holds the driver allowlist: every other driver goes into
++     * GDAL_SKIP (after what it already holds: MBTiles,GPKG above), and the
++     * curl-based file systems refuse every path.
++     */
++    static native void keepOffline();
+ 
+     private static void initImpl() throws IOException
+     {
+@@ -112,6 +124,8 @@
+ 
+         // NOTE: AllRegister automatically loads the shared libraries
+         gdal.AllRegister();
++        // macTAK (issue 155): straight after registering, before any open
++        keepOffline();
+         if (gdalDataPath != null)
+             gdal.SetConfigOption("GDAL_DATA", gdalDataPath);
+         // debugging

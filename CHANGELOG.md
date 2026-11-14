@@ -118,6 +118,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- Opening imagery or elevation can no longer make GDAL reach the network
+  (issue #155; `dev/g1/NOTES.md` §G1.26). Through the engine's own
+  imagery and elevation paths, a raster VRT fetched its `/vsicurl/`
+  source, a `GDAL_WMS` file sent GetMap requests, and a valid GeoTIFF
+  fetched through a hostile `.ovr` beside it. A driver list in each open
+  can't stop the last one, because GDAL opens a raster's `.ovr` with every
+  driver. So both GDAL inits now call `keepOffline()`
+  (`dev/g1/jni-extra/mactak_gdal.cpp`; the Java init through
+  `patches/gdal-offline-only.patch`). It puts every driver outside one
+  allowlist into `GDAL_SKIP`, and sets `CPL_VSIL_CURL_ALLOWED_FILENAME` so
+  that every curl file system refuses every path. The allowlist covers the
+  engine's imagery and elevation formats (GTiff, NITF, DTED, SRTMHGT,
+  JP2OpenJPEG), the images in KMZ overlays (PNG, JPEG, GIF), MEM, and the
+  layer formats. `dev/g2/render/test/gdal-network.sh`, in
+  `make test-render` (CI), fails without it. GeoJSON's `crs` link (#167)
+  is a different path and still fetches.
+
 - Opening a layer file can no longer make GDAL reach the network (G1.14
   finding 10, issue #147; `dev/g1/NOTES.md` §G1.19). The engine opened
   layers with every GDAL driver allowed, so a hostile OGR VRT fetched its

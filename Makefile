@@ -131,6 +131,7 @@ test-render:
 	bash dev/g2/render/test/basemap-gate.sh
 	bash dev/g2/render/test/geotiff.sh
 	bash dev/g2/render/test/elevation.sh
+	bash dev/g2/render/test/gdal-network.sh
 
 test-render-resize:
 	# M3.1: first real caller of NativeEgl.resize — pbuffer rebuild mid-run,
