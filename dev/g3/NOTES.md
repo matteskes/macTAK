@@ -15,7 +15,8 @@ actor in `MacTAKComms`, drives commo's C++ API through `CCommoShim`, and
 two clients through `fake-cot-server.py` see each other's contact, marker
 and presence (`make test-app-comms`, in CI's comms job). The app doesn't
 connect to anything yet: that comes with the CoT model and contacts in
-G3.2. Next: G3.2, the CoT model, contacts and markers on the map.
+G3.2. Next: G3.2, servers and identity (certificate enrollment, QUIC),
+in the order the plan revision below set.
 
 ## The plan (approved 2026-11-13)
 
@@ -50,12 +51,111 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
 |---|---|---|
 | **G3.0** | the package, the SwiftUI skeleton, `EngineBridge` v0, `make app` | `make test-app` (CI); G2's gates unchanged |
 | **G3.1** | commo from Swift: a C++ listener shim, a `CommoClient` actor | two clients through `fake-cot-server.py` see each other (CI) |
-| G3.2 | the CoT model in Swift, contacts, markers on the map | CoT parse tests; markers' pixels where expected (CI) |
-| G3.3 | GeoChat: All Chat Rooms and one-to-one | a chat leg in the comms test |
-| G3.4 | servers and the Keychain: `.p12` and data-package import, TLS | a TLS leg against a TLS fake server, in a throwaway keychain |
-| G3.5 | routes, and dropping, editing and deleting points | a route render; a dropped point reaches the other client |
-| G3.6 | the layer manager and coordinate tools (DD, DMS, MGRS) | per feature |
+| G3.2 | servers and identity: `.p12` and data-package import into the Keychain, TLS, **certificate enrollment** (1) and the device profile, **QUIC** (2) | TLS and QUIC legs against fake servers, in a throwaway keychain; an enrollment leg against a fake `signClient` |
+| G3.3 | **mesh networking** (3): multicast SA and chat, direct TCP, with no server | two clients on one Mac see each other with no server |
+| G3.4 | SA: the CoT model, contacts, **`ReportingRate`** (4), and **the self details** (5): a persistent uid, extended roles, `precisionlocation`, the location source | CoT parse tests; the rates and stale times follow `ReportingRate`'s rules |
+| G3.5 | **GeoChat** (6): All Chat Rooms, one-to-one, team and role rooms, user groups, delivered, read and pending receipts | a chat leg per room kind, with receipts |
+| G3.6 | **coordinates** (7): MGRS (the default), DD, DM, DMS, UTM; altitude in MSL (the default) or HAE | conversion tests against the engine's |
+| G3.7 | **markers on the map with 2525 symbols** (8), the self marker | markers' pixels where expected (CI) |
+| G3.8 | routes, dropping, editing and deleting points, the layer manager | a route render; a dropped point reaches the other client |
 | Exit | `make g3-exit`: two app instances, TLS, FTS and OTS | each sees the other's contact, marker (on screen) and chat |
+
+The numbers in bold refer to the sanity check's gaps (§Plan revision, below).
+Before the revision, the order was G3.2 the CoT model and markers, G3.3
+GeoChat, G3.4 servers and the Keychain, G3.5 routes and points, G3.6 the
+layer manager and coordinate tools.
+
+## Plan revision (2026-11-13): the 5.5 sanity check
+
+After G3.1, the plan was checked against how ATAK 5.5 implements each
+feature. The 5.5 app was read at the pin (`atak-civ` `9f6893d`), from
+`src/`'s git objects, since the sparse checkout leaves the app out:
+`git -C src show 9f6893d:<path>`. Findings came from reading code, not
+from running it.
+
+### What already matched
+
+- **Map items as engine features.** 5.5 draws map items through
+  `MapItemsFeatureDataStore`, `GLMarkerFeature` and `GLPolylineFeature`,
+  on by default (`mapitem.features.enabled` = 1). That is what this plan
+  does through `EngineBridge`.
+- **commo as the comms core.** ATAK drives the same core through its Java
+  binding (`CommsMapComponent`); G3.1 drives it from Swift.
+- **The self-SA's shape.** `takv platform='macTAK'` stays: macTAK is not
+  an official TAK product.
+
+### The eight gaps, adopted by the owner in this order
+
+1. **Certificate enrollment.** TAK Server users usually get a certificate
+   by username and password. ATAK enrolls through commo's own API
+   (`enableEnrollment`; `core/impl/enrollmentmanager.cpp` builds
+   `signClient`). It then fetches a device profile from
+   `/api/tls/profile/enrollment?clientUid=…`, with basic auth on port 8446
+   (`CertificateEnrollmentClient`, `DeviceProfileOperation`).
+2. **QUIC streaming.** 5.5's stream transports are `tcp`, `ssl` and
+   `quic`, with `network_quic_enabled` on by default. ATAK also opens a
+   QUIC inbound interface on port 4243. Our commo already has QUIC
+   (`make test-quic`).
+3. **Mesh networking.** With no server, ATAK still works peer to peer:
+   SA on multicast 239.2.3.1:6969, chat on 224.10.10.1:17012, and direct
+   TCP on port 4242 (`TadilJContact`, `ChatManagerMapComponent`,
+   `CotMapComponent`). Still to check: what macOS's local-network
+   permission asks of a multicast client.
+4. **SA pacing (`ReportingRate`).**
+   - It keeps two streams, unreliable (mesh) and reliable (servers).
+   - The strategy is "Dynamic" by default: 30 s and 180 s when
+     stationary, and between 20 s and 2 s when moving.
+   - "Constant" sends every 3 s and 15 s.
+   - The stale time is padded past the interval (`STALE_PADDING`, 15 s).
+
+   G3.1 beacons on a fixed interval with a 30 s stale.
+5. **The self details.**
+   - **A persistent device uid:** ATAK's `bestDeviceUID` is never cloned
+     with the preferences. Stable uids also matter on OpenTAKServer
+     (issue 145).
+   - **5.5's extended roles:** `customRole`, `customRoleAbbreviation` and
+     `displayAsSymbologyGraphic`, mapped to `__group` by the kernel's
+     `gov.tak.api.cot.detail.GroupDetailHandler`.
+   - **`precisionlocation`.**
+   - **A location source:** CoreLocation, manual entry ("set my
+     location"), or both.
+6. **GeoChat rooms and receipts.** Besides "All Chat Rooms" and
+   one-to-one, ATAK has team rooms (`TeamGroup`), role rooms (`RoleGroup`)
+   and user-made groups (`ChatDatabase`'s `Groups`), with delivered, read
+   and pending receipts (`b-t-f-d`, `b-t-f-r`, `b-t-f-p`, through
+   `__chatreceipt`).
+7. **Coordinates.** `CoordinateFormat` has MGRS (the default), DD, DM,
+   DMS, UTM and ADDR (a street address, which needs a geocoder). Altitude
+   shows in MSL by default (`UnitPreferences`), which needs a geoid.
+   ADDR waits for a geocoder.
+8. **Marker symbols.** 5.5 renders MIL-STD-2525 symbols through the
+   kernel (`gov.tak.platform.symbology.milstd2525`, on `mil-sym-java`),
+   and that code is already in our JVM. The revised plan uses it through
+   `EngineBridge` instead of drawing an icon set of our own.
+
+### Open: reuse the kernel's app-level code, or port it
+
+5.5 moved code that used to be the app's into takkernel's `shared`
+module, which our JVM already loads:
+
+- CoT detail handlers and roles (`gov.tak.api.cot.*`);
+- the import resolvers (`gov.tak.api.importfiles`, imported by 52 app
+  files);
+- 2525 symbology;
+- widgets;
+- a contacts API.
+
+That sits between "the Java is the spec for a Swift rewrite" and G6 rung 8
+(no JVM). Each package can either be called through `EngineBridge` now or
+ported to Swift. The owner will discuss the upsides of each later.
+Until then, the kernel's version is the 5.5 behaviour to match. Gap 8 is
+the exception: the owner chose to reuse the kernel's 2525 symbology.
+
+### Not adopted (yet)
+
+A G3 exit leg against a real ATAK-CIV client, such as an Android
+emulator, would catch interop drift that two macTAK clients can't. It
+was suggested in the sanity check but not adopted.
 
 ## G3.0 — the app skeleton (2026-11-13, branch `g3/app-skeleton`)
 

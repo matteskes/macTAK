@@ -58,6 +58,29 @@ Gate-gated plan. Each gate has: **objective → exit criteria (demo artifact) �
 
 Tracks/contacts list, map overlays (CoT markers, routes), chat (GeoChat), layer manager, coordinate tools; certificate/trust store UI (port `AtakCertificateDatabase` concept to Keychain). **Exit:** two Mac clients on one FTS server see each other's markers and chat live.
 
+**Plan revision (2026-11-13): checked against ATAK 5.5.** A read of the 5.5 app at the pin found eight things G3 left out. The owner adopted all eight, to be built in this order:
+
+1. certificate enrollment, through commo's enrollment API and the server's device profile;
+2. QUIC streaming;
+3. mesh networking: multicast SA and chat, and direct TCP, with no server;
+4. ATAK's SA reporting rates;
+5. the self details: a persistent uid, extended roles, `precisionlocation`, the location source;
+6. GeoChat's team, role and group rooms, with receipts;
+7. coordinates: MGRS, DD, DM, DMS and UTM, with altitude in MSL;
+8. markers drawn with the kernel's MIL-STD-2525 symbols.
+
+The milestones are now:
+
+- G3.2 servers and identity;
+- G3.3 mesh;
+- G3.4 SA and contacts;
+- G3.5 GeoChat;
+- G3.6 coordinates;
+- G3.7 markers;
+- G3.8 routes, points and the layer manager.
+
+The rendering approach already matches 5.5: map items as engine features, on by default upstream. One question is still open: 5.5 moved some app code into takkernel's `shared` module (CoT detail handlers, import resolvers, symbology, widgets, contacts). Should the app reuse that code on the JVM, or port it to Swift? Details and evidence: `../dev/g3/NOTES.md` §Plan revision.
+
 **G3.0 (2026-11-13): the app skeleton.** The plan was approved on 2026-11-13: seven milestones (G3.0–G3.6) and an exit run against FreeTAKServer and OpenTAKServer, over TLS with client certificates from the Keychain (`../dev/g3/NOTES.md`). G3.0 is done: `app/` is a Swift package whose SwiftUI app opens the engine's live map beside a sidebar (`make app`); the G2 harness is a product of the same package, and Swift reaches the engine only through `mactak.engine.EngineBridge`. **G3.1 (2026-11-13): commo from Swift.** `CommoClient`, a Swift actor, drives commo's C++ API through `CCommoShim` (commo's listeners forwarded to C callbacks behind a plain C API, so no Swift C++ interop), and two clients through the fake server see each other's contact, marker and presence (`make test-app-comms`, CI). Next: G3.2, the CoT model and markers on the map.
 
 **Open before G3 (2026-11-11):** ~~which upstream version the app layer targets~~ settled: 5.5.1.10, the baseline since the re-pin below ([rebase-study-5.5.md](rebase-study-5.5.md)); ~~and whether ATAK's app code is reused on the JVM behind more Android stand-ins or rewritten in Swift~~ **decided 2026-11-12: rewritten in Swift**, package by package with the Java as the specification; the engine and commo stay as ported; Swift calls commo's C++ API directly, falling back to the existing JNI boundary if that proves challenging; Swift reaches the engine through a narrow JVM facade, with direct C++ calls only where C++ owns the data, and measured renderer ports to C++ where the exit run shows JVM overhead; dropping the JVM entirely is G6 rung 8, after the application stands up ([atak-feature-coverage.md](atak-feature-coverage.md) §The app-layer decision).
@@ -83,11 +106,22 @@ Remains: `:shared`'s unit tests (g55 trap 11), commo's QUIC failure cause
 
 ## G4 — Data & import parity rung 1 (2–4 mo)
 
-KML/KMZ, GPX, shapefile, GeoJSON import/export (GDAL-backed via the engine's `formats`/`db` layers); offline elevation (DTED/DEM via gdal/las stack); MRU/route tools. **Exit:** a workflow a WinTAK user performs daily works identically.
+KML/KMZ, GPX, shapefile, GeoJSON import/export (GDAL-backed via the engine's `formats`/`db` layers); offline elevation (DTED/DEM via gdal/las stack); MRU/route tools. ATAK 5.5 also imports these, and parity means covering them:
+
+- GML ([#168](https://github.com/matteskes/macTAK/issues/168));
+- GeoPackage;
+- MVT tiles;
+- ATAK's DRW and LPT files;
+- user icon sets;
+- zipped DTED;
+- mission packages;
+- CoT files.
+
+The format-detection spec for all of them is in takkernel's `gov.tak.api.importfiles` resolvers (2026-11-13; `../dev/g1/NOTES.md` §G1.19 for the layer formats). **Exit:** a workflow a WinTAK user performs daily works identically.
 
 ## G5 — First deployable core client (2–4 mo)
 
-Code-signing/notarization, Keychain-based cert provisioning, auto-update, crash reporting (replace `libunwindstack-ndk`/`jnicrash` with macOS equivalent), GPL-3.0 source publication pipeline. **Exit:** notarized .app given to 5 external testers; 2-week field trial against FTS + TAK Server.
+Code-signing/notarization, Keychain-based cert provisioning (enrollment itself moved to G3.2 on 2026-11-13), auto-update, crash reporting (replace `libunwindstack-ndk`/`jnicrash` with macOS equivalent), GPL-3.0 source publication pipeline. **Exit:** notarized .app given to 5 external testers; 2-week field trial against FTS + TAK Server.
 
 **G0–G5 total: ~12–18 months.**
 
