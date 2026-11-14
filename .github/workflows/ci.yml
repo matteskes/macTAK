@@ -355,6 +355,14 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/elevation.sh
 
+      - name: Imagery and elevation can't reach the network (issue 155)
+        # hostile rasters (a /vsicurl VRT, a GeoTIFF with a VRT .ovr, a
+        # GDAL_WMS file) aimed at a loopback listener: stock GDAL must fetch,
+        # the engine's basemap and elevation paths must not
+        # (render/test/gdal-network.sh; dev/g1/NOTES.md §G1.26)
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/gdal-network.sh
+
       - name: Dynamic-size render smoke (--resize mid-run, M3.1)
         # pbuffer rebuild via NativeEgl.resize; PASS requires the surface's
         # OnSizeChangedListeners to fire and content pixels at the new size
