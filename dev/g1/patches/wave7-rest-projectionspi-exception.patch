@@ -1,0 +1,18 @@
+--- a/tmp/takeng-src/jni/jprojectionfactory.cpp
++++ b/tmp/takeng-src/jni/jprojectionfactory.cpp
+@@ -114,6 +114,15 @@
+         if(env->ExceptionCheck())
+             return TE_Err;
+         Java::JNILocalRef result(*env, env->CallObjectMethod(impl, ProjectionSpi_class.create, srid));
++        // macTAK (issue 142): a Java SPI that throws failed, it didn't decline;
++        // upstream returned TE_InvalidArg with the exception still pending, so
++        // ProjectionFactory3 asked the next SPI (and its caller ran) with it
++        // in flight. Report it once and clear it, as G2 did for GLLayerSpi2.
++        if(env->ExceptionCheck()) {
++            env->ExceptionDescribe();
++            env->ExceptionClear();
++            return TE_Err;
++        }
+         if(!result)
+             return TE_InvalidArg;
+         value = Projection2Ptr(new ManagedProjection(*env, result), Memory_deleter_const<Projection2, ManagedProjection>);

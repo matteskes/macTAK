@@ -32,3 +32,6 @@ __pycache__/
 
 # G3 app bundle (app/bundle.sh)
 /build/
+
+# JVM crash logs (a crashing JNI test or A/B build writes one into its cwd)
+hs_err_pid*.log

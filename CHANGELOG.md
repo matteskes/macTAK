@@ -83,6 +83,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every surface; and `ManagedMapRenderer2.h` reused `ManagedLayer.h`'s
   include guard. Pinned in `make test-jni`
   (`jni-tests/core_renderer_guards_test.cpp`), guards and kernel mode.
+- Wave 7, batch 5 (issue #142; `dev/g1/NOTES.md` §G1.25), which
+  completes wave 7: the quantized-mesh source layer, the geometry model,
+  the bitmap loader's protocol handler, the `IOProviderFactory` proxy and
+  the projection SPI no longer call through NULL method IDs when their
+  class init fails. The bitmap loader's init, which checked nothing, gets
+  the house guard. A Java `ProjectionSpi` that throws no longer leaves
+  its exception pending through `ProjectionFactory3_create`. Pinned in
+  `make test-jni` (`jni-tests/rest_guards_test.cpp`), guards and kernel
+  mode.
 
 ### Security
 

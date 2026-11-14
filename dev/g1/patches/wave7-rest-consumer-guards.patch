@@ -1,0 +1,341 @@
+--- a/tmp/takeng-src/jni/interop/formats/quantizedmesh/ManagedQMESourceLayer.cpp
++++ b/tmp/takeng-src/jni/interop/formats/quantizedmesh/ManagedQMESourceLayer.cpp
+@@ -71,6 +71,10 @@
+ 
+ TAKErr ManagedQMESourceLayer::getMinZoom(int *value) const NOTHROWS
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!QMESourceLayer_class.getMinZoom)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -84,6 +88,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::getMaxZoom(int *value) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.getMaxZoom)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -97,6 +103,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::isLocalDirectoryValid(bool *value) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.isLocalDirectoryValid)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -110,6 +118,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::getClosestLevel(int *value, double geodeticSpan) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.getClosestLevel)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -123,6 +133,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::getMaxLevel(int *value) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.getMaxLevel)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -136,6 +148,10 @@
+ 
+ TAKErr ManagedQMESourceLayer::getDirectory(TAK::Engine::Port::String *dirname) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.getDirectory)
++        return TE_Err;
++    if(!MiscHelpers.file_getAbsolutePath)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     if(!dirname)
+         return TE_InvalidArg;
+@@ -153,6 +169,10 @@
+ 
+ TAKErr ManagedQMESourceLayer::getLevelDirName(TAK::Engine::Port::String *dirname, int z) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.getLevelDirectory)
++        return TE_Err;
++    if(!MiscHelpers.file_getAbsolutePath)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     if(!dirname)
+         return TE_InvalidArg;
+@@ -170,6 +190,10 @@
+ 
+ TAKErr ManagedQMESourceLayer::getTileFilename(TAK::Engine::Port::String *filename, int x, int y, int z) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.getTileFile)
++        return TE_Err;
++    if(!MiscHelpers.file_getAbsolutePath)
++        return TE_Err;
+     TAKErr code(TE_Ok);
+     if(!filename)
+         return TE_InvalidArg;
+@@ -187,6 +211,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::isValid(bool *value) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.isValid)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -200,6 +226,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::isEnabled(bool *value) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.isEnabled)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -213,6 +241,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::hasTile(bool *value, int x, int y, int level) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.hasTile)
++        return TE_Err;
+     if(!value)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -226,6 +256,24 @@
+ 
+ TAKErr ManagedQMESourceLayer::getAvailableExtents(TAK::Engine::Port::Vector<TAK::Engine::Formats::QuantizedMesh::TileExtents> *extents, int level) const NOTHROWS
+ {
++    if(!QMESourceLayer_class.getAvailableExtents)
++        return TE_Err;
++    if(!MiscHelpers.list_iterator)
++        return TE_Err;
++    if(!MiscHelpers.iterator_hasNext)
++        return TE_Err;
++    if(!MiscHelpers.iterator_next)
++        return TE_Err;
++    if(!TileExtents_class.getStartX)
++        return TE_Err;
++    if(!TileExtents_class.getStartY)
++        return TE_Err;
++    if(!TileExtents_class.getEndX)
++        return TE_Err;
++    if(!TileExtents_class.getEndY)
++        return TE_Err;
++    if(!TileExtents_class.getLevel)
++        return TE_Err;
+     if(!extents)
+         return TE_InvalidArg;
+     LocalJNIEnv env;
+@@ -261,6 +309,8 @@
+ 
+ TAKErr ManagedQMESourceLayer::startDataRequest(int x, int y, int z) NOTHROWS
+ {
++    if(!QMESourceLayer_class.startDataRequest)
++        return TE_Err;
+     LocalJNIEnv env;
+     if(env->ExceptionCheck())
+         return TE_Err;
+--- a/tmp/takeng-src/jni/interop/math/ManagedGeometryModel.cpp
++++ b/tmp/takeng-src/jni/interop/math/ManagedGeometryModel.cpp
+@@ -45,6 +45,16 @@
+ }
+ bool ManagedGeometryModel::intersect(Point2<double> *value, const Ray2<double> &ray) const
+ {
++    // macTAK (issue 142): when the class init failed, the method IDs
++    // the consumers call through are NULL; each consumer bails first
++    if(!GeometryModel_class.intersect)
++        return false;
++    if(!Ray_class.ctor)
++        return false;
++    if(!Vector3D_class.ctor)
++        return false;
++    if(!pointD_ctor__DDD)
++        return false;
+     if(!value)
+         return false;
+     LocalJNIEnv env;
+--- a/tmp/takeng-src/jni/jglbitmaploader.cpp
++++ b/tmp/takeng-src/jni/jglbitmaploader.cpp
+@@ -70,6 +70,10 @@
+     }
+     TAKErr LoaderSpiProtocolHandler::handleURI(DataInput2Ptr &ctx, const char * uri) NOTHROWS
+     {
++        // macTAK (issue 142): when the class init failed, the method IDs
++        // the consumers call through are NULL; each consumer bails first
++        if(!AbstractInputStreamLoaderSpi_class.openStream)
++            return TE_Err;
+         LocalJNIEnv env;
+         Java::JNILocalRef muri(*env, env->NewStringUTF(uri));
+         Java::JNILocalRef mstream(*env, env->CallObjectMethod(impl, AbstractInputStreamLoaderSpi_class.openStream, muri.get()));
+@@ -85,8 +89,14 @@
+ 
+     bool AbstractInputStreamLoaderSpi_init(JNIEnv &env) NOTHROWS
+     {
++        // macTAK (issue 142): this init checked nothing; a failed findClass
++        // went straight into GetMethodID on a NULL class
+         AbstractInputStreamLoaderSpi_class.id = ATAKMapEngineJNI_findClass(&env, "com/atakmap/android/maps/graphics/GLBitmapLoader$AbstractInputStreamLoaderSpi");
++        if(!AbstractInputStreamLoaderSpi_class.id)
++            return false;
+         AbstractInputStreamLoaderSpi_class.openStream = env.GetMethodID(AbstractInputStreamLoaderSpi_class.id, "openStream", "(Ljava/lang/String;)Ljava/io/InputStream;");
++        if(!AbstractInputStreamLoaderSpi_class.openStream)
++            return false;
+         return true;
+     }
+ }
+--- a/tmp/takeng-src/jni/jioproviderfactory.cpp
++++ b/tmp/takeng-src/jni/jioproviderfactory.cpp
+@@ -124,6 +124,12 @@
+     // DatabaseProvider
+     TAKErr IOProviderFactoryProxy::create(DatabasePtr& value, const DatabaseInformation& information) NOTHROWS
+     {
++        // macTAK (issue 142): when the class init failed, the method IDs
++        // the consumers call through are NULL; each consumer bails first
++        if(!IOProviderFactory_class.createDatabase)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         TAKErr code(TE_Ok);
+         Port::String curi;
+@@ -149,6 +155,12 @@
+     // Filesystem
+     TAKErr IOProviderFactoryProxy::createTempFile(TAK::Engine::Port::String &value, const char *prefix, const char *suffix, const char *dir) NOTHROWS
+     {
++        if(!IOProviderFactory_class.createTempFile)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
++        if(!File_class.getAbsolutePath)
++            return TE_Err;
+         LocalJNIEnv env;
+ 
+         if(prefix == nullptr)
+@@ -226,6 +238,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::listFiles(TAK::Engine::Port::Collection<TAK::Engine::Port::String> &value, const char *path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.list)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         TAKErr code(TE_Ok);
+         bool b;
+         code = this->exists(&b, path);
+@@ -268,6 +284,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::length(int64_t *value, const char* path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.length)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         TAKErr code(TE_Ok);
+         bool b;
+         code = this->exists(&b, path);
+@@ -314,6 +334,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::getLastModified(int64_t *value, const char* path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.lastModified)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+@@ -327,6 +351,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::isDirectory(bool *value, const char* path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.isDirectory)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+@@ -340,6 +368,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::isFile(bool *value, const char* path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.isFile)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+@@ -353,6 +385,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::exists(bool *value, const char *path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.exists)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+@@ -366,6 +402,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::remove(const char *path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.remove)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+@@ -378,6 +418,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::mkdirs(const char* path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.mkdirs)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+@@ -390,6 +434,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::openFile(DataInput2Ptr &value, const char *path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.getInputStream)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+@@ -406,6 +454,10 @@
+     }
+     TAKErr IOProviderFactoryProxy::openFile(DataOutput2Ptr &value, const char *path) NOTHROWS
+     {
++        if(!IOProviderFactory_class.getOutputStream)
++            return TE_Err;
++        if(!File_class.ctor)
++            return TE_Err;
+         LocalJNIEnv env;
+         JNILocalRef mpath(*env, env->NewStringUTF(path));
+         JNILocalRef mfile(*env, env->NewObject(File_class.id, File_class.ctor, mpath.get()));
+--- a/tmp/takeng-src/jni/jprojectionfactory.cpp
++++ b/tmp/takeng-src/jni/jprojectionfactory.cpp
+@@ -106,6 +106,10 @@
+     }
+     TAKErr ManagedProjectionSpi::create(Projection2Ptr &value, const int srid) NOTHROWS
+     {
++        // macTAK (issue 142): when the class init failed, the method IDs
++        // the consumers call through are NULL; each consumer bails first
++        if(!ProjectionSpi_class.create)
++            return TE_Err;
+         LocalJNIEnv env;
+         if(env->ExceptionCheck())
+             return TE_Err;
