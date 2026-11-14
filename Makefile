@@ -123,6 +123,7 @@ test-quic:
 
 test-render:
 	bash dev/g2/render/test/gles-shim.sh
+	bash dev/g2/render/test/graphics.sh
 	bash dev/g2/render/test/input-bridge.sh
 	bash dev/g2/render/run.sh --out dev/g2/build/render-smoke.png
 	bash dev/g2/render/test/asset-icons.sh dev/g2/build/render-layer.png

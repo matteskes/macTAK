@@ -105,6 +105,43 @@ static void bufferRelease(JNIEnv *env, BufRef *ref)
     ref->arr = NULL; ref->elems = NULL;
 }
 
+/* Android's check on a Java (array, offset) pair (issue 133): throw
+ * IllegalArgumentException, with Android's messages, when offset < 0 or
+ * length - offset < needed. A null array is left to the call, as before. */
+static int arrayOutOfBounds(JNIEnv *env, jarray arr, jint offset, jlong needed)
+{
+    const char *msg = NULL;
+    if (!arr) return 0;
+    if (offset < 0) msg = "offset < 0";
+    else if ((jlong)(*env)->GetArrayLength(env, arr) - offset < needed) msg = "length - offset < needed";
+    if (!msg) return 0;
+    (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"), msg);
+    return 1;
+}
+
+/* How many values a glGet*v query writes, as Android's getNeededCount has
+ * it for the multi-valued ES 2.0/3.0 pnames; every other pname writes one. */
+static jlong getNeededCount(GLenum pname)
+{
+    GLint n = 0;
+    switch (pname) {
+        case GL_ALIASED_LINE_WIDTH_RANGE: case GL_ALIASED_POINT_SIZE_RANGE:
+        case GL_DEPTH_RANGE: case GL_MAX_VIEWPORT_DIMS:
+            return 2;
+        case GL_BLEND_COLOR: case GL_COLOR_CLEAR_VALUE: case GL_COLOR_WRITEMASK:
+        case GL_SCISSOR_BOX: case GL_VIEWPORT:
+            return 4;
+        case GL_COMPRESSED_TEXTURE_FORMATS:
+            glGetIntegerv(GL_NUM_COMPRESSED_TEXTURE_FORMATS, &n); return n;
+        case GL_SHADER_BINARY_FORMATS:
+            glGetIntegerv(GL_NUM_SHADER_BINARY_FORMATS, &n); return n;
+        case GL_PROGRAM_BINARY_FORMATS:
+            glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &n); return n;
+        default:
+            return 1;
+    }
+}
+
 /* MACTAK_GL_DEBUG set: name the Java call site that used attribute -1 (once per entry point). */
 static void attribMinusOne(JNIEnv *env, const char *fn)
 {
@@ -404,6 +441,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glCullFace__I(JNIEnv *env, jcl
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glDeleteBuffers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteBuffers((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -418,6 +456,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glDeleteBuffers__ILjava_nio_In
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glDeleteFramebuffers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteFramebuffers((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -438,6 +477,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glDeleteProgram__I(JNIEnv *env
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glDeleteRenderbuffers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteRenderbuffers((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -459,6 +499,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glDeleteShader__I(JNIEnv *env,
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glDeleteTextures__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteTextures((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -587,6 +628,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glFrontFace__I(JNIEnv *env, jc
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenBuffers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenBuffers((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -608,6 +650,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenerateMipmap__I(JNIEnv *en
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenFramebuffers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenFramebuffers((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -622,6 +665,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenFramebuffers__ILjava_nio_
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenRenderbuffers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenRenderbuffers((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -636,6 +680,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenRenderbuffers__ILjava_nio
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenTextures__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenTextures((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -650,6 +695,10 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGenTextures__ILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetActiveAttrib__III_3II_3II_3II_3BI(JNIEnv *env, jclass cls, jint a0, jint a1, jint a2, jintArray a3, jint a4, jintArray a5, jint a6, jintArray a7, jint a8, jbyteArray a9, jint a10)
 {
+    if (arrayOutOfBounds(env, a3, a4, 1)) return;
+    if (arrayOutOfBounds(env, a5, a6, 1)) return;
+    if (arrayOutOfBounds(env, a7, a8, 1)) return;
+    if (arrayOutOfBounds(env, a9, a10, a2)) return;
     jint *p3 = a3 ? (*env)->GetIntArrayElements(env, a3, NULL) : NULL;
     jint *p5 = a5 ? (*env)->GetIntArrayElements(env, a5, NULL) : NULL;
     jint *p7 = a7 ? (*env)->GetIntArrayElements(env, a7, NULL) : NULL;
@@ -675,6 +724,10 @@ JNIEXPORT jobject JNICALL Java_android_opengl_GLES20_glGetActiveAttrib__II_3II_3
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetActiveUniform__III_3II_3II_3II_3BI(JNIEnv *env, jclass cls, jint a0, jint a1, jint a2, jintArray a3, jint a4, jintArray a5, jint a6, jintArray a7, jint a8, jbyteArray a9, jint a10)
 {
+    if (arrayOutOfBounds(env, a3, a4, 1)) return;
+    if (arrayOutOfBounds(env, a5, a6, 1)) return;
+    if (arrayOutOfBounds(env, a7, a8, 1)) return;
+    if (arrayOutOfBounds(env, a9, a10, a2)) return;
     jint *p3 = a3 ? (*env)->GetIntArrayElements(env, a3, NULL) : NULL;
     jint *p5 = a5 ? (*env)->GetIntArrayElements(env, a5, NULL) : NULL;
     jint *p7 = a7 ? (*env)->GetIntArrayElements(env, a7, NULL) : NULL;
@@ -700,6 +753,8 @@ JNIEXPORT jobject JNICALL Java_android_opengl_GLES20_glGetActiveUniform__II_3II_
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetAttachedShaders__II_3II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3, jintArray a4, jint a5)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
+    if (arrayOutOfBounds(env, a4, a5, a1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     jint *p4 = a4 ? (*env)->GetIntArrayElements(env, a4, NULL) : NULL;
     glGetAttachedShaders((GLuint)a0, (GLsizei)a1, (GLsizei *)(uintptr_t)(p2 ? p2 + a3 : NULL), (GLuint *)(uintptr_t)(p4 ? p4 + a5 : NULL));
@@ -726,6 +781,7 @@ JNIEXPORT jint JNICALL Java_android_opengl_GLES20_glGetAttribLocation__ILjava_la
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetBooleanv__I_3ZI(JNIEnv *env, jclass cls, jint a0, jbooleanArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, getNeededCount((GLenum)a0))) return;
     jboolean *p1 = a1 ? (*env)->GetBooleanArrayElements(env, a1, NULL) : NULL;
     glGetBooleanv((GLenum)a0, (GLboolean *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseBooleanArrayElements(env, a1, p1, 0);
@@ -740,6 +796,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetBooleanv__ILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetBufferParameteriv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetBufferParameteriv((GLenum)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -762,6 +819,7 @@ JNIEXPORT jint JNICALL Java_android_opengl_GLES20_glGetError__(JNIEnv *env, jcla
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetFloatv__I_3FI(JNIEnv *env, jclass cls, jint a0, jfloatArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, getNeededCount((GLenum)a0))) return;
     jfloat *p1 = a1 ? (*env)->GetFloatArrayElements(env, a1, NULL) : NULL;
     glGetFloatv((GLenum)a0, (GLfloat *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseFloatArrayElements(env, a1, p1, 0);
@@ -776,6 +834,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetFloatv__ILjava_nio_FloatB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetFramebufferAttachmentParameteriv__III_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jint a2, jintArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, 1)) return;
     jint *p3 = a3 ? (*env)->GetIntArrayElements(env, a3, NULL) : NULL;
     glGetFramebufferAttachmentParameteriv((GLenum)a0, (GLenum)a1, (GLenum)a2, (GLint *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseIntArrayElements(env, a3, p3, 0);
@@ -790,6 +849,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetFramebufferAttachmentPara
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetIntegerv__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, getNeededCount((GLenum)a0))) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGetIntegerv((GLenum)a0, (GLint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -804,6 +864,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetIntegerv__ILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetProgramiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetProgramiv((GLuint)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -826,6 +887,7 @@ JNIEXPORT jobject JNICALL Java_android_opengl_GLES20_glGetProgramInfoLog__I(JNIE
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetRenderbufferParameteriv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetRenderbufferParameteriv((GLenum)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -840,6 +902,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetRenderbufferParameteriv__
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetShaderiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetShaderiv((GLuint)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -862,6 +925,8 @@ JNIEXPORT jobject JNICALL Java_android_opengl_GLES20_glGetShaderInfoLog__I(JNIEn
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetShaderPrecisionFormat__II_3II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3, jintArray a4, jint a5)
 {
+    if (arrayOutOfBounds(env, a2, a3, 2)) return;
+    if (arrayOutOfBounds(env, a4, a5, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     jint *p4 = a4 ? (*env)->GetIntArrayElements(env, a4, NULL) : NULL;
     glGetShaderPrecisionFormat((GLenum)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL), (GLint *)(uintptr_t)(p4 ? p4 + a5 : NULL));
@@ -880,6 +945,8 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetShaderPrecisionFormat__II
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetShaderSource__II_3II_3BI(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3, jbyteArray a4, jint a5)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
+    if (arrayOutOfBounds(env, a4, a5, a1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     jbyte *p4 = a4 ? (*env)->GetByteArrayElements(env, a4, NULL) : NULL;
     glGetShaderSource((GLuint)a0, (GLsizei)a1, (GLsizei *)(uintptr_t)(p2 ? p2 + a3 : NULL), (GLchar *)(uintptr_t)(p4 ? p4 + a5 : NULL));
@@ -895,6 +962,7 @@ JNIEXPORT jobject JNICALL Java_android_opengl_GLES20_glGetString__I(JNIEnv *env,
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetTexParameterfv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glGetTexParameterfv((GLenum)a0, (GLenum)a1, (GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -909,6 +977,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetTexParameterfv__IILjava_n
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetTexParameteriv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetTexParameteriv((GLenum)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -923,6 +992,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetTexParameteriv__IILjava_n
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetUniformfv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glGetUniformfv((GLuint)a0, (GLint)a1, (GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -937,6 +1007,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetUniformfv__IILjava_nio_Fl
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetUniformiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetUniformiv((GLuint)a0, (GLint)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -959,6 +1030,7 @@ JNIEXPORT jint JNICALL Java_android_opengl_GLES20_glGetUniformLocation__ILjava_l
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetVertexAttribfv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (a1 == GL_CURRENT_VERTEX_ATTRIB ? 4 : 1))) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glGetVertexAttribfv((GLuint)a0, (GLenum)a1, (GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -973,6 +1045,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetVertexAttribfv__IILjava_n
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glGetVertexAttribiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (a1 == GL_CURRENT_VERTEX_ATTRIB ? 4 : 1))) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetVertexAttribiv((GLuint)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1113,6 +1186,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glScissor__IIII(JNIEnv *env, j
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glShaderBinary__I_3IIILjava_nio_Buffer_2I(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2, jint a3, jobject a4, jint a5)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     BufRef b4; void *p4 = bufferAcquire(env, a4, 0, &b4);
     glShaderBinary((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL), (GLenum)a3, (const void *)(uintptr_t)p4, (GLsizei)a5);
@@ -1195,6 +1269,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glTexParameterf__IIF(JNIEnv *e
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glTexParameterfv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glTexParameterfv((GLenum)a0, (GLenum)a1, (const GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -1216,6 +1291,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glTexParameteri__III(JNIEnv *e
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glTexParameteriv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glTexParameteriv((GLenum)a0, (GLenum)a1, (const GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1244,6 +1320,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform1f__IF(JNIEnv *env, j
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform1fv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 1)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glUniform1fv((GLint)a0, (GLsizei)a1, (const GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -1265,6 +1342,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform1i__II(JNIEnv *env, j
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform1iv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform1iv((GLint)a0, (GLsizei)a1, (const GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1286,6 +1364,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform2f__IFF(JNIEnv *env, 
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform2fv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 2)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glUniform2fv((GLint)a0, (GLsizei)a1, (const GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -1307,6 +1386,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform2i__III(JNIEnv *env, 
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform2iv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 2)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform2iv((GLint)a0, (GLsizei)a1, (const GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1328,6 +1408,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform3f__IFFF(JNIEnv *env,
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform3fv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 3)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glUniform3fv((GLint)a0, (GLsizei)a1, (const GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -1349,6 +1430,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform3i__IIII(JNIEnv *env,
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform3iv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 3)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform3iv((GLint)a0, (GLsizei)a1, (const GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1370,6 +1452,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform4f__IFFFF(JNIEnv *env
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform4fv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 4)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glUniform4fv((GLint)a0, (GLsizei)a1, (const GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -1391,6 +1474,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform4i__IIIII(JNIEnv *env
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform4iv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 4)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform4iv((GLint)a0, (GLsizei)a1, (const GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1405,6 +1489,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniform4iv__IILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniformMatrix2fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 4)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix2fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1419,6 +1504,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniformMatrix2fv__IIZLjava_n
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniformMatrix3fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 9)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix3fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1433,6 +1519,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniformMatrix3fv__IIZLjava_n
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glUniformMatrix4fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 16)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix4fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1470,6 +1557,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib1f__IF(JNIEnv *e
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib1fv__I_3FI(JNIEnv *env, jclass cls, jint a0, jfloatArray a1, jint a2)
 {
     if (a0 < 0) { attribMinusOne(env, "glVertexAttrib1fv"); return; }
+    if (arrayOutOfBounds(env, a1, a2, 1)) return;
     jfloat *p1 = a1 ? (*env)->GetFloatArrayElements(env, a1, NULL) : NULL;
     glVertexAttrib1fv((GLuint)a0, (const GLfloat *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseFloatArrayElements(env, a1, p1, 0);
@@ -1494,6 +1582,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib2f__IFF(JNIEnv *
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib2fv__I_3FI(JNIEnv *env, jclass cls, jint a0, jfloatArray a1, jint a2)
 {
     if (a0 < 0) { attribMinusOne(env, "glVertexAttrib2fv"); return; }
+    if (arrayOutOfBounds(env, a1, a2, 2)) return;
     jfloat *p1 = a1 ? (*env)->GetFloatArrayElements(env, a1, NULL) : NULL;
     glVertexAttrib2fv((GLuint)a0, (const GLfloat *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseFloatArrayElements(env, a1, p1, 0);
@@ -1518,6 +1607,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib3f__IFFF(JNIEnv 
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib3fv__I_3FI(JNIEnv *env, jclass cls, jint a0, jfloatArray a1, jint a2)
 {
     if (a0 < 0) { attribMinusOne(env, "glVertexAttrib3fv"); return; }
+    if (arrayOutOfBounds(env, a1, a2, 3)) return;
     jfloat *p1 = a1 ? (*env)->GetFloatArrayElements(env, a1, NULL) : NULL;
     glVertexAttrib3fv((GLuint)a0, (const GLfloat *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseFloatArrayElements(env, a1, p1, 0);
@@ -1542,6 +1632,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib4f__IFFFF(JNIEnv
 JNIEXPORT void JNICALL Java_android_opengl_GLES20_glVertexAttrib4fv__I_3FI(JNIEnv *env, jclass cls, jint a0, jfloatArray a1, jint a2)
 {
     if (a0 < 0) { attribMinusOne(env, "glVertexAttrib4fv"); return; }
+    if (arrayOutOfBounds(env, a1, a2, 4)) return;
     jfloat *p1 = a1 ? (*env)->GetFloatArrayElements(env, a1, NULL) : NULL;
     glVertexAttrib4fv((GLuint)a0, (const GLfloat *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseFloatArrayElements(env, a1, p1, 0);
@@ -1665,6 +1756,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glCompressedTexSubImage3D__III
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGenQueries__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenQueries((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -1679,6 +1771,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGenQueries__ILjava_nio_IntBu
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDeleteQueries__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteQueries((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -1715,6 +1808,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glEndQuery__I(JNIEnv *env, jcl
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetQueryiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetQueryiv((GLenum)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1729,6 +1823,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetQueryiv__IILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetQueryObjectuiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetQueryObjectuiv((GLuint)a0, (GLenum)a1, (GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1751,6 +1846,7 @@ JNIEXPORT jboolean JNICALL Java_android_opengl_GLES30_glUnmapBuffer__I(JNIEnv *e
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDrawBuffers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDrawBuffers((GLsizei)a0, (const GLenum *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -1765,6 +1861,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDrawBuffers__ILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix2x3fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 6)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix2x3fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1779,6 +1876,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix2x3fv__IIZLjava
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix3x2fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 6)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix3x2fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1793,6 +1891,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix3x2fv__IIZLjava
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix2x4fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 8)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix2x4fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1807,6 +1906,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix2x4fv__IIZLjava
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix4x2fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 8)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix4x2fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1821,6 +1921,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix4x2fv__IIZLjava
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix3x4fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 12)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix3x4fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1835,6 +1936,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix3x4fv__IIZLjava
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniformMatrix4x3fv__IIZ_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jboolean a2, jfloatArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, (jlong)a1 * 12)) return;
     jfloat *p3 = a3 ? (*env)->GetFloatArrayElements(env, a3, NULL) : NULL;
     glUniformMatrix4x3fv((GLint)a0, (GLsizei)a1, (GLboolean)a2, (const GLfloat *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseFloatArrayElements(env, a3, p3, 0);
@@ -1890,6 +1992,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glBindVertexArray__I(JNIEnv *e
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDeleteVertexArrays__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteVertexArrays((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -1904,6 +2007,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDeleteVertexArrays__ILjava_n
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGenVertexArrays__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenVertexArrays((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -1926,6 +2030,7 @@ JNIEXPORT jboolean JNICALL Java_android_opengl_GLES30_glIsVertexArray__I(JNIEnv 
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetIntegeri_v__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetIntegeri_v((GLenum)a0, (GLuint)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -1968,6 +2073,10 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glBindBufferBase__III(JNIEnv *
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetTransformFeedbackVarying__III_3II_3II_3II_3BI(JNIEnv *env, jclass cls, jint a0, jint a1, jint a2, jintArray a3, jint a4, jintArray a5, jint a6, jintArray a7, jint a8, jbyteArray a9, jint a10)
 {
+    if (arrayOutOfBounds(env, a3, a4, 1)) return;
+    if (arrayOutOfBounds(env, a5, a6, 1)) return;
+    if (arrayOutOfBounds(env, a7, a8, 1)) return;
+    if (arrayOutOfBounds(env, a9, a10, a2)) return;
     jint *p3 = a3 ? (*env)->GetIntArrayElements(env, a3, NULL) : NULL;
     jint *p5 = a5 ? (*env)->GetIntArrayElements(env, a5, NULL) : NULL;
     jint *p7 = a7 ? (*env)->GetIntArrayElements(env, a7, NULL) : NULL;
@@ -2022,6 +2131,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glVertexAttribIPointer__IIIII(
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetVertexAttribIiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (a1 == GL_CURRENT_VERTEX_ATTRIB ? 4 : 1))) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetVertexAttribIiv((GLuint)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2036,6 +2146,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetVertexAttribIiv__IILjava_
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetVertexAttribIuiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (a1 == GL_CURRENT_VERTEX_ATTRIB ? 4 : 1))) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetVertexAttribIuiv((GLuint)a0, (GLenum)a1, (GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2067,6 +2178,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glVertexAttribI4ui__IIIII(JNIE
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glVertexAttribI4iv__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
     if (a0 < 0) { attribMinusOne(env, "glVertexAttribI4iv"); return; }
+    if (arrayOutOfBounds(env, a1, a2, 4)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glVertexAttribI4iv((GLuint)a0, (const GLint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -2083,6 +2195,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glVertexAttribI4iv__ILjava_nio
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glVertexAttribI4uiv__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
     if (a0 < 0) { attribMinusOne(env, "glVertexAttribI4uiv"); return; }
+    if (arrayOutOfBounds(env, a1, a2, 4)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glVertexAttribI4uiv((GLuint)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -2098,6 +2211,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glVertexAttribI4uiv__ILjava_ni
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetUniformuiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetUniformuiv((GLuint)a0, (GLint)a1, (GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2148,6 +2262,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform4ui__IIIII(JNIEnv *en
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform1uiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform1uiv((GLint)a0, (GLsizei)a1, (const GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2162,6 +2277,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform1uiv__IILjava_nio_Int
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform2uiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 2)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform2uiv((GLint)a0, (GLsizei)a1, (const GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2176,6 +2292,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform2uiv__IILjava_nio_Int
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform3uiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 3)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform3uiv((GLint)a0, (GLsizei)a1, (const GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2190,6 +2307,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform3uiv__IILjava_nio_Int
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform4uiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (jlong)a1 * 4)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glUniform4uiv((GLint)a0, (GLsizei)a1, (const GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2204,6 +2322,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glUniform4uiv__IILjava_nio_Int
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glClearBufferiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (a0 == GL_COLOR ? 4 : 1))) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glClearBufferiv((GLenum)a0, (GLint)a1, (const GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2218,6 +2337,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glClearBufferiv__IILjava_nio_I
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glClearBufferuiv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (a0 == GL_COLOR ? 4 : 1))) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glClearBufferuiv((GLenum)a0, (GLint)a1, (const GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2232,6 +2352,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glClearBufferuiv__IILjava_nio_
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glClearBufferfv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, (a0 == GL_COLOR ? 4 : 1))) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glClearBufferfv((GLenum)a0, (GLint)a1, (const GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -2266,6 +2387,8 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glCopyBufferSubData__IIIII(JNI
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetActiveUniformsiv__II_3III_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3, jint a4, jintArray a5, jint a6)
 {
+    if (arrayOutOfBounds(env, a2, a3, a1)) return;
+    if (arrayOutOfBounds(env, a5, a6, a1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     jint *p5 = a5 ? (*env)->GetIntArrayElements(env, a5, NULL) : NULL;
     glGetActiveUniformsiv((GLuint)a0, (GLsizei)a1, (const GLuint *)(uintptr_t)(p2 ? p2 + a3 : NULL), (GLenum)a4, (GLint *)(uintptr_t)(p5 ? p5 + a6 : NULL));
@@ -2292,6 +2415,7 @@ JNIEXPORT jint JNICALL Java_android_opengl_GLES30_glGetUniformBlockIndex__ILjava
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetActiveUniformBlockiv__III_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jint a2, jintArray a3, jint a4)
 {
+    if (arrayOutOfBounds(env, a3, a4, 1)) return;
     jint *p3 = a3 ? (*env)->GetIntArrayElements(env, a3, NULL) : NULL;
     glGetActiveUniformBlockiv((GLuint)a0, (GLuint)a1, (GLenum)a2, (GLint *)(uintptr_t)(p3 ? p3 + a4 : NULL));
     if (a3) (*env)->ReleaseIntArrayElements(env, a3, p3, 0);
@@ -2306,6 +2430,8 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetActiveUniformBlockiv__III
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetActiveUniformBlockName__III_3II_3BI(JNIEnv *env, jclass cls, jint a0, jint a1, jint a2, jintArray a3, jint a4, jbyteArray a5, jint a6)
 {
+    if (arrayOutOfBounds(env, a3, a4, 1)) return;
+    if (arrayOutOfBounds(env, a5, a6, a2)) return;
     jint *p3 = a3 ? (*env)->GetIntArrayElements(env, a3, NULL) : NULL;
     jbyte *p5 = a5 ? (*env)->GetByteArrayElements(env, a5, NULL) : NULL;
     glGetActiveUniformBlockName((GLuint)a0, (GLuint)a1, (GLsizei)a2, (GLsizei *)(uintptr_t)(p3 ? p3 + a4 : NULL), (GLchar *)(uintptr_t)(p5 ? p5 + a6 : NULL));
@@ -2381,6 +2507,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glWaitSync__JIJ(JNIEnv *env, j
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetInteger64v__I_3JI(JNIEnv *env, jclass cls, jint a0, jlongArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, getNeededCount((GLenum)a0))) return;
     jlong *p1 = a1 ? (*env)->GetLongArrayElements(env, a1, NULL) : NULL;
     glGetInteger64v((GLenum)a0, (GLint64 *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseLongArrayElements(env, a1, p1, 0);
@@ -2395,6 +2522,8 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetInteger64v__ILjava_nio_Lo
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetSynciv__JII_3II_3II(JNIEnv *env, jclass cls, jlong a0, jint a1, jint a2, jintArray a3, jint a4, jintArray a5, jint a6)
 {
+    if (arrayOutOfBounds(env, a3, a4, 1)) return;
+    if (arrayOutOfBounds(env, a5, a6, a2)) return;
     jint *p3 = a3 ? (*env)->GetIntArrayElements(env, a3, NULL) : NULL;
     jint *p5 = a5 ? (*env)->GetIntArrayElements(env, a5, NULL) : NULL;
     glGetSynciv((GLsync)a0, (GLenum)a1, (GLsizei)a2, (GLsizei *)(uintptr_t)(p3 ? p3 + a4 : NULL), (GLint *)(uintptr_t)(p5 ? p5 + a6 : NULL));
@@ -2413,6 +2542,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetSynciv__JIILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetInteger64i_v__II_3JI(JNIEnv *env, jclass cls, jint a0, jint a1, jlongArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jlong *p2 = a2 ? (*env)->GetLongArrayElements(env, a2, NULL) : NULL;
     glGetInteger64i_v((GLenum)a0, (GLuint)a1, (GLint64 *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseLongArrayElements(env, a2, p2, 0);
@@ -2427,6 +2557,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetInteger64i_v__IILjava_nio
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetBufferParameteri64v__II_3JI(JNIEnv *env, jclass cls, jint a0, jint a1, jlongArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jlong *p2 = a2 ? (*env)->GetLongArrayElements(env, a2, NULL) : NULL;
     glGetBufferParameteri64v((GLenum)a0, (GLenum)a1, (GLint64 *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseLongArrayElements(env, a2, p2, 0);
@@ -2441,6 +2572,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetBufferParameteri64v__IILj
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGenSamplers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenSamplers((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -2455,6 +2587,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGenSamplers__ILjava_nio_IntB
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDeleteSamplers__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteSamplers((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -2491,6 +2624,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glSamplerParameteri__III(JNIEn
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glSamplerParameteriv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glSamplerParameteriv((GLuint)a0, (GLenum)a1, (const GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2512,6 +2646,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glSamplerParameterf__IIF(JNIEn
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glSamplerParameterfv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glSamplerParameterfv((GLuint)a0, (GLenum)a1, (const GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -2526,6 +2661,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glSamplerParameterfv__IILjava_
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetSamplerParameteriv__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glGetSamplerParameteriv((GLuint)a0, (GLenum)a1, (GLint *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2540,6 +2676,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetSamplerParameteriv__IILja
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetSamplerParameterfv__II_3FI(JNIEnv *env, jclass cls, jint a0, jint a1, jfloatArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
     jfloat *p2 = a2 ? (*env)->GetFloatArrayElements(env, a2, NULL) : NULL;
     glGetSamplerParameterfv((GLuint)a0, (GLenum)a1, (GLfloat *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseFloatArrayElements(env, a2, p2, 0);
@@ -2569,6 +2706,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glBindTransformFeedback__II(JN
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDeleteTransformFeedbacks__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glDeleteTransformFeedbacks((GLsizei)a0, (const GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -2583,6 +2721,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glDeleteTransformFeedbacks__IL
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGenTransformFeedbacks__I_3II(JNIEnv *env, jclass cls, jint a0, jintArray a1, jint a2)
 {
+    if (arrayOutOfBounds(env, a1, a2, a0)) return;
     jint *p1 = a1 ? (*env)->GetIntArrayElements(env, a1, NULL) : NULL;
     glGenTransformFeedbacks((GLsizei)a0, (GLuint *)(uintptr_t)(p1 ? p1 + a2 : NULL));
     if (a1) (*env)->ReleaseIntArrayElements(env, a1, p1, 0);
@@ -2619,6 +2758,8 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glResumeTransformFeedback__(JN
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetProgramBinary__II_3II_3IILjava_nio_Buffer_2(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3, jintArray a4, jint a5, jobject a6)
 {
+    if (arrayOutOfBounds(env, a2, a3, 1)) return;
+    if (arrayOutOfBounds(env, a4, a5, 1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     jint *p4 = a4 ? (*env)->GetIntArrayElements(env, a4, NULL) : NULL;
     BufRef b6; void *p6 = bufferAcquire(env, a6, 0, &b6);
@@ -2655,6 +2796,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glProgramParameteri__III(JNIEn
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glInvalidateFramebuffer__II_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3)
 {
+    if (arrayOutOfBounds(env, a2, a3, a1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glInvalidateFramebuffer((GLenum)a0, (GLsizei)a1, (const GLenum *)(uintptr_t)(p2 ? p2 + a3 : NULL));
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2669,6 +2811,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glInvalidateFramebuffer__IILja
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glInvalidateSubFramebuffer__II_3IIIIII(JNIEnv *env, jclass cls, jint a0, jint a1, jintArray a2, jint a3, jint a4, jint a5, jint a6, jint a7)
 {
+    if (arrayOutOfBounds(env, a2, a3, a1)) return;
     jint *p2 = a2 ? (*env)->GetIntArrayElements(env, a2, NULL) : NULL;
     glInvalidateSubFramebuffer((GLenum)a0, (GLsizei)a1, (const GLenum *)(uintptr_t)(p2 ? p2 + a3 : NULL), (GLint)a4, (GLint)a5, (GLsizei)a6, (GLsizei)a7);
     if (a2) (*env)->ReleaseIntArrayElements(env, a2, p2, 0);
@@ -2697,6 +2840,7 @@ JNIEXPORT void JNICALL Java_android_opengl_GLES30_glTexStorage3D__IIIIII(JNIEnv 
 
 JNIEXPORT void JNICALL Java_android_opengl_GLES30_glGetInternalformativ__IIII_3II(JNIEnv *env, jclass cls, jint a0, jint a1, jint a2, jint a3, jintArray a4, jint a5)
 {
+    if (arrayOutOfBounds(env, a4, a5, a3)) return;
     jint *p4 = a4 ? (*env)->GetIntArrayElements(env, a4, NULL) : NULL;
     glGetInternalformativ((GLenum)a0, (GLenum)a1, (GLenum)a2, (GLsizei)a3, (GLint *)(uintptr_t)(p4 ? p4 + a5 : NULL));
     if (a4) (*env)->ReleaseIntArrayElements(env, a4, p4, 0);

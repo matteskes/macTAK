@@ -10,7 +10,14 @@ import java.awt.geom.AffineTransform;
 public class Canvas {
     private Bitmap bitmap;
     private Graphics2D g;
-    private final java.util.ArrayDeque<AffineTransform> saves = new java.util.ArrayDeque<>();
+    /** One save(): the transform and clip to put back (issue 132). */
+    private static final class State {
+        final AffineTransform transform;
+        final java.awt.Shape clip;
+        State(AffineTransform transform, java.awt.Shape clip) { this.transform = transform; this.clip = clip; }
+    }
+
+    private final java.util.ArrayDeque<State> saves = new java.util.ArrayDeque<>();
 
     public Canvas() { }
 
@@ -34,9 +41,32 @@ public class Canvas {
     public int getWidth() { return bitmap == null ? 0 : bitmap.getWidth(); }
     public int getHeight() { return bitmap == null ? 0 : bitmap.getHeight(); }
 
-    public int save() { saves.push(g.getTransform()); return saves.size(); }
-    public void restore() { if (!saves.isEmpty()) g.setTransform(saves.pop()); }
-    public int getSaveCount() { return saves.size(); }
+    /**
+     * Saves the transform and the clip, as Android does. Android counts the
+     * base state, so the count starts at 1 and save() returns the count to
+     * pass to {@link #restoreToCount(int)} to undo it.
+     */
+    public int save() {
+        final int count = getSaveCount();
+        // getClip() is in the current user space; restore() sets the
+        // transform back first, so setClip() reads it in the same space
+        saves.push(new State(g.getTransform(), g.getClip()));
+        return count;
+    }
+
+    public void restore() {
+        if (saves.isEmpty()) return;
+        final State state = saves.pop();
+        g.setTransform(state.transform);
+        g.setClip(state.clip);
+    }
+
+    public void restoreToCount(int saveCount) {
+        if (saveCount < 1) throw new IllegalArgumentException("Underflow in restoreToCount");
+        while (getSaveCount() > saveCount) restore();
+    }
+
+    public int getSaveCount() { return saves.size() + 1; }
     public void translate(float dx, float dy) { g.translate(dx, dy); }
     public void scale(float sx, float sy) { g.scale(sx, sy); }
     public void rotate(float degrees) { g.rotate(Math.toRadians(degrees)); }

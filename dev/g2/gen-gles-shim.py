@@ -83,6 +83,51 @@ ATTRIB_INDEX_FUNCS = {"glEnableVertexAttribArray", "glDisableVertexAttribArray",
 # bufferDirect, not bufferAcquire, and refuse anything else as Android does.
 RETAINED_POINTER_FUNCS = {"glVertexAttribPointer", "glVertexAttribIPointer"}
 
+# Android's bounds check on each Java (array, offset) pair (issue 133): it
+# throws IllegalArgumentException when offset < 0 or when length - offset is
+# below the count the call reads or writes. Key: entry point -> {index of the
+# array among the Java params: C expression of the count, over a0..aN}.
+# Arrays not listed need at least 1 element, Android's minimum; that can only
+# under-check, so a call Android accepts is never refused here. A null array
+# still passes through as NULL, as before (some Android entry points accept
+# null), and so does a count GL itself rejects (n < 0).
+def _per_count(count_arg, components):
+    return "(jlong)a%d * %d" % (count_arg, components)
+
+NEEDED = {}
+for _f in ("Buffers", "Framebuffers", "Queries", "Renderbuffers", "Samplers", "Textures",
+           "TransformFeedbacks", "VertexArrays"):
+    NEEDED["glGen" + _f] = {1: "a0"}
+    NEEDED["glDelete" + _f] = {1: "a0"}
+NEEDED["glDrawBuffers"] = {1: "a0"}
+NEEDED["glShaderBinary"] = {1: "a0"}
+NEEDED["glInvalidateFramebuffer"] = {2: "a1"}
+NEEDED["glInvalidateSubFramebuffer"] = {2: "a1"}
+for _f in ("glClearBufferfv", "glClearBufferiv", "glClearBufferuiv"):
+    NEEDED[_f] = {2: "(a0 == GL_COLOR ? 4 : 1)"}
+for _n in (1, 2, 3, 4):
+    for _t in ("f", "i", "ui"):
+        NEEDED["glUniform%d%sv" % (_n, _t)] = {2: _per_count(1, _n)}
+    NEEDED["glVertexAttrib%dfv" % _n] = {1: str(_n)}
+NEEDED["glVertexAttribI4iv"] = {1: "4"}
+NEEDED["glVertexAttribI4uiv"] = {1: "4"}
+for _m, _c in (("2", 4), ("3", 9), ("4", 16), ("2x3", 6), ("3x2", 6), ("2x4", 8), ("4x2", 8), ("3x4", 12), ("4x3", 12)):
+    NEEDED["glUniformMatrix%sfv" % _m] = {3: _per_count(1, _c)}
+for _f in ("glGetBooleanv", "glGetFloatv", "glGetIntegerv", "glGetInteger64v"):
+    NEEDED[_f] = {1: "getNeededCount((GLenum)a0)"}
+for _f in ("glGetVertexAttribfv", "glGetVertexAttribiv", "glGetVertexAttribIiv", "glGetVertexAttribIuiv"):
+    NEEDED[_f] = {2: "(a1 == GL_CURRENT_VERTEX_ATTRIB ? 4 : 1)"}
+NEEDED["glGetActiveAttrib"] = {9: "a2"}
+NEEDED["glGetActiveUniform"] = {9: "a2"}
+NEEDED["glGetTransformFeedbackVarying"] = {9: "a2"}
+NEEDED["glGetActiveUniformBlockName"] = {5: "a2"}
+NEEDED["glGetActiveUniformsiv"] = {2: "a1", 5: "a1"}
+NEEDED["glGetAttachedShaders"] = {4: "a1"}
+NEEDED["glGetShaderPrecisionFormat"] = {2: "2"}
+NEEDED["glGetShaderSource"] = {4: "a1"}
+NEEDED["glGetSynciv"] = {5: "a2"}
+NEEDED["glGetInternalformativ"] = {4: "a3"}
+
 def mangle(desc):
     # JNI overload mangling of the parameter descriptor
     sig = desc[1:desc.index(")")]
@@ -163,11 +208,14 @@ def gen_method(cls, ret, name, jparams, desc):
     cret, cparams = proto
 
     # collapse Java params into C args
-    cargs, pre, post, i = [], [], [], 0
+    bail = "return;" if ret == "void" else "return 0;"
+    cargs, checks, pre, post, i = [], [], [], [], 0
     while i < len(jparams):
         t = jparams[i]
         if t in ARR_ELEM and i + 1 < len(jparams) and jparams[i + 1] == "int":
             fn, jt = ARR_ELEM[t]
+            needed = NEEDED.get(name, {}).get(i, "1")
+            checks.append("    if (arrayOutOfBounds(env, a%d, a%d, %s)) %s" % (i, i + 1, needed, bail))
             pre.append("    %s *p%d = a%d ? (*env)->Get%sArrayElements(env, a%d, NULL) : NULL;" % (jt, i, i, fn, i))
             post.append("    if (a%d) (*env)->Release%sArrayElements(env, a%d, p%d, 0);" % (i, fn, i, i))
             cargs.append("(p%d ? p%d + a%d : NULL)" % (i, i, i + 1)); i += 2; continue
@@ -202,7 +250,8 @@ def gen_method(cls, ret, name, jparams, desc):
             # pointer params: strip const so out-params (char*, void*) accept our void*/const char*
             final.append("(%s)(uintptr_t)%s" % (ct, a) if "*" in ct else "(%s)%s" % (ct, a))
     call = "%s(%s)" % (name, ", ".join(final))
-    body = "\n".join(pre)
+    # every check runs before any array is pinned, so a throw leaks nothing
+    body = "\n".join(checks + pre)
     # Attribute-index entry points: Android drivers quietly ignore index -1
     # (an inactive attribute); ANGLE raises GL_INVALID_VALUE. Match Android.
     if name in ATTRIB_INDEX_FUNCS:
@@ -328,6 +377,43 @@ static void bufferRelease(JNIEnv *env, BufRef *ref)
     }
     (*env)->DeleteLocalRef(env, ref->arr);
     ref->arr = NULL; ref->elems = NULL;
+}
+
+/* Android's check on a Java (array, offset) pair (issue 133): throw
+ * IllegalArgumentException, with Android's messages, when offset < 0 or
+ * length - offset < needed. A null array is left to the call, as before. */
+static int arrayOutOfBounds(JNIEnv *env, jarray arr, jint offset, jlong needed)
+{
+    const char *msg = NULL;
+    if (!arr) return 0;
+    if (offset < 0) msg = "offset < 0";
+    else if ((jlong)(*env)->GetArrayLength(env, arr) - offset < needed) msg = "length - offset < needed";
+    if (!msg) return 0;
+    (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"), msg);
+    return 1;
+}
+
+/* How many values a glGet*v query writes, as Android's getNeededCount has
+ * it for the multi-valued ES 2.0/3.0 pnames; every other pname writes one. */
+static jlong getNeededCount(GLenum pname)
+{
+    GLint n = 0;
+    switch (pname) {
+        case GL_ALIASED_LINE_WIDTH_RANGE: case GL_ALIASED_POINT_SIZE_RANGE:
+        case GL_DEPTH_RANGE: case GL_MAX_VIEWPORT_DIMS:
+            return 2;
+        case GL_BLEND_COLOR: case GL_COLOR_CLEAR_VALUE: case GL_COLOR_WRITEMASK:
+        case GL_SCISSOR_BOX: case GL_VIEWPORT:
+            return 4;
+        case GL_COMPRESSED_TEXTURE_FORMATS:
+            glGetIntegerv(GL_NUM_COMPRESSED_TEXTURE_FORMATS, &n); return n;
+        case GL_SHADER_BINARY_FORMATS:
+            glGetIntegerv(GL_NUM_SHADER_BINARY_FORMATS, &n); return n;
+        case GL_PROGRAM_BINARY_FORMATS:
+            glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &n); return n;
+        default:
+            return 1;
+    }
 }
 
 /* MACTAK_GL_DEBUG set: name the Java call site that used attribute -1 (once per entry point). */

@@ -19,6 +19,13 @@ import java.nio.FloatBuffer;
  * Calls that consume their data before returning ({@code glBufferData})
  * take either kind.
  *
+ * <p>Entry points that take a Java array and an offset throw
+ * {@code IllegalArgumentException} on Android when the offset is negative or
+ * the array is too short from the offset for the count the call needs
+ * (issue 133). The out-of-bounds cases below are all reads, so a shim
+ * without the checks reads past the array rather than writing into the
+ * heap, and the canary fails cleanly instead of corrupting the JVM.
+ *
  * <p>Exit: 0 PASS, 1 FAIL, 2 usage, 3 EGL init failed.
  */
 public final class GlesShimSelfTest {
@@ -82,6 +89,23 @@ public final class GlesShimSelfTest {
                 "glBufferData still takes an array-backed Buffer (data is copied before the call returns)");
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0);
         GLES20.glDeleteBuffers(1, vbo, 0);
+
+        // Issue 133: Android's (array, offset) bounds checks
+        check(rejects(() -> GLES20.glUniform4fv(0, 1, new float[3], 0)),
+                "glUniform4fv rejects 3 floats for count 1 (needs 4)");
+        check(rejects(() -> GLES20.glUniformMatrix4fv(0, 2, false, new float[16], 0)),
+                "glUniformMatrix4fv rejects 16 floats for count 2 (needs 32)");
+        check(rejects(() -> GLES20.glUniform1fv(0, 1, new float[4], 4)),
+                "glUniform1fv rejects an offset at the end of the array");
+        check(rejects(() -> GLES20.glVertexAttrib4fv(0, new float[4], -1)),
+                "glVertexAttrib4fv rejects a negative offset");
+        check(rejects(() -> GLES20.glDeleteBuffers(2, new int[] { 0 }, 0)),
+                "glDeleteBuffers rejects 1 name for n = 2");
+        check(!rejects(() -> GLES20.glVertexAttrib4fv(0, new float[6], 2)),
+                "glVertexAttrib4fv accepts exactly 4 floats from the offset");
+        final int[] viewport = new int[5];
+        check(!rejects(() -> GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, viewport, 1)) && viewport[3] == 16 && viewport[4] == 16,
+                "glGetIntegerv(GL_VIEWPORT) accepts 4 ints from the offset and writes them there");
         check(NativeEgl.getGlError() == 0, "no GL error raised");
 
         NativeEgl.release();

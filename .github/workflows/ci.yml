@@ -291,10 +291,19 @@ jobs:
 
       - name: GLES shim Buffer-contract canary (retained pointers need a direct Buffer)
         # glVertexAttribPointer keeps its pointer until the draw call, so
-        # the shim must refuse an array-backed Buffer as Android does
-        # (dev/g2/render/test/gles-shim.sh, GlesShimSelfTest).
+        # the shim must refuse an array-backed Buffer as Android does; and
+        # every (array, offset) entry point bounds-checks as Android does
+        # (issue 133) (dev/g2/render/test/gles-shim.sh, GlesShimSelfTest).
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/gles-shim.sh
+
+      - name: android.graphics stand-in canary (issues 131 and 132)
+        # BitmapRegionDecoder closes the file it opened (recycle and a
+        # failed open leave the descriptor count unchanged); Canvas
+        # save/restore covers the clip (dev/g2/render/test/graphics.sh,
+        # GraphicsSelfTest).
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/graphics.sh
 
       - name: Gesture canary (Apple Maps gestures on the engine camera, M3.4)
         # InputBridgeSelfTest on a pbuffer: drag/scroll keep the ground under
