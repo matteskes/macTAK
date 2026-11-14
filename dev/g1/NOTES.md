@@ -2287,13 +2287,15 @@ JVM:
 Follow-ups:
 
 - **Pending lookup exceptions:**
-  [issue #161](https://github.com/matteskes/macTAK/issues/161).
+  [issue #161](https://github.com/matteskes/macTAK/issues/161), fixed in
+  §G1.28.
 - **`IOProviderFactoryProxy` ignores the error from `isFile` and
   `isDirectory`**, in `getFileCount`, `listFiles` and `length`. After a
   failed `isFile`, `b` still holds `exists`'s true, so a path whose
   `isFile` threw counts as one file. This is outside wave 7's class-init
   scope, so it is recorded here and not fixed
-  ([issue #164](https://github.com/matteskes/macTAK/issues/164)).
+  ([issue #164](https://github.com/matteskes/macTAK/issues/164), fixed in
+  §G1.29).
 
 ## G1.26 — imagery and elevation can't reach the network (2026-11-14, branch `g1/issue-155-raster-driver-allowlist`, issue 155)
 
@@ -2539,3 +2541,65 @@ noslf4j 2, missing-member 2), as do `layer.sh`, `make test-gdal-network`,
 `make test-gdal-projection` and `make test-render`. No
 `NoSuchMethodError` or `NoSuchFieldError` appears in the render log, so
 on a healthy JVM the helper has nothing to report.
+
+## G1.29 — the filesystem proxy fails when a query fails (2026-11-14, branch `g1/issue-164-ioprovider-query-errors`, issue 164)
+
+**The bug.** `IOProviderFactoryProxy` (`jioproviderfactory.cpp`) is the
+engine's filesystem once Java's `IOProviderFactory.installFactory` runs.
+Its `getFileCount`, `listFiles` and `length` each ask `exists`, then
+`isFile`, then `isDirectory`, into one flag `b`, and checked only
+`exists`' result. A failed `isFile` left `b` at `exists`' true, so the
+path read as a file:
+
+- `getFileCount` counted it as one file, with `TE_Ok`;
+- `length` called Java's `length` on it and returned that, with `TE_Ok`;
+- `listFiles` refused it with `TE_InvalidArg`, as a file.
+
+A failed `isDirectory` after `isFile` said "not a file" left `b` false,
+and each method returned `TE_IllegalState`, which names the wrong cause.
+
+**The reference.** Upstream (`atak-civ` @ `9f6893d`) has the same code;
+§G1.25 found it and left it out of wave 7's scope.
+
+**The fix.** `wave7-rest-ioprovider-query-errors.patch` checks the code
+after each of the six `isFile` and `isDirectory` calls
+(`TE_CHECKRETURN_CODE`), so each method returns `TE_Err` when a query
+fails. It sorts after `wave7-rest-consumer-guards.patch` and the three
+`ioproviderfactory-*` patches, whose code it edits.
+
+### The guard
+
+Six kernel-mode tests, `JniKernelFilesystemQueryFails` in
+`ioprovider_kernel_test.cpp`, one per unchecked call. They run the proxy
+over `JniTestsMain$ScriptedIsDirectory`, a Java `IOProvider` whose
+`exists` is always true and whose `isDirectory` answers from a script
+(true, false, or throw). Java's `IOProviderFactory.isFile` is
+`exists && !isDirectory`, so the script picks which of the proxy's
+queries fails. The `IO_` entry points ask some of these queries
+themselves first: `IO_listFiles` needs a directory and `IO_length` a
+non-directory before they reach the proxy.
+
+`registerProvider` works once per process, so the fixture swaps
+`IOProviderFactory`'s private `ioProvider` field by reflection and puts
+it back in `TearDown`; the other kernel tests run unchanged.
+
+A/B on the dev Mac (`TAKErr` values):
+
+| Test | `isDirectory` answers | Without the patch | With it |
+|---|---|---|---|
+| `GetFileCountWhenIsFileFails` | throw | `TE_Ok`, count 1 | `TE_Err` |
+| `GetFileCountWhenIsDirectoryFails` | true, throw | `TE_IllegalState` | `TE_Err` |
+| `ListFilesWhenIsFileFails` | true, throw | `TE_InvalidArg` | `TE_Err` |
+| `ListFilesWhenIsDirectoryFails` | true, true, throw | `TE_IllegalState` | `TE_Err` |
+| `LengthWhenIsFileFails` | false, throw | `TE_Ok` (Java's length) | `TE_Err` |
+| `LengthWhenIsDirectoryFails` | false, true, throw | `TE_IllegalState` | `TE_Err` |
+
+Each test also checks the JNIEnv is clean. With the patch, kernel mode
+passes 21 of 21 and the other `run.sh` legs pass, as do `layer.sh`,
+`make test-gdal-network`, `make test-gdal-projection` and
+`make test-render`.
+
+**Trap.** `IOProvider` is abstract down to `createDatabase`; the first
+build of the scripted provider failed in `javac` inside
+`build-native.sh`'s canary. Compiling `JniTestsMain.java` against
+`mactak_kernel_classpath` first takes seconds, a full build minutes.
