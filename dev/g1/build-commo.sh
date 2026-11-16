@@ -74,6 +74,9 @@ for f in openssl@3 libxml2 protobuf; do
     || die "brew formula missing: $f
        → brew install openssl@3 libxml2 protobuf"
 done
+# ... at the versions Brewfile.lock.json pins (#151)
+python3 -I "$DEV/deps/brew-pins.py" openssl@3 libxml2 protobuf abseil pkgconf \
+  || die "Homebrew drifted from Brewfile.lock.json (above)"
 # shellcheck source=SCRIPTDIR/../jdk.sh
 source "$DEV/jdk.sh"
 JDK="$(mactak_jdk_home 21 || true)"

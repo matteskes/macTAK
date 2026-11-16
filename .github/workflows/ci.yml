@@ -121,8 +121,9 @@ jobs:
         # + the build-commo.sh preflight list: the layer canary below runs
         # atak-headless, which is one JVM with both stacks since G1.4.
         run: >
-          brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest
-          openssl@3 libxml2 protobuf mdbtools glib assimp sqlite libtiff openjpeg libkml uriparser freexl librttopo pkgconf
+          brew install cmake ninja pkgconf geos gdal minizip nlohmann-json googletest openssl@3 libxml2
+          protobuf abseil mdbtools glib gettext pcre2 assimp sqlite libtiff jpeg-turbo webp xz zstd
+          openjpeg libkml uriparser freexl librttopo
 
       - name: Set up Zulu 21 (arm64)
         # build-native.sh itself needs no JDK (jni.h is pinned at
@@ -244,8 +245,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: >
-          brew install cmake ninja rsync proj geos gdal libspatialite minizip nlohmann-json laszip googletest libxml2
-          openssl@3 protobuf swig mdbtools glib assimp sqlite libtiff openjpeg libkml uriparser freexl librttopo pkgconf
+          brew install cmake ninja pkgconf geos gdal minizip nlohmann-json googletest openssl@3 libxml2
+          protobuf abseil mdbtools glib gettext pcre2 assimp sqlite libtiff jpeg-turbo webp xz zstd
+          openjpeg libkml uriparser freexl librttopo swig
 
       - name: Set up Zulu 21 (arm64)
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0

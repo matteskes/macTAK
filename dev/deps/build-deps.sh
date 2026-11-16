@@ -40,13 +40,18 @@ export MACOSX_DEPLOYMENT_TARGET=27.0
 log() { printf '\n[deps] %s\n' "$*"; }
 die() { printf '\n[deps] FATAL: %s\n' "$*" >&2; exit 1; }
 
+BREW_NEEDS=(cmake ninja pkgconf sqlite geos libtiff jpeg-turbo webp xz zstd openjpeg libkml minizip uriparser freexl librttopo)
+# the Homebrew libraries these link, at the versions Brewfile.lock.json pins
+# (#151): a cached dist is only as good as the libraries it was built against
+python3 -I "$HERE/brew-pins.py" "${BREW_NEEDS[@]}" || die "Homebrew drifted from Brewfile.lock.json (above)"
+
 stamp() { cat "$LOCK" "${BASH_SOURCE[0]}" | shasum -a 256 | cut -d' ' -f1; }
 if [[ "${1:-}" != "--force" && -f "$DIST/BUILD-STAMP" && "$(cat "$DIST/BUILD-STAMP")" == "$(stamp)" ]]; then
   log "dist is current ($DIST); --force rebuilds"
   exit 0
 fi
 
-for f in cmake ninja pkgconf sqlite geos libtiff openjpeg libkml minizip uriparser freexl librttopo; do
+for f in "${BREW_NEEDS[@]}"; do
   brew list --versions "$f" >/dev/null 2>&1 || die "brew formula missing: $f (brew bundle, see Brewfile)"
 done
 

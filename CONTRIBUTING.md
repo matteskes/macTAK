@@ -35,6 +35,11 @@ brew bundle install              # Brewfile = the union of every workflow's brew
 make hooks                       # install the pre-commit gate (core.hooksPath .githooks)
 ```
 
+- **The Homebrew versions are pinned** in `Brewfile.lock.json` (#151). Each
+  build checks the formulas it uses against it first
+  (`dev/deps/brew-pins.py`) and stops when one differs; see "Moving a
+  Homebrew pin" below.
+
 - **GDAL, PROJ and libspatialite are not Homebrew's.** `dev/g1/build-native.sh`
   builds them first from the pins in `dev/deps/deps.lock` (`make deps`, about
   a minute), without curl or OpenSSL 4 and with only the GDAL drivers macTAK
@@ -185,6 +190,27 @@ script is reused through an opt-in `MACTAK_*` override rather than a copy
 (unset, nothing changes; documented in the script's header), jars build
 in CI from the pinned commit, and the spike keeps its own NOTES and trap
 lineage until the re-pin.
+
+## Moving a Homebrew pin
+
+`Brewfile.lock.json` pins every Homebrew package the builds use and the app
+ships: the version each formula's `/opt/homebrew/opt` link points to.
+`build-native.sh`, `build-commo.sh`, `dev/deps/build-deps.sh` and
+`app/bundle.sh` check it before they start, `make check-deps` checks every
+Homebrew package the engine loads, and the supply-chain workflow fails when
+CI's Homebrew has moved. When Homebrew ships a new version:
+
+1. Upgrade it (`brew upgrade NAME`), building anyway with
+   `MACTAK_BREW_PINS=warn`.
+2. Run the suites the package touches; for a library the engine loads,
+   that is at least `make test-render`, `make check-deps` and
+   `make test-app-bundle`.
+3. `python3 dev/deps/brew-pins.py --write`, and commit `Brewfile.lock.json`
+   with the result in the PR.
+
+A new package goes into the `Brewfile` and every workflow's `brew install`
+line that needs it, then `--write`. GDAL, PROJ and libspatialite are pinned
+in `dev/deps/deps.lock` instead (`dev/deps/README.md`).
 
 ## House style — NOTES, traps, CHANGELOG
 

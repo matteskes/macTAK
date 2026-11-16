@@ -92,6 +92,9 @@ done
 python3 -I "$REPO/dev/deps/stage-runtime.py" "$FRAMEWORKS" "${roots[@]}"
 # codesign treats every file in Frameworks as code: the manifest goes beside the data
 mv "$FRAMEWORKS/RUNTIME-MANIFEST.txt" "$ENGINE/"
+# ship only the Homebrew versions Brewfile.lock.json pins (#151)
+python3 -I "$REPO/dev/deps/brew-pins.py" --manifest "$ENGINE/RUNTIME-MANIFEST.txt" \
+  || { echo "bundle.sh: the bundle would ship unpinned Homebrew libraries" >&2; exit 1; }
 cp -R "$DEPS/share/gdal" "$ENGINE/gdal"
 cp -R "$DEPS/share/proj" "$ENGINE/proj"
 

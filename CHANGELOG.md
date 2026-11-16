@@ -21,6 +21,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The Homebrew versions are pinned and checked (issue #151; G1.14 finding
+  11; `dev/g1/NOTES.md` §G1.33; bundling plan PR D).
+  `dev/deps/brew-pins.py` compares each formula's opt link with
+  `Brewfile.lock.json`, and `build-deps.sh`, `build-native.sh`,
+  `build-commo.sh` and `app/bundle.sh` stop on a mismatch before they
+  start; `make check-deps` checks every Homebrew package the engine loads,
+  and fails on one missing from the Brewfile. The Brewfile adds the seven
+  packages the engine loaded unpinned (abseil, gettext, jpeg-turbo, pcre2,
+  webp, xz, zstd) and drops four it no longer uses (rsync, laszip, and
+  Homebrew's proj and libspatialite). CONTRIBUTING describes moving a pin.
+
 - The app bundle carries its own natives (issue #152; `dev/g1/NOTES.md`
   §G1.32; bundling plan PR C). `app/bundle.sh` stages the engine, ANGLE,
   commo, GDAL's Java bindings and the 134 libraries they load into
