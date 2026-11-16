@@ -81,11 +81,14 @@ compgen -G "$G1/jni-include/*.h" >/dev/null \
 # assimp (the ASSIMP scene SPI) and openssl@3 (the glue's libcurl client).
 # GDAL, PROJ and libspatialite are not Homebrew's: dev/deps builds them
 # (below), without curl or OpenSSL 4.
-for f in geos sqlite minizip nlohmann-json laszip googletest libxml2 mdbtools glib assimp openssl@3; do
+BREW_LINKED=(geos sqlite minizip nlohmann-json googletest libxml2 mdbtools glib gettext pcre2 assimp openssl@3)
+for f in "${BREW_LINKED[@]}"; do
   brew list --versions "$f" >/dev/null 2>&1 \
     || die "brew formula missing: $f
        → brew bundle (see Brewfile)"
 done
+# ... at the versions Brewfile.lock.json pins (#151); a drift fails here, not later
+python3 -I "$DEV/deps/brew-pins.py" "${BREW_LINKED[@]}" cmake ninja || die "Homebrew drifted from Brewfile.lock.json (above)"
 GLIB="$(brew --prefix glib)"
 OPENSSL="$(brew --prefix openssl@3)"
 

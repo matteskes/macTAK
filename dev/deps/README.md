@@ -31,6 +31,9 @@ This build:
 
 The libraries it still takes from Homebrew have no TLS: sqlite, geos,
 libtiff, openjpeg, libkml with minizip and uriparser, freexl and librttopo.
+Those, and every other Homebrew package the builds use or the app ships,
+are pinned in `Brewfile.lock.json`; `brew-pins.py` checks them before each
+build (#151; CONTRIBUTING.md, "Moving a Homebrew pin").
 
 | Library | Built with | Left out |
 |---|---|---|

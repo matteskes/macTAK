@@ -1186,7 +1186,7 @@ and its password. Six findings; each lands as its own focused PR.
 | 8 | Note | `TrackStore` appends one row per received CoT with no cap or retention: a chatty or hostile server grows the file for as long as the client runs | Recorded; atak-headless runs bounded by `--duration`, G6 needs retention; [issue #148](https://github.com/matteskes/macTAK/issues/148) |
 | 9 | Note | The launcher prefers `~/.m2` kernel jars over the hash-checked transplants, so `check-transplants` vouches only for the fallback | **Fixed** (2026-11-11, by the 5.5 re-pin, `5169342`): the kernel jars are built from `src/` into `dev/g1/kernel-dist` against a private Maven repo, and `dev/g1/kernel/classpath.sh` reads only that directory, so `~/.m2` is never read; an override (`MACTAK_KERNEL_DIST`) is logged; [issue #150](https://github.com/matteskes/macTAK/issues/150) |
 | 10 | Low today, Medium for G6 | Opening a layer file can make GDAL fetch remote URLs: the engine opens it with every driver registered, and some drivers follow references in the file | **Fixed** (2026-11-13, branch `g1/gdal-open-allowlist`): `patches/ogr-open-driver-allowlist.patch`, guarded by `test/gdal-network.sh` (§G1.19); [issue #147](https://github.com/matteskes/macTAK/issues/147). Rasters: **fixed** (2026-11-14), GDAL kept offline for the whole process, guarded by `dev/g2/render/test/gdal-network.sh` (§G1.26); [issue #155](https://github.com/matteskes/macTAK/issues/155). GDAL's HTTP client (a GeoJSON `crs` link): **fixed** (2026-11-14, §G1.27); [issue #167](https://github.com/matteskes/macTAK/issues/167) |
-| 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | Recorded; [issue #151](https://github.com/matteskes/macTAK/issues/151) |
+| 11 | Note | Native dependencies (GDAL, OpenSSL, libxml2, protobuf, curl) are Homebrew's, linked at run time from `/opt/homebrew`: CI always builds on the latest, a developer machine is as current as its last `brew upgrade` | **Fixed** (2026-11-16, §G1.33): GDAL, PROJ and libspatialite built from pinned sources (§G1.30); every Homebrew package the builds use and the app ships pinned in `Brewfile.lock.json` and checked by each build (`dev/deps/brew-pins.py`); [issue #151](https://github.com/matteskes/macTAK/issues/151) |
 | 12 | Low | CI: 14 of the 16 checkouts in `ci.yml`, `cot-roundtrip.yml` and `docs.yml` left the job token in `.git/config` while build scripts and Homebrew-installed tools ran | **Fixed** (CI workflow pass, branch `ci/checkout-persist-credentials`): `persist-credentials: false` on each; the two `changes` jobs keep the token for their `git fetch` |
 
 Trust model: a data package chooses the server you connect to, so a
@@ -2801,3 +2801,55 @@ guard), `make test-app-bundle`, `make check-runtime`, the real app's launch
 above, `make test-app`, `make test-app-comms`, the commo suites
 (`test-tls`, `test-commo-https`, `test-mp-server`, `test-quic`, the hermetic
 round trip), `layer.sh`, `make test-gdal-network` and `make check-deps`.
+
+## G1.33 — the Homebrew versions are pinned and checked (2026-11-16, branch `deps/brew-pins`, bundling plan PR D, issue 151)
+
+G1.14's finding 11: nothing pinned the native dependencies. §G1.30 took
+GDAL, PROJ and libspatialite off Homebrew (pinned in `dev/deps/deps.lock`).
+This section pins the rest.
+
+**What was found.**
+
+- **Seven packages the engine loads, and the app now ships, were in no
+  pin at all:** abseil, gettext, jpeg-turbo, pcre2, webp, xz and zstd.
+- **`Brewfile.lock.json` recorded versions, but nothing compared them with
+  what a build used.** The supply-chain workflow regenerated it only when a
+  workflow or the Brewfile changed.
+- **Four Brewfile entries were dead:** `rsync` (this Mac never had
+  Homebrew's; every build used macOS's), `laszip` (nothing links it; LAS is
+  compiled out), and Homebrew's `proj` and `libspatialite`, which §G1.30
+  replaced (Homebrew's `gdal`, kept as a test tool, still pulls them in).
+
+**What changed.**
+
+- **`dev/deps/brew-pins.py`** compares each formula's
+  `/opt/homebrew/opt` link (the copy the builds link and the bundle ships)
+  with the lock. It checks a list of formulas, every Homebrew package a set
+  of dylibs loads (`--closure`, which also fails on a package missing from
+  the Brewfile), or a bundle's `RUNTIME-MANIFEST.txt` (`--manifest`), and
+  writes the lock (`--write`). `MACTAK_BREW_PINS=warn` reports without
+  failing, for a deliberate upgrade.
+- **Every build checks the formulas it uses before it starts:**
+  `build-deps.sh` (16), `build-native.sh` (14), `build-commo.sh` (5).
+  `app/bundle.sh` checks what it ships, and `make check-deps` checks the
+  runtime closure (22), in CI's native and render jobs.
+- **The supply-chain workflow** regenerates the lock with `--print`, the
+  same code, so the lock it checks is the one the builds check.
+- **The Brewfile** lists the 22 runtime packages and 7 build and test tools,
+  grouped and commented, and drops the four dead entries; the workflows'
+  install lines follow. The procedure for moving a pin is in CONTRIBUTING
+  ("Moving a Homebrew pin").
+
+### The guards
+
+| Check | A | B |
+|---|---|---|
+| `brew-pins.py --closure` on the engine, JNI glue, commo and GDAL's Java bindings | before the Brewfile change: FAIL, the seven unlisted packages | PASS, 22 packages |
+| `brew-pins.py` over the whole Brewfile | before: FAIL, `rsync` not installed | PASS, 29 packages |
+| a pin changed by hand (geos 3.15.0 pinned as 3.14.1) | FAIL, "geos is 3.15.0, pinned 3.14.1", with the fix | `MACTAK_BREW_PINS=warn`: the same report, exit 0 |
+| `--print` against the committed lock | | identical |
+
+With the change, these pass on the dev Mac: the deps build, the ANGLE
+engine build with its canaries, `build-commo.sh`, `make gdal-java`,
+`make check-deps`, `make test-app-bundle` (with the manifest check),
+`make check-runtime`, `layer.sh` and `make test-render`.
