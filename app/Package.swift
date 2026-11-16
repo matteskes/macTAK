@@ -10,7 +10,7 @@
 //                 rebuilt on MacTAKCore with the same flags and log lines
 //   MacTAK        the SwiftUI app (app/bundle.sh makes build/MacTAK.app)
 //
-// With MACTAK_COMMO_LIB set to app/stage-commo.sh's directory (`make
+// With MACTAK_COMMO_LIB set to commo's directory, dev/g1/native-dist (`make
 // test-app-comms`), three more targets join, all of which need a built
 // commo and the atak-civ headers in src/:
 //
@@ -56,7 +56,9 @@ let package = Package(
         .executableTarget(
             name: "MacTAK",
             dependencies: ["MacTAKCore", "CJavaBoot"],
-            swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])]
+            swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])],
+            // the bundle's natives live in Contents/Frameworks (app/bundle.sh, #152)
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(
             name: "MacTAKCoreTests",

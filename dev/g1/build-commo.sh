@@ -18,7 +18,9 @@
 #                             javac -h headers are seeded first, so the
 #                             Makefile's ant hook never fires)
 #   → jcommoncommo.jar       (com.atakmap.commoncommo API classes)
-#   staged in dev/g1/native-dist/ and wired together via @loader_path
+#   staged in dev/g1/native-dist/ with @rpath install names; the JNI library
+#   finds the core through its @loader_path rpath, and so can a Swift binary
+#   or an app bundle with its own rpath (issue #152)
 #   (+ ad-hoc codesign — install_name_tool invalidates the linker signature
 #   and arm64 refuses unsigned dylibs).
 #
@@ -219,18 +221,22 @@ make -C "$WORK/commo/jni/native" -j"$JOBS" all TARGET=macos \
 log "packing jcommoncommo.jar"
 "$JDK/bin/jar" cf "$OUT/jcommoncommo.jar" -C "$WORK/commo/jni/classes" com
 
-# --- stage + wire @loader_path --------------------------------------------
+# --- stage + wire @rpath ----------------------------------------------------
 log "staging → $OUT (install_name wiring + ad-hoc codesign)"
 cp "$WORK/commo/core/impl/libcommoncommo.so" "$OUT/libcommoncommo.dylib"
 cp "$WORK/commo/jni/native/libcommoncommojni.dylib" "$OUT/"
 CORE_ID="$(otool -D "$OUT/libcommoncommo.dylib" | sed -n 2p | sed 's/^[[:space:]]*//')"
-install_name_tool -id "@loader_path/libcommoncommo.dylib" "$OUT/libcommoncommo.dylib"
-install_name_tool -change "$CORE_ID" "@loader_path/libcommoncommo.dylib" \
+# @rpath, not @loader_path: @loader_path suits only the JNI library beside
+# the core, and made the Swift package restage it (#152, G3 trap 2)
+install_name_tool -id "@rpath/libcommoncommo.dylib" "$OUT/libcommoncommo.dylib"
+install_name_tool -id "@rpath/libcommoncommojni.dylib" \
+  -change "$CORE_ID" "@rpath/libcommoncommo.dylib" \
   "$OUT/libcommoncommojni.dylib"
+install_name_tool -add_rpath "@loader_path" "$OUT/libcommoncommojni.dylib"
 codesign --force --sign - "$OUT/libcommoncommo.dylib" "$OUT/libcommoncommojni.dylib"
 
 # --- canaries ---------------------------------------------------------------
-log "canary 1/4: dlopen (jni pulls core via @loader_path)"
+log "canary 1/4: dlopen (jni pulls core via @rpath, its rpath @loader_path)"
 python3 - "$OUT/libcommoncommojni.dylib" <<'PY'
 import ctypes, sys
 ctypes.CDLL(sys.argv[1])

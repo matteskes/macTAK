@@ -278,8 +278,9 @@ was suggested in the sanity check but not adopted.
   and B gets A's presence: G1's round-trip contract (`dev/g1/headless/run.sh`).
   Two smaller tests check that a shut-down client refuses to send and that
   the presence escapes its text.
-- **`make test-app-comms`** stages commo (`app/stage-commo.sh`) and runs
-  the package's build and tests with `MACTAK_COMMO_LIB` set. CI runs it in
+- **`make test-app-comms`** runs the package's build and tests with
+  `MACTAK_COMMO_LIB` set to commo's directory. (It first staged commo
+  through `app/stage-commo.sh`, retired with trap 2's fix below.) CI runs it in
   the comms job, right after `build-commo.sh`.
 
 ### Decided while building
@@ -321,6 +322,10 @@ was suggested in the sanity check but not adopted.
   `app/.build/commo` with the install name `@rpath/libcommoncommo.dylib`
   (signed again: `install_name_tool` breaks the signature), and the shim's
   target adds that directory as an rpath. G1's copy is left as it is.
+  **Fixed at the source** (2026-11-16, #152, `dev/g1/NOTES.md` §G1.32):
+  `build-commo.sh` now names commo `@rpath/libcommoncommo.dylib`, its JNI
+  library finds it through an `@loader_path` rpath, and the Swift package
+  links `dev/g1/native-dist` directly; `app/stage-commo.sh` is gone.
 - **3 — the app claimed macOS 14; its floor is macOS 27.** G3.0 set
   macOS 14 in `Package.swift` and `Info.plist` without a decision behind
   it, while every native library the app loads was built for the build

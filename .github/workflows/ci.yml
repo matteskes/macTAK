@@ -314,6 +314,15 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: make check-deps
 
+      - name: The natives relocate (make check-runtime, issue 152)
+        # stage the engine, ANGLE, commo and GDAL's Java bindings with
+        # everything they load as app/bundle.sh does (@rpath install names,
+        # @loader_path rpaths), then check every Mach-O file loads only what
+        # the stage carries and macOS provides. The app bundle itself needs
+        # the macOS 27 SDK; `make test-app-bundle` runs it on a dev Mac.
+        if: needs.changes.outputs.changed == 'true'
+        run: make check-runtime
+
       - name: Engine GDAL georeferencing on GDAL 3 (GdalLibrary.init + GdalDatasetProjection2 + /vsitakio/)
         # G2.4 b.2 (trap #48): the shadowed GdalLibrary/GdalDatasetProjection2
         # pin OAMS_TRADITIONAL_GIS_ORDER; PASS = EPSG_4326 in traditional

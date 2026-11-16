@@ -21,6 +21,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The app bundle carries its own natives (issue #152; `dev/g1/NOTES.md`
+  §G1.32; bundling plan PR C). `app/bundle.sh` stages the engine, ANGLE,
+  commo, GDAL's Java bindings and the 134 libraries they load into
+  `Contents/Frameworks` with `@rpath` install names
+  (`dev/deps/stage-runtime.py`), and GDAL's and PROJ's data into the
+  bundle, which the app points `GDAL_DATA` and `PROJ_DATA` at through
+  `launch.json`'s new `environment`. `dev/deps/check-bundle.py` fails the
+  build when any Mach-O file in the bundle would load something from
+  outside it; `make check-runtime` runs the same check in CI, and
+  `make test-app-bundle` renders from the bundle alone with dyld watching.
+  commo now has `@rpath` install names, which retires `app/stage-commo.sh`.
+
 - The process now has one TLS stack, OpenSSL 3 (`dev/g1/NOTES.md` §G1.31;
   bundling plan PR B). commo's libmicrohttpd is built without HTTPS
   (`dev/g1/fetch-microhttpd.sh`), which drops GnuTLS and six packages it
