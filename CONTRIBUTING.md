@@ -198,7 +198,9 @@ ships: the version each formula's `/opt/homebrew/opt` link points to.
 `build-native.sh`, `build-commo.sh`, `dev/deps/build-deps.sh` and
 `app/bundle.sh` check it before they start, `make check-deps` checks every
 Homebrew package the engine loads, and the supply-chain workflow fails when
-CI's Homebrew has moved. When Homebrew ships a new version:
+CI's Homebrew has moved. CI runs `brew update` before it installs, so every
+job gets Homebrew's current versions: a Homebrew release turns CI red, in
+every job alike, until its pin moves. When Homebrew ships a new version:
 
 1. Upgrade it (`brew upgrade NAME`), building anyway with
    `MACTAK_BREW_PINS=warn`.

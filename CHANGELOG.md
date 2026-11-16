@@ -98,6 +98,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- CI installs the same Homebrew versions in every job (`dev/g1/NOTES.md`
+  §G1.33, Traps). Each runner installed what its image's Homebrew snapshot
+  knew, and images roll out gradually, so on 2026-11-16 the CoT round-trip
+  job got newer assimp and minizip bottles than the native job and the pin
+  check failed it. Every install step now runs `brew update` first, and the
+  pins moved to Homebrew's current versions (assimp 6.0.6, minizip 1.4,
+  cmake 4.5.0, gdal 3.13.3_7) after the suites passed on them.
+  `build-deps.sh` also rebuilds when a Homebrew pin moves.
+
 - The `android.graphics` and GLES stand-ins now match Android in three
   places (G2 audit finding 7; issues #131, #132, #133; `dev/g2/NOTES.md`
   §Audit finding 7's rest). `BitmapRegionDecoder` closes the file it
