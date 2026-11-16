@@ -72,7 +72,13 @@ commo (`dev/g1/NOTES.md` §G1.31).
 
 ## Where the libraries live
 
-They stay in `dev/deps/dist`: the engine and the Java bindings both find them
-through an rpath to `dev/deps/dist/lib`, so the process loads one libgdal. A
-copy next to the engine would be a second one. Bundling them into an app,
-with every install name relative, is the next step (#152).
+For development they stay in `dev/deps/dist`: the engine and the Java
+bindings both find them through an rpath to `dev/deps/dist/lib`, so the
+process loads one libgdal. A copy next to the engine would be a second one.
+
+For the app, `stage-runtime.py` copies the engine, ANGLE, commo, GDAL's
+Java bindings and every library they load into `Contents/Frameworks`, each
+with an `@rpath` install name and `@loader_path` as its only rpath, and
+`check-bundle.py` checks that every Mach-O file loads only what the bundle
+carries (#152, `dev/g1/NOTES.md` §G1.32). `check-runtime.sh` runs the same
+staging and check without an app, in CI.

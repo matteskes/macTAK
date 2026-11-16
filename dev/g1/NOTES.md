@@ -131,7 +131,9 @@ JDK; the smoke does). `build-native.sh` still runs verbatim.
   SQLCipher at the encryption
   rung; core install_name stays build-absolute (native-dist is built and
   consumed on the same machine — revisit if dylibs ever ship cross-machine;
-  [issue #152](https://github.com/matteskes/macTAK/issues/152)).
+  [issue #152](https://github.com/matteskes/macTAK/issues/152)). **Since
+  resolved:** the engine's install name is `@rpath/libtakengine.dylib`, and
+  the app bundle's natives are relocated as a set (§G1.32).
 
 ## G1.2 — atak-headless: CoT round-trip (commoncommo build + streaming iface)
 
@@ -2729,3 +2731,73 @@ suites, `make test-tls`, `make test-commo-https`, `make test-quic`,
 `fake-cot-server.py`), `layer.sh`, `make test-gdal-network`,
 `make test-gdal-projection`, `make test`, `make test-render`,
 `make test-shell` and `make app`.
+
+## G1.32 — the app bundle carries its own natives (2026-11-16, branch `deps/bundle-rpath`, bundling plan PR C, issue 152)
+
+**The problem.** `make app` copied `native-dist` into the bundle as it was.
+The engine still found GDAL, PROJ and libspatialite through an absolute
+rpath to `dev/deps/dist/lib`, the Homebrew libraries through
+`/opt/homebrew/...` paths and an `/opt/homebrew/lib` rpath, ANGLE through
+`dev/g2/angle-dist`, and GDAL's and PROJ's data through absolute paths in
+`launch.json` and in PROJ's build. On any other Mac it would load nothing.
+
+**What changed.**
+
+- **`dev/deps/stage-runtime.py`** walks the closure of the engine, its JNI
+  glue, ANGLE, GDAL's Java bindings and commo, with `check-closure.py`'s
+  resolver, and copies all 134 libraries into one directory. Each gets the
+  install name `@rpath/<name>`, every reference to another becomes
+  `@rpath/<name>`, its rpaths are replaced by `@loader_path`, and it is
+  ad-hoc signed again. A manifest records each one's source and SHA-256.
+- **`app/bundle.sh`** stages into `Contents/Frameworks` (87 MB) and copies
+  GDAL's data and PROJ's `proj.db` into `Resources/engine/gdal` and
+  `proj` (11 MB). `launch.json` names them relative to the engine
+  directory, including a new `environment` map, `GDAL_DATA` and
+  `PROJ_DATA`, which the app sets before the JVM starts
+  (`LaunchConfig.applyEnvironment`): GDAL and PROJ read them in place of
+  the build tree's paths. The `MacTAK` executable carries the
+  `@executable_path/../Frameworks` rpath.
+- **commo** is named `@rpath/libcommoncommo.dylib` at the source
+  (`build-commo.sh`), with an `@loader_path` rpath on its JNI library, so
+  the Swift package links `native-dist`'s commo directly and
+  `app/stage-commo.sh` is retired (G3 trap 2). The engine was already
+  `@rpath/libtakengine.dylib`; the issue's note on it was out of date.
+
+### The guards
+
+| Guard | Where | Checks | A/B |
+|---|---|---|---|
+| `check-bundle.py` | end of `app/bundle.sh`; `make check-runtime` in CI's render job | every Mach-O file: no absolute dependency outside `/usr/lib` and `/System`, no absolute rpath, every `@rpath` reference resolves inside the bundle with the file's own rpaths | the bundle `make app` built before: FAIL (absolute rpaths into `dev/deps/dist`, `angle-dist` and `/opt/homebrew/lib`); now: PASS, 135 files |
+| `make test-app-bundle` (`app/test/bundle-runtime.sh`) | dev Mac (the app needs the macOS 27 SDK) | RenderSmoke from the bundle's classes, jars, Frameworks and data, with `DYLD_PRINT_LIBRARIES=1` and `dev/deps/dist` moved aside: the UTM GeoTIFF reprojected through the bundle's PROJ (three ground points), then the GeoJSON layer; dyld must load nothing from outside the bundle, `/usr/lib`, `/System` and the JDK | PASS: 33 Frameworks libraries, nothing outside |
+
+The app itself, launched from `build/MacTAK.app/Contents/MacOS/MacTAK`
+with `dev/deps/dist` moved aside, ran past 12 s, presented frames with no
+GL error, and loaded 33 libraries from `Frameworks` and nothing from
+outside the bundle, macOS and the JDK.
+
+### Traps
+
+- **A Java class file starts with `0xCAFEBABE`, a fat Mach-O's magic.** The
+  first `check-bundle.py` counted 133 `.class` files as Mach-O. The next
+  four bytes tell them apart: a fat file's architecture count is small, a
+  class file's version is at least 45.
+- **`codesign` treats every file in `Contents/Frameworks` as code**, so the
+  staging manifest moves to `Resources/engine/`.
+- **The classpath order matters.** The runtime test first globbed the jars
+  alphabetically, which put android-port's classes ahead of the kernel's
+  (`IncompatibleClassChangeError` on `GLMapSurface`); it takes
+  `launch.json`'s order, as the app does.
+- **dyld on macOS 27 prints `dyld[PID]: <UUID> PATH`**, and lines naming no
+  path (`move loaded to delayed: ...`).
+
+### What #152 still asks
+
+The bundle launching on a second Mac, or a clean macOS 27 VM, that has
+never built macTAK. That needs a JDK 21 there: the app still starts the
+JDK that `/usr/libexec/java_home` finds (bundling a JRE is G5's).
+
+With the change, these pass on the dev Mac: `make app` (with the bundle
+guard), `make test-app-bundle`, `make check-runtime`, the real app's launch
+above, `make test-app`, `make test-app-comms`, the commo suites
+(`test-tls`, `test-commo-https`, `test-mp-server`, `test-quic`, the hermetic
+round trip), `layer.sh`, `make test-gdal-network` and `make check-deps`.

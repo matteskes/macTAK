@@ -24,6 +24,7 @@ final class EngineHost: ObservableObject {
         state = .starting
         do {
             let launch = try LaunchConfig.load()
+            launch.applyEnvironment()
             let jvm = try JavaBoot.start(classpath: launch.resolvedClasspath, options: launch.resolvedJvmOptions)
             let engine = try EngineBridge(jni: jvm.jni)
             engine.onFailure = { msg in

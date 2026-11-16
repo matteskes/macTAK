@@ -3,18 +3,25 @@
 # Assemble the macTAK app bundle (G3.0, `make app`): build/MacTAK.app with
 #
 #   Contents/MacOS/MacTAK              the SwiftUI app (swift build -c release)
+#   Contents/Frameworks/               every native library the engine loads:
+#                                      the engine and its JNI glue, commo,
+#                                      ANGLE, GDAL's Java bindings, our own
+#                                      GDAL/PROJ/libspatialite and the
+#                                      Homebrew libraries they link, all
+#                                      @rpath-relative (dev/deps/stage-runtime.py)
 #   Contents/Resources/engine/
 #     java/classes/                    the render-side classes (env.sh's javac pass)
 #     java/*.jar                       gdal.jar, the takkernel jars, slf4j-simple
-#     lib/                             the engine natives and ANGLE (native-dist)
-#     gdal/                            libgdalalljni.dylib (GDAL's Java bindings)
+#     gdal/, proj/                     GDAL_DATA and PROJ's proj.db (dev/deps/dist/share)
 #     data/                            the map's starting data (--layer etc.)
+#     RUNTIME-MANIFEST.txt             each staged library's source and SHA-256
 #     launch.json                      what the app boots with (LaunchConfig.swift)
 #
-# A development bundle for this Mac, not a distributable one: it starts the
-# JDK 21 that /usr/libexec/java_home finds, and the engine's natives still
-# link Homebrew's GDAL, PROJ and friends by absolute path. A self-contained,
-# signed bundle is G5's work. Ad-hoc signed, like the dylibs it carries.
+# The natives load nothing from the build machine (issue #152):
+# dev/deps/check-bundle.py checks every Mach-O file, and the build fails
+# unless it passes. Still to come before the bundle is distributable (G5):
+# it starts the JDK 21 that /usr/libexec/java_home finds, and it is ad-hoc
+# signed, like the dylibs it carries.
 #
 # Usage: app/bundle.sh [--layer FILE] [--basemap FILE] [--elevation PATH] (each repeatable)
 #   With no data option, the map opens on the San Francisco landmarks
@@ -63,7 +70,8 @@ BIN_DIR="$(swift build -c release --package-path "$HERE" --show-bin-path)"
 rm -rf "$APP_OUT"
 CONTENTS="$APP_OUT/Contents"
 ENGINE="$CONTENTS/Resources/engine"
-mkdir -p "$CONTENTS/MacOS" "$ENGINE/java" "$ENGINE/lib" "$ENGINE/gdal" "$ENGINE/data"
+FRAMEWORKS="$CONTENTS/Frameworks"
+mkdir -p "$CONTENTS/MacOS" "$ENGINE/java" "$ENGINE/data"
 cp "$BIN_DIR/MacTAK" "$CONTENTS/MacOS/MacTAK"
 cp "$HERE/Info.plist" "$CONTENTS/Info.plist"
 
@@ -74,8 +82,18 @@ for jar in "${cp_entries[@]}"; do
   cp "$jar" "$ENGINE/java/"
   jars+=("java/$(basename "$jar")")
 done
-cp "$DIST"/*.dylib "$ENGINE/lib/"
-cp "$GDAL_JAVA/libgdalalljni.dylib" "$ENGINE/gdal/"
+# The natives and everything they load, relinked to find each other in
+# Frameworks. commo goes in when it's built (dev/g1/build-commo.sh).
+roots=("$DIST/libtakengine.dylib" "$DIST/libtakenginejni.dylib" "$DIST/libEGL.dylib" "$DIST/libGLESv2.dylib"
+       "$GDAL_JAVA/libgdalalljni.dylib")
+for f in "$DIST/libcommoncommo.dylib" "$DIST/libcommoncommojni.dylib"; do
+  [[ -f "$f" ]] && roots+=("$f")
+done
+python3 -I "$REPO/dev/deps/stage-runtime.py" "$FRAMEWORKS" "${roots[@]}"
+# codesign treats every file in Frameworks as code: the manifest goes beside the data
+mv "$FRAMEWORKS/RUNTIME-MANIFEST.txt" "$ENGINE/"
+cp -R "$DEPS/share/gdal" "$ENGINE/gdal"
+cp -R "$DEPS/share/proj" "$ENGINE/proj"
 
 # copy one data file or directory into data/; print its bundle-relative path
 stage() {
@@ -95,12 +113,13 @@ for f in ${elevations[@]+"${elevations[@]}"}; do staged_elevations+=("$(stage "$
 cat > "$ENGINE/launch.json" <<JSON
 {
   "classpath": $(json_list java/classes "${jars[@]}"),
-  "libs": ["lib/libtakengine.dylib", "lib/libtakenginejni.dylib"],
-  "egl": "lib/libEGL.dylib",
-  "gles": "lib/libGLESv2.dylib",
-  "jvmOptions": $(json_list "-Djava.library.path=\${ENGINE}/lib:\${ENGINE}/gdal" \
+  "libs": ["../../Frameworks/libtakengine.dylib", "../../Frameworks/libtakenginejni.dylib"],
+  "egl": "../../Frameworks/libEGL.dylib",
+  "gles": "../../Frameworks/libGLESv2.dylib",
+  "environment": {"GDAL_DATA": "\${ENGINE}/gdal", "PROJ_DATA": "\${ENGINE}/proj"},
+  "jvmOptions": $(json_list "-Djava.library.path=\${ENGINE}/../../Frameworks" \
       "-Djava.awt.headless=true" "-XX:+UseZGC" "-XX:+ZGenerational" \
-      "-Dmactak.gdal.data=$GDAL_DATA_DIR" \
+      "-Dmactak.gdal.data=\${ENGINE}/gdal" \
       "-Dorg.slf4j.simpleLogger.defaultLogLevel=${MACTAK_LOG_LEVEL:-warn}"),
   "layers": $(json_list ${staged_layers[@]+"${staged_layers[@]}"}),
   "basemaps": $(json_list ${staged_basemaps[@]+"${staged_basemaps[@]}"}),
@@ -110,4 +129,6 @@ JSON
 
 codesign --force --sign - "$APP_OUT" >/dev/null 2>&1 \
   || { echo "bundle.sh: ad-hoc codesign failed" >&2; exit 1; }
+python3 -I "$REPO/dev/deps/check-bundle.py" "$APP_OUT" \
+  || { echo "bundle.sh: the bundle loads something from outside itself" >&2; exit 1; }
 echo "bundle.sh: $APP_OUT ($(du -sh "$APP_OUT" | cut -f1))"

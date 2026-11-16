@@ -1,4 +1,4 @@
-.PHONY: help hooks deps check-deps kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
+.PHONY: help hooks deps check-deps check-runtime test-app-bundle kernel-jars build build-angle angle gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -19,6 +19,8 @@ help:
 	@echo "  gdal-java      - G2.4b: build the GDAL SWIG Java bindings (org.gdal) against macTAK's own libgdal (dev/deps) into dev/g2/gdal-java-dist + smoke (dev/g2/fetch-gdal-java.sh)"
 	@echo "  test-gdal-projection - G2.4 b.2: the engine's GdalLibrary.init + GdalDatasetProjection2 on GDAL 3 with the axis-order patch (needs build-angle + gdal-java)"
 	@echo "  deps           - build macTAK's own GDAL, PROJ and libspatialite from dev/deps/deps.lock into dev/deps/dist (no curl, no OpenSSL 4; build-native.sh runs it)"
+	@echo "  check-runtime  - stage the built natives as app/bundle.sh does and check every one loads only what the stage carries (#152; CI)"
+	@echo "  test-app-bundle - build/MacTAK.app's natives run on their own: renders from the bundle alone, dyld loads nothing from outside it (#152; dev Mac)"
 	@echo "  check-deps     - guards: GDAL registers exactly dev/deps/gdal-drivers.txt; the built libraries' closure has no OpenSSL 4 and one GDAL/PROJ"
 	@echo "  gen-gles-shim  - regenerate the android.opengl GLES shim (Java + JNI + stub) from the transplant jar x gl3.h"
 	@echo "  check-gen-gles-shim - regenerate and fail if the committed shim files differ (CI drift gate)"
@@ -72,6 +74,14 @@ deps:
 
 check-deps:
 	bash dev/deps/check.sh
+
+check-runtime:
+	bash dev/deps/check-runtime.sh
+
+# #152: the app bundle runs on its own natives and data. Needs the Swift
+# package's macOS 27 SDK, so a dev-Mac gate (CI runs check-runtime instead).
+test-app-bundle: app
+	bash app/test/bundle-runtime.sh
 
 gen-gles-shim:
 	python3 $(GLES_SHIM_GEN) $(GLES_SHIM_JAR) $(GLES_SHIM_GL3H) dev/g2/render/src/android/opengl \
@@ -206,9 +216,12 @@ test-app:
 
 # G3.1: the Swift package with its comms targets (CCommoShim, MacTAKComms):
 # commo from Swift, two CommoClients through fake-cot-server.py. Needs a
-# built commo (dev/g1/build-commo.sh) and src/; CI's comms job runs it.
+# built commo (dev/g1/build-commo.sh, whose @rpath install names Swift links
+# directly, #152) and src/; CI's comms job runs it.
 test-app-comms:
-	@lib="$$(bash app/stage-commo.sh)" && \
+	@[ -f dev/g1/native-dist/libcommoncommo.dylib ] \
+		|| { echo "test-app-comms: no commo in dev/g1/native-dist — run dev/g1/build-commo.sh" >&2; exit 1; }
+	@lib="$$(cd dev/g1/native-dist && pwd)" && \
 		MACTAK_COMMO_LIB="$$lib" swift build --package-path app --build-tests && \
 		MACTAK_COMMO_LIB="$$lib" swift test --package-path app
 
