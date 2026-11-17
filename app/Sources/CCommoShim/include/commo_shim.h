@@ -52,6 +52,16 @@ typedef struct {
     void (*interface_down)(void *context, const char *endpoint);
     /// code is commo's NetInterfaceErrorCode.
     void (*interface_error)(void *context, const char *endpoint, int code);
+    /// Progress of an enrollment (mactak_commo_enroll_init). step is commo's
+    /// EnrollmentStep (0 keygen, 1 the CSR's config request, 2 signing),
+    /// status its SimpleFileIOStatus (0 in progress, 1 success, more for
+    /// failures). Only signing's success carries data: the new client
+    /// identity as PKCS#12 under identity_password, and the CAs the server
+    /// sent as PKCS#12 under trust_password (NULL when it sent none). The
+    /// private key from keygen is never passed out on its own.
+    void (*enrollment_update)(void *context, int enrollment, int step, int status, const char *info,
+                              const uint8_t *identity, size_t identity_len,
+                              const uint8_t *ca, size_t ca_len);
 } mactak_commo_callbacks;
 
 /// Initialize libxml2, OpenSSL and curl as commo expects (the work of the
@@ -93,6 +103,41 @@ int mactak_commo_broadcast(mactak_commo *commo, const char *xml,
 /// accepted it.
 int mactak_commo_send(mactak_commo *commo, const char *const *uids, size_t count,
                       const char *xml, char *err, size_t errlen);
+
+/// Set up a certificate enrollment with a TAK server (commo's
+/// enrollmentInit): keygen, then GET /Marti/api/tls/config and POST
+/// /Marti/api/tls/signClient/v2 on host:port, with basic auth (or a bearer
+/// token when use_token is nonzero). ca, the PKCS#12 truststore the server
+/// must chain to, is required: commo with no CA accepts any server (#146).
+/// verify_host also checks the server's name. On success writes the
+/// enrollment's id, which enrollment_update carries; nothing happens until
+/// mactak_commo_enroll_start. 0 on success.
+int mactak_commo_enroll_init(mactak_commo *commo, const char *host, int port, int verify_host,
+                             const char *user, const char *password, int use_token,
+                             const uint8_t *ca, size_t ca_len, const char *ca_password,
+                             const char *identity_password, const char *trust_password,
+                             const char *key_password, int key_bits, const char *version,
+                             int *enrollment, char *err, size_t errlen);
+
+/// Start an enrollment set up by mactak_commo_enroll_init. 0 on success.
+int mactak_commo_enroll_start(mactak_commo *commo, int enrollment, char *err, size_t errlen);
+
+/// GET an https URL through the curl and OpenSSL 3 commo carries, the one
+/// TLS stack (dev/g3/NOTES.md §G3.2). The server must chain to ca_pem (PEM
+/// certificates, required: no system roots, no "accept anything");
+/// verify_host also checks its name. Basic auth when user isn't NULL. https
+/// only, no redirects, at most max_bytes of body, the whole request within
+/// timeout_s. Needs mactak_commo_init_libraries first. On 0, *status is the
+/// HTTP status and *body (free it with mactak_commo_free) holds *body_len
+/// bytes; otherwise err says why, in curl's words.
+int mactak_commo_https_get(const char *url, const char *user, const char *password,
+                           const uint8_t *ca_pem, size_t ca_len, int verify_host,
+                           size_t max_bytes, long timeout_s,
+                           long *status, uint8_t **body, size_t *body_len,
+                           char *err, size_t errlen);
+
+/// Free memory the shim handed out (mactak_commo_https_get's body).
+void mactak_commo_free(void *pointer);
 
 /// Shut commo down and free it. No callback runs after this returns.
 void mactak_commo_destroy(mactak_commo *commo);
