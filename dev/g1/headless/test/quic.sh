@@ -17,7 +17,7 @@
 #           (QuicPeerTest; dev/g1/NOTES.md G1.18)
 #
 # From spike 2 (dev/spike/g55/NOTES.md §Commo). aioquic installs into a
-# venv from the hash-pinned requirements-quic.txt (--require-hashes).
+# venv from the hash-pinned requirements-quic.txt (test/quic-venv.sh).
 #
 # usage: test/quic.sh   (needs dev/g1/native-dist from build-commo.sh)
 # env:   QUIC_TEST_PORT (default 18190; the refuse leg uses +1, the cause
@@ -32,8 +32,6 @@ G1="$(cd "$HERE/../.." && pwd)"
 ROOT="$(cd "$G1/../.." && pwd)"
 DIST="$G1/native-dist"
 WORK="$G1/headless/build/quic-test"
-VENV="$G1/headless/build/quic-venv"
-REQUIREMENTS="$HERE/requirements-quic.txt"
 PORT="${QUIC_TEST_PORT:-18190}"
 PASS=atakatak
 
@@ -49,14 +47,7 @@ JDK="$(mactak_jdk_home 21)" || die "JDK 21 not found (dev/jdk.sh)"
 OPENSSL_CLI="$(brew --prefix openssl@3)/bin/openssl"
 [[ -x "$OPENSSL_CLI" ]] || die "brew openssl@3 missing"
 
-# The venv is rebuilt whenever requirements-quic.txt changes.
-if ! cmp -s "$REQUIREMENTS" "$VENV/requirements-quic.txt" 2>/dev/null; then
-  log "aioquic venv (--require-hashes) → $VENV"
-  rm -rf "$VENV"
-  python3 -m venv "$VENV"
-  "$VENV/bin/pip" install -q --disable-pip-version-check --require-hashes -r "$REQUIREMENTS"
-  cp "$REQUIREMENTS" "$VENV/requirements-quic.txt"
-fi
+PYTHON="$(bash "$HERE/quic-venv.sh")"
 
 rm -rf "$WORK"
 mkdir -p "$WORK/classes"
@@ -94,7 +85,7 @@ trap stop_server EXIT
 
 quic_leg() {   # quic_leg SERVER_CERT accept|refuse PORT
   local server_log="$WORK/quic-$1.server.log"
-  "$VENV/bin/python" "$HERE/fake-quic-server.py" "$3" "$WORK/$1.crt" "$WORK/$1.key" \
+  "$PYTHON" "$HERE/fake-quic-server.py" "$3" "$WORK/$1.crt" "$WORK/$1.key" \
     > "$server_log" 2>&1 &
   quic_server=$!
   sleep 1

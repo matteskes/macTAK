@@ -496,27 +496,64 @@ jobs:
   shell-compile:
     name: shell compile (macOS arm64)
     # The Swift package at app/ (G3.0): every product builds — the G2 test
-    # harness mactak-shell and the SwiftUI app — and swift test passes. No
-    # engine, no JDK (jni.h is the repo's pinned copy), no GUI session: the
-    # runs that open windows stay dev-Mac gates (`make test-shell`,
-    # `make exit-run`, `make app`).
-    needs: changes
+    # harness mactak-shell and the SwiftUI app — and swift test passes,
+    # comms legs included (TCP, mutual TLS, QUIC). No engine, no JDK (jni.h
+    # is the repo's pinned copy), no GUI session: the runs that open windows
+    # stay dev-Mac gates (`make test-shell`, `make exit-run`, `make app`).
+    # The package links commo (G3.2): this job builds against the commo the
+    # comms job built and uploaded, rather than building its own.
+    needs: [changes, commo-stack]
     # macOS 27, the app's floor: a package built for 27 doesn't launch on 26.
     # xcode-27 is GitHub's macOS 27 image, a preview (dev/g3/NOTES.md trap 3).
     runs-on: xcode-27
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out macTAK
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Check out TAK-Product-Center/atak-civ 5.5.1.10 at the pinned commit (sparse; commo's headers)
+        if: needs.changes.outputs.changed == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: TAK-Product-Center/atak-civ
+          ref: 9f6893dd657feacc35ec5de03dad721c2e44170e # keep in sync with local src/ (CONTRIBUTING.md, Setup)
+          path: src
+          fetch-depth: 1
+          sparse-checkout: |
+            commoncommo
+          persist-credentials: false
+
+      - name: Update Homebrew (every job installs the same versions; issue 151)
+        if: needs.changes.outputs.changed == 'true'
+        run: brew update --quiet
+
+      - name: Install commo's runtime libraries (Homebrew)
+        # What libcommoncommo.dylib links (otool -L): openssl@3, libxml2,
+        # protobuf and its abseil. openssl@3's CLI also makes the TLS legs'
+        # throwaway PKI.
+        if: needs.changes.outputs.changed == 'true'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: brew install openssl@3 libxml2 protobuf
+
+      - name: Download the comms job's commo into dev/g1/native-dist
+        if: needs.changes.outputs.changed == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: commo-stack-macos-arm64
+          path: dev/g1/native-dist
+
       - name: Compile the harness (build-shell.sh, no run)
         if: needs.changes.outputs.changed == 'true'
         run: make build-shell
 
       - name: Build every product and run the Swift tests (make test-app)
+        # Bounded: a hang fails here, not at the job's limit (G3 trap 5).
         if: needs.changes.outputs.changed == 'true'
+        timeout-minutes: 12
         run: make test-app
 
       - name: Shell argument canary (a missing option value is exit 2, not a crash)
@@ -528,9 +565,10 @@ jobs:
   commo-stack:
     name: comms stack (macOS arm64)
     needs: changes
-    # macOS 27: make test-app-comms runs the Swift package, built for the
-    # app's floor of 27 (xcode-27 is GitHub's macOS 27 image, a preview;
-    # dev/g3/NOTES.md trap 3). It also matches the dev Mac's toolchain.
+    # macOS 27: the commo it builds is the one the shell job's Swift package
+    # links (G3.2), so it's built on the app's floor and the dev Mac's
+    # toolchain (xcode-27 is GitHub's macOS 27 image, a preview;
+    # dev/g3/NOTES.md trap 3).
     runs-on: xcode-27
     timeout-minutes: 30
     steps:
@@ -606,15 +644,10 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: make test-mp-server
 
-      - name: Swift comms (make test-app-comms)
-        # G3.1: CommoClient over commo through CCommoShim, built against the
-        # commo above; two clients through fake-cot-server.py see each other
-        # (dev/g3/NOTES.md). The shell job builds the package without commo.
-        if: needs.changes.outputs.changed == 'true'
-        run: make test-app-comms
-
       - name: Upload comms artifacts
-        # Guarded: if-no-files-found is error, which would fail a no-op run.
+        # The shell job builds and tests the Swift package against this
+        # commo (G3.2). Guarded: if-no-files-found is error, which would fail
+        # a no-op run.
         if: always() && needs.changes.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
