@@ -551,8 +551,24 @@ jobs:
         run: make build-shell
 
       - name: Build every product and run the Swift tests (make test-app)
+        # TEMPORARY (G3.2a CI hang, PR #184): if the tests outlive 8 min,
+        # sample the test process and list the processes, then fail.
         if: needs.changes.outputs.changed == 'true'
-        run: make test-app
+        timeout-minutes: 12
+        run: |
+          make test-app &
+          tests=$!
+          for _ in $(seq 480); do
+            kill -0 "$tests" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$tests" 2>/dev/null; then
+            echo "::error::make test-app still running after 8 min"
+            pgrep -lf "xctest|python|openssl|swift" || true
+            for pid in $(pgrep -f MacTAKCommsTests.xctest); do sample "$pid" 5 -file "/tmp/sample-$pid.txt" >/dev/null 2>&1 || true; head -c 60000 "/tmp/sample-$pid.txt" || true; done
+            exit 1
+          fi
+          wait "$tests"
 
       - name: Shell argument canary (a missing option value is exit 2, not a crash)
         # Runs the compiled shell; parsing ends before the JVM or a window

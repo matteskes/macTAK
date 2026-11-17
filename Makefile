@@ -213,12 +213,14 @@ app:
 # dev/g1/native-dist (dev/g1/build-commo.sh; CI's shell job downloads the
 # comms job's) and src/. The comms tests run every leg: TCP, mutual TLS
 # and QUIC, whose fake server runs in the aioquic venv (quic-venv.sh).
+# NSUnbufferedIO: XCTest's lines reach a pipe (CI's log) as they happen.
 test-app:
 	@[ -f dev/g1/native-dist/libcommoncommo.dylib ] \
 		|| { echo "test-app: no commo in dev/g1/native-dist — run dev/g1/build-commo.sh" >&2; exit 1; }
 	swift build --package-path app --build-tests
 	@python="$$(bash dev/g1/headless/test/quic-venv.sh)" && \
-		MACTAK_QUIC_PYTHON="$$python" MACTAK_REQUIRE_ALL_LEGS=1 swift test --package-path app
+		NSUnbufferedIO=YES MACTAK_QUIC_PYTHON="$$python" MACTAK_REQUIRE_ALL_LEGS=1 \
+		swift test --package-path app
 
 # G3.1's name for the comms tests, which test-app now runs.
 test-app-comms: test-app
