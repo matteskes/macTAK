@@ -1,10 +1,10 @@
 {
   "entries": {
     "abseil": "20260817.0",
-    "assimp": "6.0.5",
-    "cmake": "4.4.5",
+    "assimp": "6.0.6",
+    "cmake": "4.5.0",
     "freexl": "2.0.0",
-    "gdal": "3.13.3_5",
+    "gdal": "3.13.3_7",
     "geos": "3.15.0",
     "gettext": "1.0",
     "glib": "2.90.1",
@@ -15,7 +15,7 @@
     "libtiff": "4.7.2",
     "libxml2": "2.15.4",
     "mdbtools": "1.0.1_1",
-    "minizip": "1.3.2_1",
+    "minizip": "1.4",
     "ninja": "1.13.2",
     "nlohmann-json": "3.12.0",
     "openjpeg": "2.5.4_1",

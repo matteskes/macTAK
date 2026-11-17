@@ -2840,6 +2840,24 @@ This section pins the rest.
   install lines follow. The procedure for moving a pin is in CONTRIBUTING
   ("Moving a Homebrew pin").
 
+### Traps
+
+- **CI's Homebrew version depended on the runner image** (2026-11-16, the
+  first push to main after this section). Every install step set
+  `HOMEBREW_NO_AUTO_UPDATE=1`, so a runner installed whatever its image's
+  Homebrew snapshot knew, and GitHub rolls new images out gradually. On
+  `7cb6395` the native job (image `macos-26-arm64` 20261102) poured
+  assimp 6.0.5 and minizip 1.3.2_1 and passed; the CoT round-trip job
+  (image 20261112) poured 6.0.6 and 1.4, and the pin check failed it. No
+  lock could match both. Every install step is now preceded by
+  `brew update`, so each job installs Homebrew's current versions, and the
+  pins moved to them (assimp 6.0.6, minizip 1.4, cmake 4.5.0, gdal
+  3.13.3_7) after the suites passed on them. A Homebrew release now fails
+  every job the same way until its pin moves.
+- **`dev/deps/build-deps.sh`'s stamp now covers `Brewfile.lock.json`**, so a
+  moved pin rebuilds GDAL/PROJ/libspatialite against the new library, as
+  CI's cache key already did.
+
 ### The guards
 
 | Check | A | B |

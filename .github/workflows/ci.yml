@@ -113,6 +113,16 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: git -C src lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
 
+      - name: Update Homebrew (every job installs the same versions; issue 151)
+        # Without this, each runner installs what its image's Homebrew
+        # snapshot knows, and GitHub rolls new images out gradually: on
+        # 2026-11-16 two jobs on one commit poured different assimp and
+        # minizip bottles, and the pin check (dev/deps/brew-pins.py) failed
+        # one of them. With it, every job gets Homebrew's current versions,
+        # and Brewfile.lock.json has to match those.
+        if: needs.changes.outputs.changed == 'true'
+        run: brew update --quiet
+
       - name: Install engine dependencies (Homebrew)
         if: needs.changes.outputs.changed == 'true'
         env:
@@ -238,6 +248,16 @@ jobs:
       - name: Pull the tinygltf tarball from Git LFS (depends/ holds LFS pointers)
         if: needs.changes.outputs.changed == 'true'
         run: git -C src lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
+
+      - name: Update Homebrew (every job installs the same versions; issue 151)
+        # Without this, each runner installs what its image's Homebrew
+        # snapshot knows, and GitHub rolls new images out gradually: on
+        # 2026-11-16 two jobs on one commit poured different assimp and
+        # minizip bottles, and the pin check (dev/deps/brew-pins.py) failed
+        # one of them. With it, every job gets Homebrew's current versions,
+        # and Brewfile.lock.json has to match those.
+        if: needs.changes.outputs.changed == 'true'
+        run: brew update --quiet
 
       - name: Install engine dependencies (Homebrew)
         if: needs.changes.outputs.changed == 'true'
@@ -529,6 +549,16 @@ jobs:
           sparse-checkout: |
             commoncommo
           persist-credentials: false
+
+      - name: Update Homebrew (every job installs the same versions; issue 151)
+        # Without this, each runner installs what its image's Homebrew
+        # snapshot knows, and GitHub rolls new images out gradually: on
+        # 2026-11-16 two jobs on one commit poured different assimp and
+        # minizip bottles, and the pin check (dev/deps/brew-pins.py) failed
+        # one of them. With it, every job gets Homebrew's current versions,
+        # and Brewfile.lock.json has to match those.
+        if: needs.changes.outputs.changed == 'true'
+        run: brew update --quiet
 
       - name: Install comms dependencies (Homebrew)
         # build-commo.sh preflight list; protoc ships with protobuf; pkgconf

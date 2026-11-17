@@ -102,6 +102,15 @@ jobs:
           print(f"Brewfile matches the workflows' brew install lines ({len(brew)} packages)")
           PY
 
+      - name: Update Homebrew (every job installs the same versions; issue 151)
+        # Without this, each runner installs what its image's Homebrew
+        # snapshot knows, and GitHub rolls new images out gradually: on
+        # 2026-11-16 two jobs on one commit poured different assimp and
+        # minizip bottles, and the pin check (dev/deps/brew-pins.py) failed
+        # one of them. With it, every job gets Homebrew's current versions,
+        # and Brewfile.lock.json has to match those.
+        run: brew update --quiet
+
       - name: Install Brewfile dependencies
         run: brew bundle install --file Brewfile
 

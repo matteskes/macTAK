@@ -45,7 +45,9 @@ BREW_NEEDS=(cmake ninja pkgconf sqlite geos libtiff jpeg-turbo webp xz zstd open
 # (#151): a cached dist is only as good as the libraries it was built against
 python3 -I "$HERE/brew-pins.py" "${BREW_NEEDS[@]}" || die "Homebrew drifted from Brewfile.lock.json (above)"
 
-stamp() { cat "$LOCK" "${BASH_SOURCE[0]}" | shasum -a 256 | cut -d' ' -f1; }
+# the pins, this script, and the Homebrew versions the result links (a moved
+# Homebrew pin rebuilds against the new library, as CI's cache key does)
+stamp() { cat "$LOCK" "${BASH_SOURCE[0]}" "$HERE/../../Brewfile.lock.json" | shasum -a 256 | cut -d' ' -f1; }
 if [[ "${1:-}" != "--force" && -f "$DIST/BUILD-STAMP" && "$(cat "$DIST/BUILD-STAMP")" == "$(stamp)" ]]; then
   log "dist is current ($DIST); --force rebuilds"
   exit 0
