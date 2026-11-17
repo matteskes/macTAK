@@ -15,6 +15,23 @@
 import CCommoShim
 import Foundation
 
+/// Which of commo's interfaces a broadcast goes out on.
+public enum SendRoute: Sendable {
+    /// TAK servers only (ATAK's reliable stream).
+    case server
+    /// The mesh only (the unreliable stream).
+    case mesh
+    case any
+
+    var method: Int32 {
+        switch self {
+        case .server: Int32(MACTAK_COMMO_SEND_SERVER)
+        case .mesh: Int32(MACTAK_COMMO_SEND_MESH)
+        case .any: Int32(MACTAK_COMMO_SEND_ANY)
+        }
+    }
+}
+
 public enum CommoTransport: Sendable {
     case tcp
     /// TLS over TCP, with a client certificate (a TAK server's port 8089).
@@ -63,8 +80,6 @@ public struct CommoError: Error, CustomStringConvertible {
 public actor CommoClient {
     /// How long after an interface comes up commo can send on it.
     public static let sendableDelay: Duration = .milliseconds(500)
-    /// The self-SA's stale until ReportingRate paces it (G3.4b).
-    static let beaconStale: TimeInterval = 30
 
     public nonisolated let uid: String
     public nonisolated let events: AsyncStream<CommoEvent>
@@ -75,7 +90,8 @@ public actor CommoClient {
     private var selfReport: SelfEvent
     /// The mesh, while it runs (CommoClient+Mesh.swift).
     var mesh: MeshState?
-    private var beaconTasks: [Task<Void, Never>] = []
+    private var reporting: ReportingRate?
+    private var reportTasks: [Task<Void, Never>] = []
 
     /// A commo instance identified as uid and callsign. Log lines below
     /// logLevel are dropped before they reach `events`.
@@ -146,10 +162,11 @@ public actor CommoClient {
         try CommoClient.check { err, len in mactak_commo_remove_streaming(commo, endpoint, err, len) }
     }
 
-    /// Queue a CoT event for every connected server.
-    public func broadcast(_ xml: String) throws {
+    /// Queue a CoT event for every connected server and mesh interface, or
+    /// only those `route` names.
+    public func broadcast(_ xml: String, via route: SendRoute = .any) throws {
         let commo = try live()
-        try CommoClient.check { err, len in mactak_commo_broadcast(commo, xml, err, len) }
+        try CommoClient.check { err, len in mactak_commo_broadcast(commo, xml, route.method, err, len) }
     }
 
     /// Queue a CoT event for the contacts with these uids.
@@ -164,41 +181,61 @@ public actor CommoClient {
         }
     }
 
-    /// The callsign the self-SA carries from the next beacon on.
+    /// The self-SA as it goes out next. Its uid stays the client's. A
+    /// change ATAK reports at once (callsign, team, role, custom role,
+    /// unit type, remarks) is reported on the next tick.
+    public var selfEvent: SelfEvent { selfReport }
+
+    public func updateSelf(_ change: @Sendable (inout SelfEvent) -> Void) {
+        var next = selfReport
+        change(&next)
+        next.uid = uid
+        if !next.sameIdentity(as: selfReport) { reporting?.reportAsap() }
+        selfReport = next
+    }
+
+    /// The callsign the self-SA carries from the next report on.
     public func setCallsign(_ callsign: String) {
-        selfReport.callsign = callsign
+        updateSelf { $0.callsign = callsign }
     }
 
-    /// Where the beacon says this client is, and how it knows.
+    /// Where the self-SA says this client is, and how it knows.
     public func setLocation(_ location: SelfEvent.Location?) {
-        selfReport.location = location
+        updateSelf { $0.location = location }
     }
 
-    /// Beacon self-SA every period, and once more `sendableDelay` after each
-    /// interface comes up, so a server registers this client promptly.
-    public func startBeacon(every period: Duration = .seconds(5)) {
-        guard beaconTasks.isEmpty else { return }
+    public func setReportingSettings(_ settings: ReportingRate.Settings) {
+        reporting?.settings = settings
+    }
+
+    /// Report the self-SA as ATAK paces it (ReportingRate): reliable to
+    /// servers, unreliable to the mesh, checked every second. Both report
+    /// once more `sendableDelay` after an interface comes up, so a server
+    /// or peer registers this client promptly.
+    public func startReporting(_ settings: ReportingRate.Settings = .atak) {
+        guard reportTasks.isEmpty else { return }
+        reporting = ReportingRate(settings)
         let ups = interfaceUps
-        beaconTasks.append(Task { [weak self] in
+        reportTasks.append(Task { [weak self] in
             for await _ in ups {
                 try? await Task.sleep(for: CommoClient.sendableDelay)
                 guard !Task.isCancelled else { return }
-                await self?.sendPresence()
+                await self?.reportAsap()
             }
         })
-        beaconTasks.append(Task { [weak self] in
+        reportTasks.append(Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: period)
-                guard !Task.isCancelled else { return }
-                await self?.sendPresence()
+                await self?.tick()
+                try? await Task.sleep(for: CommoClient.reportTick)
             }
         })
     }
 
-    /// Stop the beacon, disconnect everything and end `events`.
+    /// Stop reporting, disconnect everything and end `events`.
     public func shutdown() {
-        beaconTasks.forEach { $0.cancel() }
-        beaconTasks = []
+        reportTasks.forEach { $0.cancel() }
+        reportTasks = []
+        reporting = nil
         if let handle {
             mactak_commo_destroy(handle)
             self.handle = nil
@@ -206,12 +243,27 @@ public actor CommoClient {
         sink.finish()
     }
 
-    private func sendPresence() {
-        guard handle != nil else { return }
-        do {
-            try broadcast(selfReport.event(stale: CommoClient.beaconStale).xml())
-        } catch {
-            sink.yield(.log(level: .error, message: "presence not sent: \(error)"))
+    static let reportTick: Duration = .seconds(1)
+
+    private func reportAsap() {
+        reporting?.reportAsap()
+        tick()
+    }
+
+    private func tick() {
+        guard handle != nil, var rate = reporting else { return }
+        let hae = selfReport.location?.point.hae
+        let altitude = hae.flatMap { $0 == CotPoint.unknown ? nil : $0 }
+        let now = Int64(ProcessInfo.processInfo.systemUptime * 1000)
+        let due = rate.tick(now: now, altitude: altitude, speed: selfReport.track.speed)
+        reporting = rate
+        for report in due {
+            let xml = selfReport.event(stale: TimeInterval(report.staleMillis) / 1000).xml()
+            do {
+                try broadcast(xml, via: report.stream == .reliable ? .server : .mesh)
+            } catch {
+                sink.yield(.log(level: .error, message: "self-SA not sent: \(error)"))
+            }
         }
     }
 

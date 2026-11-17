@@ -1,6 +1,6 @@
 // G3.2d: the model under the app's servers pane. A data package imported
-// through it connects over mutual TLS and shows as connected; the list, the
-// client's uid and the package's callsign persist; disabling a server
+// through it connects over mutual TLS and shows as connected; the list and
+// the package's callsign persist; disabling a server
 // disconnects it; a refused connection shows commo's reason.
 
 import Foundation
@@ -32,7 +32,7 @@ final class ServerConnectionsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: package) }
 
         let settings = MemorySettings()
-        let connections = ServerConnections(settings: settings, identities: store)
+        let connections = ServerConnections(settings: settings, identities: store, me: .testing(settings))
         try connections.start()
         let added = try connections.importPackage(at: package)
         XCTAssertEqual(added.count, 1)
@@ -46,20 +46,19 @@ final class ServerConnectionsTests: XCTestCase {
         try await server.waitFor("fake-cot: client disconnected", within: 10)
         await connections.stop()
 
-        let reopened = ServerConnections(settings: settings, identities: store)
-        XCTAssertEqual(reopened.uid, connections.uid)
+        let reopened = ServerConnections(settings: settings, identities: store, me: .testing(settings))
         XCTAssertEqual(reopened.callsign, "PANE-1")
         XCTAssertEqual(reopened.servers.map(\.id), [id])
         XCTAssertEqual(reopened.servers.first?.enabled, false)
         reopened.remove(id)
         XCTAssertTrue(reopened.servers.isEmpty)
-        XCTAssertTrue(ServerConnections(settings: settings, identities: store).servers.isEmpty)
+        XCTAssertTrue(ServerConnections(settings: settings, identities: store, me: .testing(settings)).servers.isEmpty)
     }
 
     func testARefusedConnectionShowsWhy() async throws {
         let store = try XCTUnwrap(keychain).store
         let port = try freePort()   // nothing listens
-        let connections = ServerConnections(settings: MemorySettings(), identities: store)
+        let connections = ServerConnections(settings: MemorySettings(), identities: store, me: .testing(MemorySettings()))
         try connections.start()
         let server = ServerConfig(description: "nobody", address: ConnectString(host: "127.0.0.1", port: port, proto: .tcp))
         connections.add(server)
@@ -73,7 +72,7 @@ final class ServerConnectionsTests: XCTestCase {
     /// An SSL server with no certificates says so instead of connecting.
     func testAServerWithoutCertificatesSaysSo() async throws {
         let store = try XCTUnwrap(keychain).store
-        let connections = ServerConnections(settings: MemorySettings(), identities: store)
+        let connections = ServerConnections(settings: MemorySettings(), identities: store, me: .testing(MemorySettings()))
         try connections.start()
         let server = ServerConfig(description: "ops", address: ConnectString(host: "127.0.0.1", port: 8089, proto: .ssl))
         connections.add(server)
@@ -90,6 +89,13 @@ final class ServerConnectionsTests: XCTestCase {
             guard Date() < deadline else { throw CommoError(description: "timed out waiting for \(what)") }
             try await Task.sleep(for: .milliseconds(100))
         }
+    }
+}
+
+extension SelfReporter {
+    /// A reporter for tests: a fixed uid, no CoreLocation.
+    static func testing(_ settings: SettingsStore, uid: String = "g3-test-self") -> SelfReporter {
+        SelfReporter(settings: settings, details: SelfDetails(settings: settings, uid: uid))
     }
 }
 

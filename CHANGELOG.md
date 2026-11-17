@@ -18,6 +18,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     test-app`) and takkernel's own `CotEvent` (`make test-cot-golden`,
     CI's `jvm-tests` job) are held to the same expected events in
     `dev/g3/test/cot-golden`.
+- G3.4b, SA pacing and the self details (`dev/g3/NOTES.md` §G3.4b):
+  - The self-SA goes out at ATAK 5.5's pace (`ReportingRate`, Dynamic by
+    default), reliable to servers and unreliable to the mesh.
+  - A change of callsign, team, role or remarks goes out at once.
+  - The self details persist under ATAK's preference keys, with 5.5's
+    custom roles.
+  - The position comes from CoreLocation, from a placed position, or
+    both.
+  - The battery is reported.
+
+### Changed
+
+- The device uid is now `MACTAK-<hardware UUID>`, kept outside the
+  settings (G3.4b). Each install's uid changes once, from G3.2d's random
+  one.
 
 ## [0.3.3] - 2026-11-17 — G3: commo from Swift, servers and identity, mesh networking + the license audit and bundled natives
 

@@ -942,7 +942,7 @@ Gaps 4 and 5 (§Plan revision) and decision 2's golden leg. Three PRs:
 | PR | Branch | What |
 |---|---|---|
 | **a** | `g3/cot-model` | the CoT model in Swift (`MacTAKCot`); the kernel as its test oracle |
-| b | `g3/sa-reporting` | `ReportingRate`, the self details, the location source |
+| **b** | `g3/sa-reporting` | `ReportingRate`, the self details, the location source |
 | c | `g3/contacts-pane` | contacts and the My Details sheet |
 
 What ATAK 5.5 does (read at the pin):
@@ -1050,3 +1050,82 @@ suite, so no import or settings copy carries it (G3.4b).
   was an NPE in `toString` (no time). `cot-oracle.gradle` puts kxml2
   first and fails if it isn't on the classpath. This is G55 trap 6's
   shape (android-port shadowing real classes) in a new package.
+
+### G3.4b — ReportingRate, the self details, the location (2026-11-17, branch `g3/sa-reporting`)
+
+#### What changed
+
+- **`ReportingRate`** (`MacTAKComms/SA`) ports ATAK 5.5's class. It is a
+  value with a `tick(now:altitude:speed:)` that returns the reports due,
+  so tests drive it without a clock. Upstream's constants and quirks are
+  kept:
+  - Dynamic pads both streams' stale with the reliable multiplier (2).
+  - An ASAP before any report records stale 0, so the next tick reports
+    again.
+  - The stale buffer only matters when the rate grows past the last
+    stale.
+- **Two streams.** `mactak_commo_broadcast` takes a send method (commo's
+  `CoTSendMethod`), and `CommoClient.broadcast(_:via:)` a `SendRoute`. As
+  ATAK's `CotDispatcher` does, reliable goes to `.server`
+  (`SEND_TAK_SERVER`) and unreliable to `.mesh` (`SEND_POINT_TO_POINT`).
+- **`CommoClient.startReporting(_:)`** replaces G3.1's fixed beacon:
+  - A 1 s tick asks `ReportingRate`.
+  - An interface coming up asks for a report at once.
+  - `updateSelf` reports at once when the identity changes: callsign,
+    unit type, `__group` or remarks. These are ATAK's monitored
+    preferences.
+
+  Tests that need a fast beacon use `.every(seconds: 1)` (Constant).
+- **`SelfDetails`** persists under ATAK's own preference keys, as
+  strings:
+  - `locationCallsign`, `locationTeam` (`ensureValidGroup` on load),
+    `atakRoleType`, `customRole`, `customRoleAbbreviation`,
+    `customRoleUseTypeIcon`, `locationUnitType`, `userRemarks`
+  - the strategy and the eight rate keys. A negative or non-numeric rate
+    falls back to the default, as in ATAK.
+
+  G3.2d's `mactak.callsign` carries over once. A data package or profile
+  `locationCallsign` lands here.
+- **`DeviceUID`** (owner's choice): `MACTAK-<IOPlatformUUID>`.
+  - It is kept in `~/Library/Application Support/macTAK/device-uid`,
+    outside every settings suite. A random UUID is the fallback if IOKit
+    won't say.
+  - `--settings-suite NAME` appends `-NAME`, and the suffix isn't kept.
+  - G3.2d's random `mactak.uid` setting is dropped, so each install's uid
+    changes once.
+- **The location.**
+  - `LocationMode` picks the source:
+    - device: CoreLocation only
+    - manual: the placed position only
+    - both (the default): CoreLocation while it has a fix, else the
+      placed position.
+
+    A still Mac may get one fix and no more, so a fix counts until
+    CoreLocation fails or is denied, not until it ages. This narrows the
+    plan's "while it is fresh".
+  - A fix's HAE comes from `ellipsoidalAltitude`: CoT altitude is HAE,
+    and `CLLocation.altitude` is MSL. Invalid accuracies are unknown.
+  - `how` and `precisionlocation` follow the source (G3.4a's
+    `SelfEvent`).
+  - `Info.plist` gains `NSLocationUsageDescription` and
+    `NSLocationWhenInUseUsageDescription`.
+- **`SelfReporter`** joins the details, the location and the battery
+  (IOPowerSources, 100 on a Mac with none, once a minute). It pushes them
+  to the client in order: each update waits for the previous one.
+  `ServerConnections` takes it (`me:`) and gets its uid and callsign from
+  it. The app builds it with a `LocationService`; the UI to edit it is
+  G3.4c.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 82 tests pass: 13 CoT, 2 core and 67 comms (24 new: `ReportingRateTests` 10, `SelfDetailsTests` 12, `SelfReportingTests` 2) |
+| `make test-cot-golden` | the kernel writes all 7 fixtures as expected (a placed position with altitude added) |
+| A/B, the routes | every route sent as `SEND_ANY`: the routing test fails ("B gets the server broadcast happened") |
+| A/B, at once | no ASAP on an identity change: the team change misses its 5 s (Dynamic's next mesh report is 30 s away) |
+| `make test-app-bundle` | passes |
+| `make lint` | passes |
+
+The app's CoreLocation prompt and a placed position seen by a peer are
+checked by hand with the owner in G3.4c, with the sheet that sets them.

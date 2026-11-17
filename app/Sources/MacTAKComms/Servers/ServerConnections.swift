@@ -9,9 +9,9 @@
 // The same client runs the mesh (G3.3b) when a MeshNetwork is given: it gets
 // the client when commo starts, and commo's events.
 //
-// The client's uid and callsign persist too. They are a placeholder for
-// G3.4's self details (a persistent device uid, ATAK's roles); a profile or
-// package callsign replaces the callsign, as ATAK applies
+// Who the client is comes from a SelfReporter (G3.4b): the device uid, the
+// self details, the location. The client reports its self-SA on ATAK's pace.
+// A profile's or package's callsign replaces the callsign, as ATAK applies
 // locationCallsign.
 
 import Combine
@@ -39,9 +39,10 @@ public enum ServerStatus: Equatable, Sendable {
 public final class ServerConnections: ObservableObject {
     @Published public private(set) var servers: [ServerConfig] = []
     @Published public private(set) var status: [UUID: ServerStatus] = [:]
-    @Published public private(set) var callsign: String
+    public var uid: String { me.details.uid }
+    public var callsign: String { me.details.callsign }
 
-    public let uid: String
+    public let me: SelfReporter
     private let settings: SettingsStore
     private let identities: IdentityStore
     private let mesh: MeshNetwork?
@@ -56,15 +57,16 @@ public final class ServerConnections: ObservableObject {
     /// `log stream --predicate 'subsystem == "io.github.matteskes.macTAK"'`.
     private static let log = Logger(subsystem: "io.github.matteskes.macTAK", category: "comms")
 
-    private static let serversKey = "mactak.servers", uidKey = "mactak.uid", callsignKey = "mactak.callsign"
+    private static let serversKey = "mactak.servers"
+    /// G3.2d's random uid, replaced by the device's (DeviceUID).
+    private static let legacyUIDKey = "mactak.uid"
 
-    public init(settings: SettingsStore, identities: IdentityStore, mesh: MeshNetwork? = nil) {
+    public init(settings: SettingsStore, identities: IdentityStore, me: SelfReporter, mesh: MeshNetwork? = nil) {
         self.settings = settings
         self.identities = identities
+        self.me = me
         self.mesh = mesh
-        uid = settings.string(forKey: Self.uidKey) ?? "MACTAK-\(UUID().uuidString)"
-        callsign = settings.string(forKey: Self.callsignKey) ?? "MACTAK-\(uid.suffix(4))"
-        settings.set(uid, forKey: Self.uidKey)
+        settings.set(nil, forKey: Self.legacyUIDKey)
         if let data = settings.data(forKey: Self.serversKey),
            let decoded = try? JSONDecoder().decode([ServerConfig].self, from: data) {
             servers = decoded
@@ -80,13 +82,14 @@ public final class ServerConnections: ObservableObject {
         listener = Task { [weak self] in
             for await event in client.events { self?.handle(event) }
         }
-        Task { await client.startBeacon() }
+        me.attach(client)
         for server in servers where server.enabled { connect(server) }
         mesh?.attach(client)
     }
 
     public func stop() async {
         await mesh?.detach()
+        me.detach()
         listener?.cancel()
         await client?.shutdown()
         client = nil
@@ -208,9 +211,7 @@ public final class ServerConnections: ObservableObject {
     }
 
     private func setCallsign(_ callsign: String) {
-        self.callsign = callsign
-        settings.set(callsign, forKey: Self.callsignKey)
-        if let client { Task { await client.setCallsign(callsign) } }
+        me.details.callsign = callsign
     }
 
     private func save() {

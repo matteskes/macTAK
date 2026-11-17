@@ -344,14 +344,23 @@ extern "C" int mactak_commo_remove_streaming(mactak_commo *shim, const char *end
     return -1;
 }
 
-extern "C" int mactak_commo_broadcast(mactak_commo *shim, const char *xml,
+extern "C" int mactak_commo_broadcast(mactak_commo *shim, const char *xml, int method,
                                       char *err, size_t errlen) {
     if (!shim || !xml) {
         setError(err, errlen, "no commo or no message");
         return -1;
     }
+    CoTSendMethod sendMethod;
+    switch (method) {
+    case MACTAK_COMMO_SEND_SERVER: sendMethod = SEND_TAK_SERVER; break;
+    case MACTAK_COMMO_SEND_MESH: sendMethod = SEND_POINT_TO_POINT; break;
+    case MACTAK_COMMO_SEND_ANY: sendMethod = SEND_ANY; break;
+    default:
+        setError(err, errlen, "unknown send method " + std::to_string(method));
+        return -1;
+    }
     try {
-        CommoResult rc = shim->commo->broadcastCoT(xml);
+        CommoResult rc = shim->commo->broadcastCoT(xml, sendMethod);
         if (rc == COMMO_SUCCESS)
             return 0;
         setError(err, errlen, std::string("broadcastCoT: ") + resultName(rc));

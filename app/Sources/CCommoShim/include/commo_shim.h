@@ -103,9 +103,17 @@ int mactak_commo_add_streaming(mactak_commo *commo, int transport,
 int mactak_commo_remove_streaming(mactak_commo *commo, const char *endpoint,
                                   char *err, size_t errlen);
 
-/// Queue a CoT event for every connected interface. 0 when commo accepted
-/// it (sending is asynchronous).
-int mactak_commo_broadcast(mactak_commo *commo, const char *xml,
+/// Where a broadcast goes (commo's CoTSendMethod): ATAK sends its reliable
+/// SA stream to servers and its unreliable one to the mesh (G3.4b).
+enum {
+    MACTAK_COMMO_SEND_SERVER = 1,   // SEND_TAK_SERVER
+    MACTAK_COMMO_SEND_MESH = 2,     // SEND_POINT_TO_POINT
+    MACTAK_COMMO_SEND_ANY = 3,      // SEND_ANY
+};
+
+/// Queue a CoT event for every connected interface of the kind `method`
+/// names. 0 when commo accepted it (sending is asynchronous).
+int mactak_commo_broadcast(mactak_commo *commo, const char *xml, int method,
                            char *err, size_t errlen);
 
 /// Queue a CoT event for the contacts with these uids. 0 when commo

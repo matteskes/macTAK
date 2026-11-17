@@ -24,6 +24,10 @@
 	<string>27.0</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>macTAK finds and talks to other TAK users on your local network (mesh networking) without a server.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>macTAK reports your position to your team in its self-SA, as a TAK client does. You can place yourself by hand instead.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>macTAK reports your position to your team in its self-SA, as a TAK client does. You can place yourself by hand instead.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

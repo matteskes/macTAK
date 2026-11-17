@@ -42,7 +42,7 @@ final class MeshTests: XCTestCase {
         if mesh {
             try await client.commo.startMesh(Self.config(slot: slot, saPort: saPort), interfaces: ["lo0"])
         }
-        await client.commo.startBeacon(every: .seconds(1))
+        await client.commo.startReporting(.every(seconds: 1))
         return client
     }
 
@@ -147,7 +147,7 @@ final class MeshTests: XCTestCase {
         var config = Self.config(slot: 3)
         config.tcpPort = 4242
         try await second.commo.startMesh(config, interfaces: ["lo0"])
-        await second.commo.startBeacon(every: .seconds(1))
+        await second.commo.startReporting(.every(seconds: 1))
         try await a.seen.wait("A still hears the second client", timeout: 15) {
             $0 == .contactAdded(uid: second.commo.uid)
         }
