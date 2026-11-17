@@ -11,8 +11,11 @@ let repoRoot = URL(fileURLWithPath: #filePath)
 
 final class FakeServer: @unchecked Sendable {
     private let process = Process()
+    private let exited = DispatchSemaphore(value: 0)
     private let lock = NSLock()
     private var output = ""
+    private var hasExited = false
+    private var stopped = false
 
     /// Starts `executable arguments…` and returns once its output contains
     /// "listening" (both fake servers print it once bound), or throws.
@@ -24,8 +27,20 @@ final class FakeServer: @unchecked Sendable {
         process.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData   // drained always, so a full pipe never blocks the server
-            guard let self, !chunk.isEmpty else { return }
+            guard !chunk.isEmpty else {
+                // End of file. A handler left in place is called again at once,
+                // forever: on CI's 3-core runner two of them spun on two cores
+                // and stop() never heard its server exit (G3.2a, PR #184).
+                handle.readabilityHandler = nil
+                return
+            }
+            guard let self else { return }
             self.lock.withLock { self.output += String(decoding: chunk, as: UTF8.self) }
+        }
+        process.terminationHandler = { [weak self] _ in
+            guard let self else { return }
+            self.lock.withLock { self.hasExited = true }
+            self.exited.signal()
         }
         try process.run()
         do {
@@ -55,7 +70,7 @@ final class FakeServer: @unchecked Sendable {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if log.contains(text) { return }
-            if !process.isRunning { break }
+            if lock.withLock({ hasExited }) { break }
             Thread.sleep(forTimeInterval: 0.05)
         }
         guard log.contains(text) else {
@@ -63,11 +78,19 @@ final class FakeServer: @unchecked Sendable {
         }
     }
 
+    /// SIGTERM, then SIGKILL, each wait bounded: never waitUntilExit, which
+    /// has no timeout and hung a CI run for 18 minutes.
     func stop() {
-        if process.isRunning {
-            process.terminate()
-            process.waitUntilExit()
+        let first = lock.withLock { () -> Bool in
+            defer { stopped = true }
+            return !stopped
         }
+        guard first, lock.withLock({ !hasExited }) else { return }
+        let pid = process.processIdentifier
+        kill(pid, SIGTERM)
+        if exited.wait(timeout: .now() + 10) == .success { return }
+        kill(pid, SIGKILL)
+        _ = exited.wait(timeout: .now() + 5)
     }
 
     deinit { stop() }

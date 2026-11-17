@@ -416,6 +416,8 @@ Decided with the plan (owner, 2026-11-16):
 | Gate | Result |
 |---|---|
 | `make test-app` | 8 tests pass (2 core, 6 comms); the comms tests take 23 s; 5 runs in a row pass |
+| CI's shell job | passes; its first run and one rerun hung until trap 5's fix |
+| A/B: trap 5's fix reverted | the comms tests use 24.7 s of CPU in 25.7 s (one core spinning), against 3.7 s with the fix |
 | A/B: the server stops verifying client certificates (`CERT_NONE`) | the impostor test fails ("server never printed tls handshake failed"), and the mutual-TLS test fails on the missing CNs |
 | A/B: the shim sends QUIC as SSL | the QUIC leg fails: A's interface never comes up |
 | `make test-quic` | passes (the relaying server and the shared venv) |
@@ -433,3 +435,17 @@ Decided with the plan (owner, 2026-11-16):
   SIGPIPE. `mactak_commo_init_libraries` now ignores it for the whole
   process, so the write fails with `EPIPE` and commo reconnects. The app
   inherits the fix, since every `CommoClient` goes through it.
+- **5 — a `FileHandle` readability handler spins at end of file.** The
+  test helper `FakeServer` drains each fake server's output with
+  `readabilityHandler`. At end of file, `availableData` is empty and the
+  handler, left in place, is called again at once, forever: every server a
+  test had stopped kept one dispatch queue busy-looping. On the dev Mac
+  that cost a core and nothing else. On CI's 3-core runner, two spinning
+  queues starved the code that notices a child exiting, and `stop()`'s
+  `waitUntilExit()`, which has no timeout, waited for a python server that
+  had already exited: the shell job hung for 18 minutes, then again on a
+  rerun. A stack sample from a temporary watchdog step showed both: the
+  test in `FakeServer.stop()` → `waitUntilExit`, and two queues in the
+  handler. The handler now removes itself at end of file, and `stop()`
+  waits on a `terminationHandler` for at most 10 s after SIGTERM and 5 s
+  after SIGKILL. CI's test step has its own 12-minute limit.
