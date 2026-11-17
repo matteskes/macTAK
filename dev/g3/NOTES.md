@@ -6,17 +6,17 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.1 — 2026-11-13): commo from Swift
+## State (G3.2a — 2026-11-16): commo in every build, TLS and QUIC
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens a window with
 a sidebar (placeholders for contacts and chat) and the engine's live map
-(`make app`; G3.0). Swift now talks to TAK servers too: `CommoClient`, an
-actor in `MacTAKComms`, drives commo's C++ API through `CCommoShim`, and
-two clients through `fake-cot-server.py` see each other's contact, marker
-and presence (`make test-app-comms`, in CI's comms job). The app doesn't
-connect to anything yet: that comes with the CoT model and contacts in
-G3.2. Next: G3.2, servers and identity (certificate enrollment, QUIC),
-in the order the plan revision below set.
+(`make app`; G3.0). Swift talks to TAK servers too: `CommoClient`, an
+actor in `MacTAKComms`, drives commo's C++ API through `CCommoShim`
+(G3.1). Since G3.2a every build of the package links commo, and two
+clients see each other over TCP, over TLS with client certificates and
+over QUIC (`make test-app`, in CI's shell job against the comms job's
+commo). The app doesn't connect to anything yet. Next: G3.2b, identities
+in the Keychain and data-package import (§G3.2, the plan).
 
 ## The plan (approved 2026-11-13)
 
@@ -343,3 +343,93 @@ was suggested in the sanity check but not adopted.
     no deployment target, so the libraries need whatever macOS built them.
     G5's self-contained bundle has to build commo, the engine and the
     Homebrew libraries for 27.0.
+
+## G3.2 — servers and identity (plan approved 2026-11-16)
+
+Four PRs (plan: `~/.claude/plans/refactored-wibbling-muffin.md`):
+
+| PR | Branch | What |
+|---|---|---|
+| **a** | `g3/commo-in-app` | commo in every build; the QUIC transport; the mutual-TLS and QUIC legs |
+| b | `g3/keychain-identity` | identities in a file-based keychain, exported to commo as in-memory PKCS#12; a Swift port of `DataPackage.java` |
+| c | `g3/enrollment` | certificate enrollment through commo; the device profile; a fake enrollment server |
+| d | `g3/servers-pane` | the app's servers pane: add, import, enroll, connect |
+
+Decided with the plan (owner, 2026-11-16):
+
+- **The app always builds with commo.** This settles G3.1's open
+  question: CI's shell job builds against the commo the comms job uploads
+  instead of building its own.
+- **One TLS stack: OpenSSL 3.** Every connection to a TAK server goes
+  through commo, or through the curl and OpenSSL 3 that commo already
+  carries, reached from `CCommoShim`. The device profile's HTTPS GET
+  (G3.2c), which commo's own API can't make, is a shim function, not
+  `URLSession`. No `URLSession` or Network.framework for TAK traffic, now
+  or later. The Keychain stores identities and passwords; it does no TLS.
+- **The keychain is the file-based kind** (`SecKeychain`), not the data
+  protection keychain, which needs a team-ID entitlement that the
+  ad-hoc-signed development bundle can't have. Tests use a throwaway
+  keychain in a temporary directory.
+
+### G3.2a — commo in every build, TLS and QUIC (2026-11-16, branch `g3/commo-in-app`)
+
+#### What changed
+
+- **`app/Package.swift`**: `CCommoShim`, `MacTAKComms` and their tests are
+  always targets. commo comes from `dev/g1/native-dist`, or the directory
+  `MACTAK_COMMO_LIB` names; the manifest stops with the fix when commo or
+  `src/`'s headers are missing, rather than failing at link time.
+- **The QUIC transport**: `MACTAK_COMMO_QUIC` in the shim, commo's
+  `TRANSPORT_QUIC`, with the same certificate arguments as SSL. Swift's
+  `CommoTransport` is `.tcp`, `.ssl(TLSCredentials)` or
+  `.quic(TLSCredentials)`; `TLSCredentials` holds the identity and the CA
+  as PKCS#12 bytes and their passwords, in memory.
+- **`fake-cot-server.py --client-ca CA`**: mutual TLS, as a TAK server's
+  port 8089 runs. A client must present a certificate that chains to the
+  CA; the server logs each accepted client's CN.
+- **`fake-quic-server.py` relays** each client's events to the other
+  clients, on the bidirectional stream each client opened (commo's client
+  reads its own stream), framed on `</event>` like the TCP server. Its
+  aioquic venv moved into `test/quic-venv.sh`, which `quic.sh` and
+  `make test-app` share.
+- **The tests** (`app/Tests/MacTAKCommsTests`): the round trip from
+  G3.1 is now `Support/TwoClients.swift`, run over each transport.
+  `Support/TestPKI.swift` makes a throwaway PKI with Homebrew's openssl@3
+  (one CA, a serverAuth leaf, clientAuth leaves, and an impostor from a
+  second CA). `SecureTransportTests` adds three legs:
+  - two clients over mutual TLS (the server sees CN `a` and `b`)
+  - an impostor from another CA refused: its handshake fails at the server,
+    and its marker never reaches the connected client
+  - two clients over QUIC through `fake-quic-server.py`.
+  `make test-app` passes the venv's python in `MACTAK_QUIC_PYTHON`, and
+  `MACTAK_REQUIRE_ALL_LEGS` turns the QUIC leg's skip (outside make) into
+  a failure.
+- **`make test-app`** runs every leg, and `make test-app-comms` is now
+  its alias. **CI:** the shell job `needs` the comms job, checks out
+  `src/` (sparse), installs commo's runtime libraries from Homebrew
+  (openssl@3, libxml2, protobuf with abseil), downloads the
+  `commo-stack-macos-arm64` artifact into `dev/g1/native-dist` and runs
+  `make test-app`. The comms job's own Swift step is gone.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 8 tests pass (2 core, 6 comms); the comms tests take 23 s; 5 runs in a row pass |
+| A/B: the server stops verifying client certificates (`CERT_NONE`) | the impostor test fails ("server never printed tls handshake failed"), and the mutual-TLS test fails on the missing CNs |
+| A/B: the shim sends QUIC as SSL | the QUIC leg fails: A's interface never comes up |
+| `make test-quic` | passes (the relaying server and the shared venv) |
+| `make test-tls` | passes (`fake-cot-server.py --tls` without `--client-ca` is unchanged) |
+| `make lint` | passes |
+
+#### Traps
+
+- **4 — commo's socket writes raise SIGPIPE, and only the JVM ignored
+  it.** commo writes with no `SO_NOSIGPIPE` or `MSG_NOSIGNAL`. When a
+  server closes a connection commo then writes to (here, the server
+  refusing the impostor's certificate), the process gets SIGPIPE, and a
+  process that hasn't ignored it dies: the comms test runner exited with
+  signal 13, 3 runs out of 3. G1 never saw it because the JVM ignores
+  SIGPIPE. `mactak_commo_init_libraries` now ignores it for the whole
+  process, so the write fails with `EPIPE` and commo reconnects. The app
+  inherits the fix, since every `CommoClient` goes through it.

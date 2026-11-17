@@ -41,8 +41,8 @@ help:
 	@echo "  test-render-window - M3.1 window-surface exercise: engine into a CAMetalLayer window surface, --resize via the host's drawableSize (off-screen; CI runs it too)"
 	@echo "  smoke-window   - G2 M3.0 manual gate: NSWindow -> CAMetalLayer -> eglCreateWindowSurface on ANGLE; opens a window ~3 s, writes dev/g2/build/window-smoke.ppm (needs a GUI session)"
 	@echo "  app            - G3 app bundle: build/MacTAK.app, the SwiftUI app around the map (app/bundle.sh; dev Mac)"
-	@echo "  test-app       - G3 Swift package: build every product and run swift test (app/)"
-	@echo "  test-app-comms - G3.1 Swift comms: CommoClient over commo, two clients through fake-cot-server.py (needs dev/g1/build-commo.sh)"
+	@echo "  test-app       - G3 Swift package: build every product, run swift test; comms legs over TCP, mutual TLS and QUIC (needs dev/g1/build-commo.sh)"
+	@echo "  test-app-comms - same as test-app (G3.1's name)"
 	@echo "  exit-run       - G2 exit run (dev Mac): real imagery + vector + elevation in the shell window, 10 s gesture tour, zero dropped frames (dev/g2/shell/test/exit-run.sh)"
 	@echo "  lint           - shellcheck + bash -n over dev/**/*.sh; markdownlint/actionlint if installed"
 	@echo "  docs-site      - build the docs site (MkDocs, strict) into dev/docs-site/build/site"
@@ -209,21 +209,19 @@ app:
 	bash app/bundle.sh
 
 # G3: every product of the Swift package builds, and its tests pass (no GUI,
-# no engine: CI runs it).
+# no engine: CI runs it). The package links commo (G3.2): a built commo in
+# dev/g1/native-dist (dev/g1/build-commo.sh; CI's shell job downloads the
+# comms job's) and src/. The comms tests run every leg: TCP, mutual TLS
+# and QUIC, whose fake server runs in the aioquic venv (quic-venv.sh).
 test-app:
-	swift build --package-path app
-	swift test --package-path app
-
-# G3.1: the Swift package with its comms targets (CCommoShim, MacTAKComms):
-# commo from Swift, two CommoClients through fake-cot-server.py. Needs a
-# built commo (dev/g1/build-commo.sh, whose @rpath install names Swift links
-# directly, #152) and src/; CI's comms job runs it.
-test-app-comms:
 	@[ -f dev/g1/native-dist/libcommoncommo.dylib ] \
-		|| { echo "test-app-comms: no commo in dev/g1/native-dist — run dev/g1/build-commo.sh" >&2; exit 1; }
-	@lib="$$(cd dev/g1/native-dist && pwd)" && \
-		MACTAK_COMMO_LIB="$$lib" swift build --package-path app --build-tests && \
-		MACTAK_COMMO_LIB="$$lib" swift test --package-path app
+		|| { echo "test-app: no commo in dev/g1/native-dist — run dev/g1/build-commo.sh" >&2; exit 1; }
+	swift build --package-path app --build-tests
+	@python="$$(bash dev/g1/headless/test/quic-venv.sh)" && \
+		MACTAK_QUIC_PYTHON="$$python" MACTAK_REQUIRE_ALL_LEGS=1 swift test --package-path app
+
+# G3.1's name for the comms tests, which test-app now runs.
+test-app-comms: test-app
 
 # M3.0 manual gate (dev Mac, GUI session): `angle` stages the ANGLE pair and
 # runs the headless pbuffer canary first, then the window opens for ~3 s and

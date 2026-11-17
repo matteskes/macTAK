@@ -36,6 +36,7 @@ enum {
 enum {
     MACTAK_COMMO_TCP = 0,
     MACTAK_COMMO_SSL = 1,
+    MACTAK_COMMO_QUIC = 2,
 };
 
 typedef struct {
@@ -54,8 +55,10 @@ typedef struct {
 } mactak_commo_callbacks;
 
 /// Initialize libxml2, OpenSSL and curl as commo expects (the work of the
-/// Java binding's Commo.initThirdpartyNativeLibraries). Once per process;
-/// later calls return the first result. 0 on success.
+/// Java binding's Commo.initThirdpartyNativeLibraries), and ignore SIGPIPE
+/// for the whole process, as the JVM does: commo's socket writes don't
+/// suppress it. Once per process; later calls return the first result.
+/// 0 on success.
 int mactak_commo_init_libraries(char *err, size_t errlen);
 
 /// A new Commo identified as uid and callsign, delivering to callbacks
@@ -65,8 +68,8 @@ mactak_commo *mactak_commo_create(const char *uid, const char *callsign,
                                   char *err, size_t errlen);
 
 /// Connect to a TAK server's streaming port; commo reconnects on its own
-/// until the interface is removed. TCP takes no certificates; SSL takes the
-/// client identity and the CA as PKCS#12 bytes and their passwords.
+/// until the interface is removed. TCP takes no certificates; SSL and QUIC
+/// take the client identity and the CA as PKCS#12 bytes and their passwords.
 /// Situational awareness and chat broadcasts go out on it. On success,
 /// writes the interface's endpoint id to endpoint and returns 0.
 int mactak_commo_add_streaming(mactak_commo *commo, int transport,

@@ -17,8 +17,26 @@ import Foundation
 
 public enum CommoTransport: Sendable {
     case tcp
-    /// TLS with a client certificate: the identity and the CA as PKCS#12.
-    case ssl(identity: Data, identityPassword: String, ca: Data, caPassword: String)
+    /// TLS over TCP, with a client certificate (a TAK server's port 8089).
+    case ssl(TLSCredentials)
+    /// TLS over QUIC (ALPN "takstream"), with a client certificate.
+    case quic(TLSCredentials)
+}
+
+/// A client identity and the CA it trusts, as commo takes them: PKCS#12
+/// bytes and their passwords, in memory.
+public struct TLSCredentials: Sendable {
+    public var identity: Data
+    public var identityPassword: String
+    public var ca: Data
+    public var caPassword: String
+
+    public init(identity: Data, identityPassword: String, ca: Data, caPassword: String) {
+        self.identity = identity
+        self.identityPassword = identityPassword
+        self.ca = ca
+        self.caPassword = caPassword
+    }
 }
 
 public enum CommoLogLevel: Int32, Sendable, Comparable {
@@ -93,21 +111,25 @@ public actor CommoClient {
         let endpointCount = endpoint.count
         try endpoint.withUnsafeMutableBufferPointer { out in
             try CommoClient.check { err, len in
+                let kind: Int32, tls: TLSCredentials?
                 switch transport {
-                case .tcp:
-                    return mactak_commo_add_streaming(commo, Int32(MACTAK_COMMO_TCP), host, Int32(port),
+                case .tcp: (kind, tls) = (Int32(MACTAK_COMMO_TCP), nil)
+                case let .ssl(credentials): (kind, tls) = (Int32(MACTAK_COMMO_SSL), credentials)
+                case let .quic(credentials): (kind, tls) = (Int32(MACTAK_COMMO_QUIC), credentials)
+                }
+                guard let tls else {
+                    return mactak_commo_add_streaming(commo, kind, host, Int32(port),
                                                       nil, 0, nil, 0, nil, nil,
                                                       out.baseAddress, endpointCount, err, len)
-                case let .ssl(identity, identityPassword, ca, caPassword):
-                    return identity.withUnsafeBytes { id in
-                        ca.withUnsafeBytes { caBytes in
-                            mactak_commo_add_streaming(
-                                commo, Int32(MACTAK_COMMO_SSL), host, Int32(port),
-                                id.bindMemory(to: UInt8.self).baseAddress, id.count,
-                                caBytes.bindMemory(to: UInt8.self).baseAddress, caBytes.count,
-                                identityPassword, caPassword,
-                                out.baseAddress, endpointCount, err, len)
-                        }
+                }
+                return tls.identity.withUnsafeBytes { id in
+                    tls.ca.withUnsafeBytes { caBytes in
+                        mactak_commo_add_streaming(
+                            commo, kind, host, Int32(port),
+                            id.bindMemory(to: UInt8.self).baseAddress, id.count,
+                            caBytes.bindMemory(to: UInt8.self).baseAddress, caBytes.count,
+                            tls.identityPassword, tls.caPassword,
+                            out.baseAddress, endpointCount, err, len)
                     }
                 }
             }

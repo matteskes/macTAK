@@ -11,10 +11,13 @@ with no trailing newline, so newline framing would glue each event to the
 next one's prolog); each client gets its own accumulation buffer so an
 event split across recv() boundaries is forwarded once, whole. The prolog
 is dropped and the bare '<event>...</event>\n' is relayed. usage:
-fake-cot-server.py [PORT] [--tls CERT KEY] (env PORT overrides; default
-8087). --tls serves TLS with that PEM cert/key and requests no client cert:
-test/tls-purpose.sh uses it to present a server cert, or a client-only
-impostor cert, to commo (G1.14). Runs until SIGTERM.
+fake-cot-server.py [PORT] [--tls CERT KEY [--client-ca CA]] (env PORT
+overrides; default 8087). --tls serves TLS with that PEM cert/key and
+requests no client cert: test/tls-purpose.sh uses it to present a server
+cert, or a client-only impostor cert, to commo (G1.14). --client-ca adds
+mutual TLS, the way a TAK server's port 8089 runs: a client must present a
+certificate that chains to that PEM CA, or its handshake fails (G3.2's TLS
+leg, app/Tests/MacTAKCommsTests). Runs until SIGTERM.
 """
 import datetime
 import os
@@ -64,17 +67,27 @@ def relay(clients, sender, payload):
             drop(clients, peer, "send-failed")
 
 
+USAGE = "usage: fake-cot-server.py [PORT] [--tls CERT KEY [--client-ca CA]]"
+
+
 def parse_args(argv):
-    """[PORT] [--tls CERT KEY] -> (port, tls_context or None)."""
+    """[PORT] [--tls CERT KEY [--client-ca CA]] -> (port, tls_context or None)."""
     args = list(argv)
     tls = None
     if "--tls" in args:
         i = args.index("--tls")
         if i + 2 >= len(args):
-            sys.exit("usage: fake-cot-server.py [PORT] [--tls CERT KEY]")
+            sys.exit(USAGE)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.load_cert_chain(args[i + 1], args[i + 2])
         del args[i:i + 3]
+    if "--client-ca" in args:
+        i = args.index("--client-ca")
+        if tls is None or i + 1 >= len(args):
+            sys.exit(USAGE)
+        tls.verify_mode = ssl.CERT_REQUIRED
+        tls.load_verify_locations(cafile=args[i + 1])
+        del args[i:i + 2]
     port = int(args[0]) if args else int(os.environ.get("PORT", "8087"))
     return port, tls
 
@@ -83,11 +96,16 @@ def accept_tls(sock, tls):
     """Blocking TLS handshake (bounded), then back to non-blocking."""
     sock.settimeout(5.0)
     try:
-        return tls.wrap_socket(sock, server_side=True)
+        wrapped = tls.wrap_socket(sock, server_side=True)
     except (ssl.SSLError, OSError) as e:
         print("fake-cot: tls handshake failed: %s" % e, flush=True)
         sock.close()
         return None
+    peer = wrapped.getpeercert()  # {} or None unless --client-ca verified one
+    if peer:
+        subject = dict(rdn[0] for rdn in peer.get("subject", ()))
+        print("fake-cot: tls client CN=%s" % subject.get("commonName", "?"), flush=True)
+    return wrapped
 
 
 def main():

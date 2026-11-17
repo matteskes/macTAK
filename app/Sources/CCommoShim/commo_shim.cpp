@@ -5,6 +5,7 @@
 #include <commo.h>
 
 #include <dlfcn.h>
+#include <signal.h>
 
 #include <cstdio>
 #include <cstring>
@@ -105,6 +106,13 @@ int initLibraries(std::string &error) {
         error = "libxml2, OpenSSL or curl is not loaded (is libcommoncommo linked?)";
         return -1;
     }
+    // commo writes to its sockets with no SO_NOSIGPIPE or MSG_NOSIGNAL, so a
+    // write to a peer that has closed (a server refusing our certificate)
+    // raises SIGPIPE, which kills a process that hasn't ignored it. The JVM
+    // ignores it, which hid this through G1; a Swift process doesn't
+    // (dev/g3/NOTES.md, trap 4). Ignored, the write fails with EPIPE and
+    // commo reconnects.
+    signal(SIGPIPE, SIG_IGN);
     xmlInit();
     // OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS: what
     // the binding's SSL_load_error_strings() expands to in OpenSSL 3.
@@ -178,21 +186,25 @@ extern "C" int mactak_commo_add_streaming(mactak_commo *shim, int transport,
         setError(err, errlen, "no commo or no host");
         return -1;
     }
-    const bool ssl = transport == MACTAK_COMMO_SSL;
-    if (!ssl && transport != MACTAK_COMMO_TCP) {
-        setError(err, errlen, "unknown transport " + std::to_string(transport));
-        return -1;
+    netinterfaceenums::StreamingTransport kind;
+    switch (transport) {
+        case MACTAK_COMMO_TCP: kind = netinterfaceenums::TRANSPORT_TCP; break;
+        case MACTAK_COMMO_SSL: kind = netinterfaceenums::TRANSPORT_SSL; break;
+        case MACTAK_COMMO_QUIC: kind = netinterfaceenums::TRANSPORT_QUIC; break;
+        default:
+            setError(err, errlen, "unknown transport " + std::to_string(transport));
+            return -1;
     }
+    const bool ssl = transport != MACTAK_COMMO_TCP;   // SSL and QUIC both carry TLS
     if (ssl && (!cert || !cert_len || !ca || !ca_len || !cert_password || !ca_password)) {
-        setError(err, errlen, "SSL needs a client certificate, a CA and both passwords");
+        setError(err, errlen, "SSL and QUIC need a client certificate, a CA and both passwords");
         return -1;
     }
     const CoTMessageType types[] = {SITUATIONAL_AWARENESS, CHAT};
     try {
         CommoResult rc = COMMO_SUCCESS;
         StreamingNetInterface *iface = shim->commo->addStreamingInterface(
-            ssl ? netinterfaceenums::TRANSPORT_SSL : netinterfaceenums::TRANSPORT_TCP,
-            host, port, types, sizeof types / sizeof types[0],
+            kind, host, port, types, sizeof types / sizeof types[0],
             ssl ? cert : nullptr, ssl ? cert_len : 0,
             ssl ? ca : nullptr, ssl ? ca_len : 0,
             ssl ? cert_password : nullptr, ssl ? ca_password : nullptr,
