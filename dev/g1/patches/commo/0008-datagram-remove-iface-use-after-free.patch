@@ -1,0 +1,25 @@
+diff --git a/core/impl/datagramsocketmanagement.cpp b/core/impl/datagramsocketmanagement.cpp
+--- a/core/impl/datagramsocketmanagement.cpp
++++ b/core/impl/datagramsocketmanagement.cpp
+@@ -456,7 +456,9 @@
+     if (ifCtx->broadcastContexts.empty() && ifCtx->recvContexts.empty()) {
+         // Tell hwscanner to stop looking at this
+         // before we move on
+-        scanner->removeHWAddress(iface->addr);
++        // macTAK: iface was deleted above (bcastIface, rxctx); the map's
++        // own copy of its address is still alive (dev/g3/NOTES.md, trap 11)
++        scanner->removeHWAddress(imapIter->first);
+         delete ifCtx;
+         delete (InternalHwAddress *)imapIter->first;
+         interfaceContexts.erase(imapIter);
+@@ -582,7 +584,9 @@
+     if (ifCtx->broadcastContexts.empty() && ifCtx->recvContexts.empty()) {
+         // Tell hwscanner to stop looking at this
+         // before we move on
+-        scanner->removeHWAddress(iface->addr);
++        // macTAK: iface was deleted above (bcastIface, rxctx); the map's
++        // own copy of its address is still alive (dev/g3/NOTES.md, trap 11)
++        scanner->removeHWAddress(imapIter->first);
+         delete ifCtx;
+         delete (InternalHwAddress *)imapIter->first;
+         interfaceContexts.erase(imapIter);

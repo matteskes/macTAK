@@ -79,16 +79,13 @@ public:
             cb.contact_removed(cb.context, uidString(c).c_str());
     }
     void interfaceUp(NetInterface *iface) override {
-        if (cb.interface_up)
-            cb.interface_up(cb.context, endpointOf(iface).c_str());
+        report(iface, {Status::up, 0});
     }
     void interfaceDown(NetInterface *iface) override {
-        if (cb.interface_down)
-            cb.interface_down(cb.context, endpointOf(iface).c_str());
+        report(iface, {Status::down, 0});
     }
     void interfaceError(NetInterface *iface, netinterfaceenums::NetInterfaceErrorCode code) override {
-        if (cb.interface_error)
-            cb.interface_error(cb.context, endpointOf(iface).c_str(), static_cast<int>(code));
+        report(iface, {Status::error, static_cast<int>(code)});
     }
     void enrollmentUpdate(const EnrollmentIOUpdate *u) override {
         if (!cb.enrollment_update || !u)
@@ -102,8 +99,67 @@ public:
                              signed_ ? u->caResult : nullptr, signed_ ? u->caResultLen : 0);
     }
 
+    // A mesh interface's id, known once its add call returns. commo can
+    // report the interface before that (from its own threads), so until then
+    // its statuses wait here and are replayed, in order, by registerMesh.
+    void registerMesh(NetInterface *iface, const std::string &id) {
+        std::lock_guard<std::mutex> guard(meshLock);
+        meshIds[iface] = id;
+        auto early = pending.find(iface);
+        if (early == pending.end())
+            return;
+        for (const StatusEvent &event : early->second)
+            forward(id, event);
+        pending.erase(early);
+    }
+    void forgetMesh(NetInterface *iface) {
+        std::lock_guard<std::mutex> guard(meshLock);
+        meshIds.erase(iface);
+        pending.erase(iface);
+    }
+
 private:
+    enum class Status { up, down, error };
+    struct StatusEvent {
+        Status status;
+        int code;
+    };
+
+    void report(NetInterface *iface, StatusEvent event) {
+        if (dynamic_cast<StreamingNetInterface *>(iface)) {
+            forward(endpointOf(iface), event);
+            return;
+        }
+        // Forwarded under the lock, so a replay and a later status keep
+        // their order. The lock is ours alone: commo never waits on it.
+        std::lock_guard<std::mutex> guard(meshLock);
+        auto known = meshIds.find(iface);
+        if (known != meshIds.end())
+            forward(known->second, event);
+        else
+            pending[iface].push_back(event);
+    }
+    void forward(const std::string &id, StatusEvent event) {
+        switch (event.status) {
+            case Status::up:
+                if (cb.interface_up)
+                    cb.interface_up(cb.context, id.c_str());
+                break;
+            case Status::down:
+                if (cb.interface_down)
+                    cb.interface_down(cb.context, id.c_str());
+                break;
+            case Status::error:
+                if (cb.interface_error)
+                    cb.interface_error(cb.context, id.c_str(), event.code);
+                break;
+        }
+    }
+
     const mactak_commo_callbacks cb;
+    std::mutex meshLock;   // guards meshIds and pending
+    std::map<NetInterface *, std::string> meshIds;
+    std::map<NetInterface *, std::vector<StatusEvent>> pending;
 };
 
 // The third-party initialization commo's Java binding does in
@@ -144,13 +200,21 @@ int initLibraries(std::string &error) {
     return 0;
 }
 
+// One of the interfaces mactak_commo_add_inbound, _add_broadcast and
+// _add_tcp_inbound create: commo removes each kind with its own call.
+struct MeshInterface {
+    enum class Kind { inbound, broadcast, tcpInbound } kind;
+    NetInterface *iface;
+};
+
 }  // namespace
 
 struct mactak_commo {
     Forwarder forwarder;
     Commo *commo = nullptr;
-    std::mutex lock;   // guards streams
+    std::mutex lock;   // guards streams and mesh
     std::map<std::string, StreamingNetInterface *> streams;
+    std::map<std::string, MeshInterface> mesh;
 
     explicit mactak_commo(const mactak_commo_callbacks &cb) : forwarder(cb) {}
 };
@@ -176,7 +240,10 @@ extern "C" mactak_commo *mactak_commo_create(const char *uid, const char *callsi
     try {
         // Commo copies the uid and callsign.
         ContactUID ourUid(reinterpret_cast<const uint8_t *>(uid), std::strlen(uid));
-        shim->commo = new Commo(&shim->forwarder, &ourUid, callsign);
+        // Interfaces by name ("en0", "lo0"), as ATAK names them; by MAC
+        // address, the default, lo0 could not be named (it has none).
+        shim->commo = new Commo(&shim->forwarder, &ourUid, callsign,
+                                netinterfaceenums::MODE_NAME);
         shim->commo->addInterfaceStatusListener(&shim->forwarder);
         shim->commo->addContactPresenceListener(&shim->forwarder);
         shim->commo->addCoTMessageListener(&shim->forwarder);
@@ -322,6 +389,183 @@ extern "C" int mactak_commo_send(mactak_commo *shim, const char *const *uids, si
                  + (gone.empty() ? "" : " (" + gone + ")"));
     } catch (...) {
         setError(err, errlen, "sendCoT threw");
+    }
+    return -1;
+}
+
+namespace {
+
+// Record a mesh interface commo just created under id, and report the id.
+int keepMesh(mactak_commo *shim, MeshInterface::Kind kind, NetInterface *iface,
+             const std::string &id, char *endpoint, size_t endpoint_len) {
+    {
+        std::lock_guard<std::mutex> guard(shim->lock);
+        shim->mesh[id] = MeshInterface{kind, iface};
+    }
+    shim->forwarder.registerMesh(iface, id);
+    if (endpoint && endpoint_len > 0)
+        std::snprintf(endpoint, endpoint_len, "%s", id.c_str());
+    return 0;
+}
+
+bool meshIdTaken(mactak_commo *shim, const std::string &id, char *err, size_t errlen) {
+    std::lock_guard<std::mutex> guard(shim->lock);
+    if (shim->mesh.count(id) == 0)
+        return false;
+    setError(err, errlen, "mesh interface " + id + " already exists");
+    return true;
+}
+
+}  // namespace
+
+extern "C" int mactak_commo_set_mesh_options(mactak_commo *shim, int ttl, int loopback,
+                                             int address_reuse, char *err, size_t errlen) {
+    if (!shim) {
+        setError(err, errlen, "no commo");
+        return -1;
+    }
+    if (ttl < 1 || ttl > 255) {
+        setError(err, errlen, "a multicast TTL is 1 to 255, not " + std::to_string(ttl));
+        return -1;
+    }
+    try {
+        shim->commo->setTTL(ttl);
+        shim->commo->setMulticastLoopbackEnabled(loopback != 0);
+        shim->commo->setEnableAddressReuse(address_reuse != 0);
+        return 0;
+    } catch (...) {
+        setError(err, errlen, "setting the mesh options threw");
+    }
+    return -1;
+}
+
+extern "C" int mactak_commo_add_inbound(mactak_commo *shim, const char *ifname, int port,
+                                        const char *const *groups, size_t group_count,
+                                        char *endpoint, size_t endpoint_len,
+                                        char *err, size_t errlen) {
+    if (!shim || !ifname || !*ifname || (group_count > 0 && !groups)) {
+        setError(err, errlen, "no commo, no interface name or no groups");
+        return -1;
+    }
+    const std::string id = std::string("in:") + ifname + ":" + std::to_string(port);
+    if (meshIdTaken(shim, id, err, errlen))
+        return -1;
+    try {
+        HwAddress name(reinterpret_cast<const uint8_t *>(ifname), std::strlen(ifname));
+        std::vector<const char *> list(groups, groups + group_count);
+        PhysicalNetInterface *iface = shim->commo->addInboundInterface(
+            &name, port, group_count ? list.data() : nullptr, group_count, false);
+        if (!iface) {
+            setError(err, errlen, "addInboundInterface refused " + id
+                     + " (port in use or out of range, or a group not multicast)");
+            return -1;
+        }
+        return keepMesh(shim, MeshInterface::Kind::inbound, iface, id, endpoint, endpoint_len);
+    } catch (...) {
+        setError(err, errlen, "addInboundInterface threw");
+    }
+    return -1;
+}
+
+extern "C" int mactak_commo_add_broadcast(mactak_commo *shim, const char *ifname, int kind,
+                                          const char *group, int port,
+                                          char *endpoint, size_t endpoint_len,
+                                          char *err, size_t errlen) {
+    if (!shim || !ifname || !*ifname || !group) {
+        setError(err, errlen, "no commo, no interface name or no group");
+        return -1;
+    }
+    CoTMessageType type;
+    switch (kind) {
+        case MACTAK_COMMO_SA: type = SITUATIONAL_AWARENESS; break;
+        case MACTAK_COMMO_CHAT: type = CHAT; break;
+        default:
+            setError(err, errlen, "unknown message kind " + std::to_string(kind));
+            return -1;
+    }
+    const std::string id = std::string("out:") + ifname + ":" + group + ":" + std::to_string(port);
+    if (meshIdTaken(shim, id, err, errlen))
+        return -1;
+    try {
+        HwAddress name(reinterpret_cast<const uint8_t *>(ifname), std::strlen(ifname));
+        PhysicalNetInterface *iface = shim->commo->addBroadcastInterface(&name, &type, 1, group, port);
+        if (!iface) {
+            setError(err, errlen, "addBroadcastInterface refused " + id
+                     + " (not a multicast group, or port out of range)");
+            return -1;
+        }
+        return keepMesh(shim, MeshInterface::Kind::broadcast, iface, id, endpoint, endpoint_len);
+    } catch (...) {
+        setError(err, errlen, "addBroadcastInterface threw");
+    }
+    return -1;
+}
+
+extern "C" int mactak_commo_add_tcp_inbound(mactak_commo *shim, int port,
+                                            char *endpoint, size_t endpoint_len,
+                                            char *err, size_t errlen) {
+    if (!shim) {
+        setError(err, errlen, "no commo");
+        return -1;
+    }
+    const std::string id = "tcp:" + std::to_string(port);
+    if (meshIdTaken(shim, id, err, errlen))
+        return -1;
+    try {
+        TcpInboundNetInterface *iface = shim->commo->addTcpInboundInterface(port);
+        if (!iface) {
+            setError(err, errlen, "addTcpInboundInterface refused port " + std::to_string(port)
+                     + " (in use or out of range)");
+            return -1;
+        }
+        return keepMesh(shim, MeshInterface::Kind::tcpInbound, iface, id, endpoint, endpoint_len);
+    } catch (...) {
+        setError(err, errlen, "addTcpInboundInterface threw");
+    }
+    return -1;
+}
+
+extern "C" int mactak_commo_remove_mesh(mactak_commo *shim, const char *endpoint,
+                                        char *err, size_t errlen) {
+    if (!shim || !endpoint) {
+        setError(err, errlen, "no commo or no endpoint");
+        return -1;
+    }
+    MeshInterface found{};
+    bool known = false;
+    {
+        std::lock_guard<std::mutex> guard(shim->lock);
+        auto it = shim->mesh.find(endpoint);
+        if (it != shim->mesh.end()) {
+            found = it->second;
+            known = true;
+            shim->mesh.erase(it);
+        }
+    }
+    if (!known) {
+        setError(err, errlen, std::string("no mesh interface ") + endpoint);
+        return -1;
+    }
+    try {
+        CommoResult rc = COMMO_ILLEGAL_ARGUMENT;
+        switch (found.kind) {
+            case MeshInterface::Kind::inbound:
+                rc = shim->commo->removeInboundInterface(static_cast<PhysicalNetInterface *>(found.iface));
+                break;
+            case MeshInterface::Kind::broadcast:
+                rc = shim->commo->removeBroadcastInterface(static_cast<PhysicalNetInterface *>(found.iface));
+                break;
+            case MeshInterface::Kind::tcpInbound:
+                rc = shim->commo->removeTcpInboundInterface(static_cast<TcpInboundNetInterface *>(found.iface));
+                break;
+        }
+        // commo reports nothing for it after its remove call returns.
+        shim->forwarder.forgetMesh(found.iface);
+        if (rc == COMMO_SUCCESS)
+            return 0;
+        setError(err, errlen, std::string("removing ") + endpoint + ": " + resultName(rc));
+    } catch (...) {
+        setError(err, errlen, std::string("removing ") + endpoint + " threw");
     }
     return -1;
 }

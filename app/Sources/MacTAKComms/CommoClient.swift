@@ -71,6 +71,8 @@ public actor CommoClient {
     let sink: EventSink
     private let interfaceUps: AsyncStream<Void>
     private var presence: Presence
+    /// The mesh, while it runs (CommoClient+Mesh.swift).
+    var mesh: MeshState?
     private var beaconTasks: [Task<Void, Never>] = []
 
     /// A commo instance identified as uid and callsign. Log lines below
