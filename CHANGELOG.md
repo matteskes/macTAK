@@ -26,6 +26,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   org.json jar carries the JSON License, which is not GPL-compatible —
   documented as F2 with a remediation path.
 
+- G3.3a, the mesh transport (`dev/g3/NOTES.md` §G3.3a): with no
+  server, `CommoClient.startMesh` puts a client on the local network as
+  ATAK 5.5 does, with SA on multicast 239.2.3.1:6969, chat on
+  224.10.10.1:17012 and direct TCP on port 4242, on each interface it is
+  given. `CCommoShim` opens commo's inbound, broadcast and TCP interfaces
+  by interface name, and reports each one's status by id. Two clients on
+  one Mac see each other over `lo0` with no server (`MeshTests`, in
+  `make test-app`).
+
 - G3.2d, the servers pane, which completes G3.2, servers and identity
   (`dev/g3/NOTES.md` §G3.2d). The app's sidebar lists its TAK servers
   with their status: add one, import an ATAK data package, enroll for a
@@ -168,6 +177,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to GitHub's macOS 27 image (`xcode-27`, a preview).
 
 ### Fixed
+
+- commo's address reuse works on macOS (G3 trap 10, commo patch 0007).
+  `socketSetAddrReuse` had no macOS branch, so with reuse on, every UDP
+  listen socket failed. It now sets `SO_REUSEPORT` with `SO_REUSEADDR`.
+- Removing commo's last mesh interface on a network interface no longer
+  reads freed memory (G3 trap 11, commo patch 0008). It had crashed with
+  SIGSEGV.
 
 - A Swift process using commo no longer dies of SIGPIPE when a server
   closes a connection commo writes to (G3 trap 4, `dev/g3/NOTES.md`).

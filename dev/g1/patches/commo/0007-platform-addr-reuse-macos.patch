@@ -1,0 +1,19 @@
+diff --git a/core/impl/platform.cpp b/core/impl/platform.cpp
+--- a/core/impl/platform.cpp
++++ b/core/impl/platform.cpp
+@@ -724,7 +724,15 @@
+ #if defined(WIN32)
+     DWORD reuseOptArg = reuse ? TRUE : FALSE;
+ #elif defined(__linux__)
++    int reuseOptArg = reuse ? 1 : 0;
++#elif defined(__APPLE__)
++    // macTAK: the BSD sockets need both options for several sockets to bind
++    // one wildcard UDP port and each get its multicast, which is what
++    // SO_REUSEADDR alone does on Linux (dev/g3/NOTES.md, trap 10). Without
++    // this branch, address reuse failed every bind on macOS.
+     int reuseOptArg = reuse ? 1 : 0;
++    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &reuseOptArg, sizeof(reuseOptArg)) != 0)
++        return OTHER_ERROR;
+ #else
+     int reuseOptArg = 0;
+     return OTHER_ERROR;

@@ -39,6 +39,13 @@ enum {
     MACTAK_COMMO_QUIC = 2,
 };
 
+// The kinds of CoT a mesh broadcast interface carries (commo's
+// CoTMessageType): situational awareness, or chat.
+enum {
+    MACTAK_COMMO_SA = 0,
+    MACTAK_COMMO_CHAT = 1,
+};
+
 typedef struct {
     void *context;
     void (*log)(void *context, int level, const char *message);
@@ -46,8 +53,10 @@ typedef struct {
     void (*cot_received)(void *context, const char *xml, const char *endpoint);
     void (*contact_added)(void *context, const char *uid);
     void (*contact_removed)(void *context, const char *uid);
-    /// endpoint is a streaming interface's id (mactak_commo_add_streaming),
-    /// or "" for other kinds of interface.
+    /// endpoint is the interface's id, from mactak_commo_add_streaming or
+    /// one of the mesh calls (mactak_commo_add_inbound and the rest). A
+    /// mesh interface's statuses can arrive on the thread that added it,
+    /// replayed when commo reported them before the add call returned.
     void (*interface_up)(void *context, const char *endpoint);
     void (*interface_down)(void *context, const char *endpoint);
     /// code is commo's NetInterfaceErrorCode.
@@ -103,6 +112,44 @@ int mactak_commo_broadcast(mactak_commo *commo, const char *xml,
 /// accepted it.
 int mactak_commo_send(mactak_commo *commo, const char *const *uids, size_t count,
                       const char *xml, char *err, size_t errlen);
+
+// Mesh networking (G3.3): peers on the local network with no server, as
+// ATAK's defaults have it (dev/g3/NOTES.md §G3.3): SA on multicast
+// 239.2.3.1:6969, chat on 224.10.10.1:17012, direct TCP on port 4242.
+// Interfaces are named as the system names them ("en0", "lo0"). Each call
+// writes the new interface's id to endpoint, the id status callbacks carry,
+// and returns 0; mactak_commo_remove_mesh takes the id back.
+
+/// Multicast TTL (1-255), whether this host's own multicast comes back to
+/// it (two clients on one Mac need it), and whether several sockets may
+/// bind one port (ATAK turns it on). Set before adding mesh interfaces.
+int mactak_commo_set_mesh_options(mactak_commo *commo, int ttl, int loopback,
+                                  int address_reuse, char *err, size_t errlen);
+
+/// Listen for CoT on UDP port on interface ifname, unicast and on each
+/// multicast group (dotted decimal). Id "in:<ifname>:<port>".
+int mactak_commo_add_inbound(mactak_commo *commo, const char *ifname, int port,
+                             const char *const *groups, size_t group_count,
+                             char *endpoint, size_t endpoint_len,
+                             char *err, size_t errlen);
+
+/// Send broadcasts of kind (MACTAK_COMMO_SA or MACTAK_COMMO_CHAT) out of
+/// interface ifname to multicast group:port.
+/// Id "out:<ifname>:<group>:<port>".
+int mactak_commo_add_broadcast(mactak_commo *commo, const char *ifname, int kind,
+                               const char *group, int port,
+                               char *endpoint, size_t endpoint_len,
+                               char *err, size_t errlen);
+
+/// Accept CoT over TCP on port, on every interface: how a peer sends to
+/// this client directly. Id "tcp:<port>".
+int mactak_commo_add_tcp_inbound(mactak_commo *commo, int port,
+                                 char *endpoint, size_t endpoint_len,
+                                 char *err, size_t errlen);
+
+/// Remove a mesh interface by its id. 0 on success.
+int mactak_commo_remove_mesh(mactak_commo *commo, const char *endpoint,
+                             char *err, size_t errlen);
 
 /// Set up a certificate enrollment with a TAK server (commo's
 /// enrollmentInit): keygen, then GET /Marti/api/tls/config and POST

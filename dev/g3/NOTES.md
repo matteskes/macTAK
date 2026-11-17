@@ -22,7 +22,10 @@ servers:
   connect, and its status shown per server (G3.2d).
 
 Every TAK connection uses commo's OpenSSL 3, and the bundle carries
-OpenSSL's legacy provider. Next: G3.3, mesh networking (§Plan revision).
+OpenSSL's legacy provider.
+
+G3.3, mesh networking, is under way: two clients on one Mac see each
+other with no server (G3.3a). The app's Mesh section is next (G3.3b).
 
 ## The plan (approved 2026-11-13)
 
@@ -106,7 +109,7 @@ from running it.
    SA on multicast 239.2.3.1:6969, chat on 224.10.10.1:17012, and direct
    TCP on port 4242 (`TadilJContact`, `ChatManagerMapComponent`,
    `CotMapComponent`). Still to check: what macOS's local-network
-   permission asks of a multicast client.
+   permission asks of a multicast client (G3.3b checks it from the app).
 4. **SA pacing (`ReportingRate`).**
    - It keeps two streams, unreliable (mesh) and reliable (servers).
    - The strategy is "Dynamic" by default: 30 s and 180 s when
@@ -735,3 +738,116 @@ through the GUI), against a real TAK server.
   TLS. Giving the async wait its own label (`within:`) keeps Swift from
   preferring it at the synchronous call sites: overloading on `async`
   alone broke them.
+
+## G3.3 — mesh networking (plan approved 2026-11-17)
+
+Gap 3 (§Plan revision). Two PRs:
+
+| PR | Branch | What |
+|---|---|---|
+| **a** | `g3/mesh-transport` | the shim's mesh calls; `CommoClient.startMesh`; two clients on one Mac over `lo0` with no server |
+| **b** | `g3/mesh-pane` | the app's Mesh section, interface tracking, the Local Network permission |
+
+What ATAK 5.5 does (read at the pin):
+
+- **Defaults** (`CotService._addDefaultInputs`, `ChatManagerMapComponent`,
+  `network_connections_preferences.xml`):
+  - SA in and out on 239.2.3.1:6969
+  - chat on 224.10.10.1:17012
+  - unicast UDP and direct TCP in on 4242
+  - multicast TTL 64, multicast loopback off, address reuse on
+  - mesh on (`enableNonStreamingConnections`).
+- **Interfaces:** one commo interface per network interface, by name
+  (`CommsMapComponent.addInputsForMcastSet`).
+
+Decided with the plan (owner, 2026-11-17): **mesh on by default**, as in
+ATAK.
+
+### G3.3a — the mesh transport (2026-11-17, branch `g3/mesh-transport`)
+
+#### What changed
+
+- **The shim** creates `Commo` with `MODE_NAME`, so interfaces are named
+  as the system names them ("en0", "lo0"). By MAC address, the default,
+  `lo0` can't be named at all: it has none. Streaming and enrollment take
+  no interface address, so they don't change.
+- **New shim calls:**
+  - `mactak_commo_set_mesh_options` (TTL, loopback, address reuse)
+  - `mactak_commo_add_inbound`, `mactak_commo_add_broadcast` (SA or chat)
+    and `mactak_commo_add_tcp_inbound`
+  - `mactak_commo_remove_mesh`.
+
+  Each returns an id (`in:<if>:<port>`, `out:<if>:<group>:<port>`,
+  `tcp:<port>`), and the status callbacks now carry that id for mesh
+  interfaces. Before, they carried "" for anything not streaming. commo
+  can report an interface before its add call returns, so the shim holds
+  such statuses and replays them, in order, once the id is known.
+- **Swift:**
+  - `MeshConfig`, with `.atak` holding 5.5's defaults.
+  - `NetworkInterfaces.meshCapable()`: the interfaces that are up,
+    multicast-capable and IPv4. Not loopback, point-to-point, `utun`,
+    `awdl` or `llw`.
+  - `CommoClient.startMesh(_:interfaces:)`, `stopMesh()`,
+    `addMeshInterface` and `removeMeshInterface`. Per interface: SA,
+    chat and unicast UDP in; SA and chat out. TCP in, once.
+- **Two commo patches** (`dev/g1/patches/commo/0007`, `0008`): traps 10
+  and 11.
+- **Tests** (`MeshTests`, on `lo0` with loopback on, off ATAK's ports so a
+  real ATAK nearby neither hears nor disturbs them):
+  - two clients see each other's SA on the SA group, with no server
+  - a chat event goes out on the chat group and not the SA group
+  - a send to one contact arrives over direct TCP
+  - commo advertises `127.0.0.1:4242:tcp`
+  - a client with no mesh, or on another SA port, hears nothing
+  - a second `startMesh` is refused, and an interface comes and goes.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 37 tests pass: 2 core and 35 comms (8 new) |
+| The gate leg | two `CommoClient`s on one Mac become contacts and get each other's SA over 239.2.3.1, with no server |
+| A/B: SA inbound joins no group | the presence leg fails |
+| A/B: no TCP inbound | the direct leg fails |
+| A/B: without patch 0007 | every UDP listen socket fails ("Unable to create listening UDP socket"); every leg that needs to hear fails |
+| A/B: without patch 0008 | removing `lo0` kills the test runner with SIGSEGV (`HWIFScanner::removeHWAddress`) |
+| `make test-quic` | passes on the patched commo (G1's `QuicPeerTest` uses mesh interfaces on `lo0` too) |
+| `make lint` | passes |
+
+#### Found while building
+
+- **commo writes the contact endpoint itself.** Every SA it sends gets
+  a new `<contact endpoint>` (`datagramsocketmanagement.cpp`,
+  `CoTMessage::endpointForType`):
+  - on the mesh, `<source address>:4242:tcp`, with the port fixed at 4242
+  - to a server, `*:-1:stcp`.
+
+  What the event said is replaced, so `Presence` needs no mesh mode,
+  and the address is right for each interface on a Mac with several.
+  But peers only ever send direct messages to port 4242. A second client
+  on one host takes another port and gets none (`MeshConfig.tcpPort`).
+- **commo receives its own SA with loopback on.** A client hears its own
+  multicast, and reports itself as a contact. ATAK keeps loopback off,
+  and so will the app. The contacts list (G3.4) should still drop its
+  own uid.
+- **Multicast on `en0` from this Mac timed out** in a Python probe, while
+  `lo0` worked: likely Local Network privacy. PR b checks it from the
+  app.
+
+#### Traps
+
+- **10 — commo's address reuse fails every bind on macOS.**
+  `PlatformNet::socketSetAddrReuse` has branches for Windows and Linux.
+  Anything else returns an error before `setsockopt`. With reuse on, as
+  ATAK sets it, every UDP listen socket fails. Patch 0007 sets
+  `SO_REUSEPORT` and `SO_REUSEADDR` on Apple. The BSD stacks need both
+  for two sockets to bind one wildcard UDP port and each get the
+  multicast, which is what `SO_REUSEADDR` alone does on Linux.
+- **11 — removing the last interface on a network interface reads freed
+  memory.** `removeBroadcastInterface` and `removeInboundInterface`
+  (`datagramsocketmanagement.cpp`) delete the context, which is the
+  interface, then pass `iface->addr` to `HWIFScanner::removeHWAddress`.
+  Usually the freed memory still holds the pointer, so nothing shows.
+  Here it crashed the second time the test removed `lo0`. Patch 0008
+  passes the interface map's own copy of the address, which is freed
+  only after.
