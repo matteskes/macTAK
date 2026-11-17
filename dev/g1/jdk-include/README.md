@@ -11,9 +11,9 @@ Public License version 2 only, as published by the Free Software
 Foundation. Oracle designates this particular file as subject to the
 "Classpath" exception as provided by Oracle in the LICENSE file that
 accompanied this code.") — keep the headers intact. The exception's text:
-<http://openjdk.java.net/legal/gplv2+ce.php>; the GPL-2.0 text macTAK
+<https://openjdk.org/legal/gplv2+ce.html>; the GPL-2.0 text macTAK
 keeps is `licenses/texts/gpl-2.0.txt`.
 
 These are build inputs only: nothing from this directory ships in the
 app bundle (inventory row `build:jdk-include`,
-[../../docs/license-audit.md](../../docs/license-audit.md), F4).
+[../../../docs/license-audit.md](../../../docs/license-audit.md), F4).
