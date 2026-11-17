@@ -26,7 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   org.json jar carries the JSON License, which is not GPL-compatible —
   documented as F2 with a remediation path.
 
-- G3.3b, the Mesh section (`dev/g3/NOTES.md` §G3.3b): the app joins
+- G3.3b, the Mesh section, which completes G3.3, mesh networking
+  (`dev/g3/NOTES.md` §G3.3b): the app joins
   the local network's TAK mesh by default, as ATAK does. The sidebar's
   Mesh section switches it on or off, shows each network interface and
   direct messages' port with their status, and edits the ports, groups
