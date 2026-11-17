@@ -27,6 +27,7 @@ needs: openssl (OPENSSL env, default: Homebrew's openssl@3)
 import base64
 import http.server
 import os
+import socketserver
 import ssl
 import subprocess
 import sys
@@ -128,6 +129,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.reply(200, (reply + "</enrollment>").encode())
 
 
+class Server(http.server.ThreadingHTTPServer):
+    """ThreadingHTTPServer without its bind-time reverse DNS lookup.
+
+    HTTPServer.server_bind sets server_name from socket.getfqdn(host), a
+    reverse lookup that can hang on a CI runner: the server then prints
+    nothing until the test gives up (G3 trap 9). Nothing here uses the name.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def main():
     args = sys.argv[1:]
     profile, no_ca = None, False
@@ -143,7 +157,7 @@ def main():
     port, cert, key, ca_cert, ca_key, users, password = args
     Handler.config = {"users": users.split(","), "password": password, "ca_cert": ca_cert, "ca_key": ca_key,
                       "profile": profile, "no_ca": no_ca}
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", int(port)), Handler)
+    server = Server(("127.0.0.1", int(port)), Handler)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.load_cert_chain(cert, key)
     server.socket = tls.wrap_socket(server.socket, server_side=True)

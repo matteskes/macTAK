@@ -635,3 +635,15 @@ Decided with the plan (owner, 2026-11-16):
   compact, so the fake does too. But any trusted enrollment server that
   indents its XML would crash the app. The fix is a commo patch (skip
   non-element children), in G1's patch series; not done here.
+- **9 — `http.server` does a reverse DNS lookup when it binds.**
+  `HTTPServer.server_bind` sets `server_name` from
+  `socket.getfqdn(host)`. On CI's first run of this PR, three of four
+  enrollment tests failed with "server never printed listening": the fake
+  enrollment server was still running at the 15 s limit with no output,
+  so it hadn't reached its "listening" line. The fourth, the first to
+  run, passed. A lookup that hangs on the runner fits, and G1's
+  `http-witness.py`, which binds through `socketserver.TCPServer` (no
+  lookup), has never hung on CI. `fake-enroll-server.py` now binds the
+  same way and keeps `http.server`'s request handling; nothing uses the
+  name. The diagnosis is the likely cause, not a measured one: this Mac
+  never showed the hang. CI's reruns of the shell job are the check.
