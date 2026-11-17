@@ -21,7 +21,7 @@ KHR="$ROOT/src/khronos"
 [[ -f "$ANGLE/libEGL.dylib" && -f "$ANGLE/libGLESv2.dylib" ]] \
   || { echo "FATAL: ANGLE missing in $ANGLE — run dev/g2/fetch-angle.sh first" >&2; exit 1; }
 [[ -f "$KHR/EGL/api/EGL/egl.h" && -f "$KHR/OpenGL/api/GLES3/gl3.h" ]] \
-  || { echo "FATAL: khronos headers missing under $KHR (git submodule update --init src/khronos)" >&2; exit 1; }
+  || { echo "FATAL: khronos headers missing under $KHR — src/ is the sparse upstream clone, not submodules; see CONTRIBUTING.md Setup" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
