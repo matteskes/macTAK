@@ -7,6 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Nothing yet.
+
+## [0.3.3] - 2026-11-17 — G3: commo from Swift, servers and identity, mesh networking + the license audit and bundled natives
+
+G2's gate stays open on trap 77 (#125), and G3 isn't complete either, so
+this is a patch release, not 0.4.0. In it:
+
+- G3.1–G3.3: the app talks to TAK servers over TCP, TLS and QUIC with
+  Keychain certificates and enrollment, and to peers on the local network
+  with no server.
+- The full license audit.
+- The bundle carrying its own natives.
+- Wave 7's hardening.
+
 ### Added
 
 - The full license audit (docs/license-audit.md, findings F1–F8):
