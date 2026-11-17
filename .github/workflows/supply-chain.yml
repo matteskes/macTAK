@@ -1,6 +1,6 @@
 # Supply-chain hygiene for CI's Homebrew dependency set.
 #
-# Two jobs:
+# Three jobs:
 #
 # brewfile-lock (macos-26) — Gate = Brewfile.lock.json freshness: the
 # checked-in Brewfile lists exactly the packages the workflows
@@ -21,6 +21,16 @@
 # red. The scan and its gate run together here, on a Linux runner, where
 # the action can actually run; everything brew-related stays on macos,
 # where the dep set is consumed.
+#
+# license-gate (ubuntu-latest) — the license inventory covers everything
+# the repo declares, and THIRD-PARTY-NOTICES.md is current
+# (docs/license-audit.md). Pure file checks: dev/deps/check-licenses.py
+# resolves Brewfile/deps.lock/build scripts against
+# licenses/inventory.csv without building; the notices diff re-runs
+# dev/deps/stage-licenses.py --notices. What a built bundle actually
+# ships is checked again by check-licenses.py --bundle inside
+# app/bundle.sh, where RUNTIME-MANIFEST.txt and the staged jar list
+# exist.
 name: Supply chain
 
 on:
@@ -32,6 +42,11 @@ on:
       - 'Brewfile'
       - 'Brewfile.lock.json'
       - 'dev/deps/brew-pins.py'
+      - 'licenses/**'
+      - 'THIRD-PARTY-NOTICES.md'
+      - 'dev/deps/check-licenses.py'
+      - 'dev/deps/stage-licenses.py'
+      - 'app/bundle.sh'
   push:
     branches: [main]
     paths:
@@ -41,6 +56,11 @@ on:
       - 'Brewfile'
       - 'Brewfile.lock.json'
       - 'dev/deps/brew-pins.py'
+      - 'licenses/**'
+      - 'THIRD-PARTY-NOTICES.md'
+      - 'dev/deps/check-licenses.py'
+      - 'dev/deps/stage-licenses.py'
+      - 'app/bundle.sh'
   workflow_dispatch:
 
 permissions:
@@ -174,3 +194,27 @@ jobs:
               sys.exit(1)
           print("No known vulnerabilities found")
           PY
+
+  license-gate:
+    name: License inventory and notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The inventory must cover everything the repo declares
+        run: python3 -I dev/deps/check-licenses.py
+
+      - name: THIRD-PARTY-NOTICES.md must be current
+        run: |
+          python3 -I dev/deps/stage-licenses.py --notices THIRD-PARTY-NOTICES.md.new
+          if ! git diff --no-index --quiet THIRD-PARTY-NOTICES.md THIRD-PARTY-NOTICES.md.new; then
+            echo "::error::THIRD-PARTY-NOTICES.md is stale — run: python3 -I dev/deps/stage-licenses.py --notices THIRD-PARTY-NOTICES.md and commit it"
+            git --no-pager diff --no-index THIRD-PARTY-NOTICES.md THIRD-PARTY-NOTICES.md.new || true
+            exit 1
+          fi
+          rm THIRD-PARTY-NOTICES.md.new
+          echo "THIRD-PARTY-NOTICES.md is current"

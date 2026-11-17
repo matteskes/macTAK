@@ -5,6 +5,13 @@
   // third-party docs a build unpacks (dev/g1/build: 5.5's style-asset
   // LICENSE.md files, the tinygltf tarball's examples)
   "gitignore": true,
+  // THIRD-PARTY-NOTICES.md is generated (dev/deps/stage-licenses.py) from
+  // license texts and upstream URLs that are what they are — not repo
+  // prose; supply-chain.yml's license-gate diffs it against the inventory
+  // instead of linting it
+  "ignores": [
+    "THIRD-PARTY-NOTICES.md"
+  ],
   "config": {
     "MD013": false, // line length: prose and tables run long by design
     "MD033": false, // inline HTML: tables use markup/symbols deliberately

@@ -1,0 +1,29 @@
+PCRE2 LICENCE
+-------------
+
+PCRE2 is a library of functions to support regular expressions whose syntax
+and semantics are as close as possible to those of the Perl 5 language.
+
+Release 10 of PCRE2 is distributed under the terms of the "BSD" licence, as
+specified below. The documentation for PCRE2, supplied in the "doc"
+directory, is distributed under the same terms as the software itself.
+
+Written by: Philip Hazel
+Copyright (c) 1995-2025 University of Cambridge, Cambridge, England.
+All rights reserved.
+
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted, provided
+that the above copyright notice, the paragraph beginning "Release 10 of
+PCRE2", this permission notice, and the disclaimer below appear in all
+copies and derivatives, and that the name of University of Cambridge not be
+used in advertising or publicity pertaining to distribution of the software
+without specific, written prior permission.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
+IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
