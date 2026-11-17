@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.2 done — 2026-11-17): servers and identity
+## State (G3.3 done — 2026-11-17): servers, identity and mesh
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -24,8 +24,12 @@ servers:
 Every TAK connection uses commo's OpenSSL 3, and the bundle carries
 OpenSSL's legacy provider.
 
-G3.3, mesh networking, is under way: two clients on one Mac see each
-other with no server (G3.3a). The app's Mesh section is next (G3.3b).
+G3.3 made it a client with no server too. It joins the local network's
+TAK mesh (SA, chat and direct TCP, on ATAK's ports) on every interface,
+on by default as in ATAK (G3.3a, #191). The sidebar's Mesh section
+switches it and shows its status (G3.3b, #192). Two copies of the app
+on `en0` saw each other with no server. Next: G3.4, SA: the CoT model,
+contacts, reporting rate and self details (§Plan revision).
 
 ## The plan (approved 2026-11-13)
 
@@ -746,8 +750,8 @@ Gap 3 (§Plan revision). Two PRs:
 
 | PR | Branch | What |
 |---|---|---|
-| **a** | `g3/mesh-transport` | the shim's mesh calls; `CommoClient.startMesh`; two clients on one Mac over `lo0` with no server |
-| **b** | `g3/mesh-pane` | the app's Mesh section, interface tracking, the Local Network permission |
+| **a** (#191) | `g3/mesh-transport` | the shim's mesh calls; `CommoClient.startMesh`; two clients on one Mac over `lo0` with no server |
+| **b** (#192) | `g3/mesh-pane` | the app's Mesh section, interface tracking, the Local Network permission |
 
 What ATAK 5.5 does (read at the pin):
 
