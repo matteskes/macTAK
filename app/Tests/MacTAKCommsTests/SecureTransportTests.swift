@@ -46,7 +46,7 @@ final class SecureTransportTests: XCTestCase {
         try await a.seen.wait("A's interface up", timeout: 15, TwoClients.isInterfaceUp)
 
         let impostor = try TwoClients.Client(uid: "g3-tls-impostor-\(UUID().uuidString.prefix(8))")
-        await impostor.commo.startBeacon(every: .seconds(1))
+        await impostor.commo.startReporting(.every(seconds: 1))
         try await impostor.commo.connect(host: "127.0.0.1", port: port,
                                          transport: .ssl(try pki.credentials("impostor")))
         try server.waitFor("tls handshake failed", timeout: 15)

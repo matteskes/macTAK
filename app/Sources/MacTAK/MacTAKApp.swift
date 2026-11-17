@@ -3,9 +3,10 @@
 // (G3.2d), the mesh (G3.3b), contacts (G3.4), chat (G3.5), then coordinates
 // and layers.
 //
-// `--settings-suite NAME` keeps this copy's settings (uid, callsign,
-// servers, mesh) in the defaults suite NAME instead of the app's own, so a
-// second copy on one Mac is a second client.
+// `--settings-suite NAME` keeps this copy's settings (self details,
+// servers, mesh) in the defaults suite NAME instead of the app's own, and
+// suffixes its device uid with "-NAME", so a second copy on one Mac is a
+// second client.
 
 import AppKit
 import MacTAKComms
@@ -26,6 +27,7 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.host)
                 .environmentObject(delegate.connections)
                 .environmentObject(delegate.mesh)
+                .environmentObject(delegate.me)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -37,16 +39,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let host = EngineHost()
     /// Peers on the local network, on unless turned off (G3.3).
     let mesh: MeshNetwork
+    /// Who this client says it is and where (G3.4b): the device uid, the
+    /// self details, CoreLocation or a placed position.
+    let me: SelfReporter
     /// The servers, their certificates in the login keychain (G3.2), and
     /// the commo client the mesh shares.
     let connections: ServerConnections
     private let watcher: InterfaceWatcher
 
     override init() {
-        let settings = Self.settings()
+        let (settings, suite) = Self.settings()
         let mesh = MeshNetwork(settings: settings)
         self.mesh = mesh
-        connections = ServerConnections(settings: settings, identities: .login, mesh: mesh)
+        let details = SelfDetails(settings: settings, uid: DeviceUID.resolve(suite: suite))
+        me = SelfReporter(settings: settings, details: details, locator: LocationService())
+        connections = ServerConnections(settings: settings, identities: .login, me: me, mesh: mesh)
         watcher = InterfaceWatcher { mesh.refresh() }
         super.init()
     }
@@ -61,11 +68,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static func settings() -> UserDefaults {
+    /// The settings, and the suite's name when --settings-suite names one.
+    private static func settings() -> (UserDefaults, String?) {
         let arguments = CommandLine.arguments
         guard let flag = arguments.firstIndex(of: "--settings-suite"), flag + 1 < arguments.count,
-              let suite = UserDefaults(suiteName: arguments[flag + 1]) else { return .standard }
-        return suite
+              let suite = UserDefaults(suiteName: arguments[flag + 1]) else { return (.standard, nil) }
+        return (suite, arguments[flag + 1])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

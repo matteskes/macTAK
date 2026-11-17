@@ -47,6 +47,13 @@ public struct SelfEvent: Sendable, Equatable {
         self.uid = uid; self.callsign = callsign; self.group = group
     }
 
+    /// Whether what ATAK reports at once when it changes is the same:
+    /// callsign, unit type, team, role, custom role and remarks
+    /// (ReportingRate's monitored preferences).
+    public func sameIdentity(as other: SelfEvent) -> Bool {
+        callsign == other.callsign && type == other.type && group == other.group && remarks == other.remarks
+    }
+
     public var how: String {
         switch location?.source {
         case .provider: return "m-g"

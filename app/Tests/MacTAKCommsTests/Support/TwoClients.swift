@@ -19,11 +19,11 @@ enum TwoClients {
         let a = try Client(uid: uidA)
         let b = try Client(uid: uidB)
 
-        await a.commo.startBeacon(every: .seconds(1))
+        await a.commo.startReporting(.every(seconds: 1))
         try await a.commo.connect(host: "127.0.0.1", port: port, transport: transport("a"))
         try await a.seen.wait("A's interface up", timeout: 15, isInterfaceUp)
 
-        await b.commo.startBeacon(every: .seconds(1))
+        await b.commo.startReporting(.every(seconds: 1))
         try await b.commo.connect(host: "127.0.0.1", port: port, transport: transport("b"))
         try await b.seen.wait("B's interface up", timeout: 15, isInterfaceUp)
         try await Task.sleep(for: CommoClient.sendableDelay)

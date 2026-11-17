@@ -87,7 +87,7 @@ final class MeshNetworkTests: XCTestCase {
         let mesh = MeshNetwork(settings: MemorySettings(), available: available)
         mesh.setConfig(MeshTests.config(slot: 4))
         let store = try XCTUnwrap(keychain).store
-        let connections = ServerConnections(settings: MemorySettings(), identities: store, mesh: mesh)
+        let connections = ServerConnections(settings: MemorySettings(), identities: store, me: .testing(MemorySettings()), mesh: mesh)
         self.connections = connections
         try connections.start()
         return mesh
