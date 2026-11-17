@@ -1,6 +1,11 @@
 // MacTAKApp.swift — the macTAK app (G3): a SwiftUI window around the
 // engine's map, beside a sidebar the milestones fill: the TAK servers
-// (G3.2d), contacts (G3.4), chat (G3.5), then coordinates and layers.
+// (G3.2d), the mesh (G3.3b), contacts (G3.4), chat (G3.5), then coordinates
+// and layers.
+//
+// `--settings-suite NAME` keeps this copy's settings (uid, callsign,
+// servers, mesh) in the defaults suite NAME instead of the app's own, so a
+// second copy on one Mac is a second client.
 
 import AppKit
 import MacTAKComms
@@ -20,6 +25,7 @@ struct MacTAKApp: App {
             ContentView()
                 .environmentObject(delegate.host)
                 .environmentObject(delegate.connections)
+                .environmentObject(delegate.mesh)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -29,16 +35,37 @@ struct MacTAKApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let host = EngineHost()
-    /// The servers, their certificates in the login keychain (G3.2).
-    let connections = ServerConnections(settings: UserDefaults.standard, identities: .login)
+    /// Peers on the local network, on unless turned off (G3.3).
+    let mesh: MeshNetwork
+    /// The servers, their certificates in the login keychain (G3.2), and
+    /// the commo client the mesh shares.
+    let connections: ServerConnections
+    private let watcher: InterfaceWatcher
+
+    override init() {
+        let settings = Self.settings()
+        let mesh = MeshNetwork(settings: settings)
+        self.mesh = mesh
+        connections = ServerConnections(settings: settings, identities: .login, mesh: mesh)
+        watcher = InterfaceWatcher { mesh.refresh() }
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CommsRuntime.configure()
         do {
             try connections.start()
+            watcher.start()
         } catch {
             NSLog("macTAK: commo didn't start: \(error)")
         }
+    }
+
+    private static func settings() -> UserDefaults {
+        let arguments = CommandLine.arguments
+        guard let flag = arguments.firstIndex(of: "--settings-suite"), flag + 1 < arguments.count,
+              let suite = UserDefaults(suiteName: arguments[flag + 1]) else { return .standard }
+        return suite
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -48,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// commo shuts down first, so the servers see the client leave.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task {
+            watcher.stop()
             await connections.stop()
             host.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
@@ -63,6 +91,7 @@ struct ContentView: View {
         NavigationSplitView {
             List {
                 ServersSection()
+                MeshSection()
                 Section("Contacts") {
                     Text("Coming in G3.4").foregroundStyle(.secondary)
                 }

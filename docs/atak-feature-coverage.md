@@ -54,7 +54,8 @@ calls it yet. **To build** — app-layer code with no macOS counterpart yet.
 | Elevation and terrain: DTED, slope | Engine | **In engine**: `DtedElevationSource`, `ElevationManager`, `ElMgrTerrainRenderService`, `GLTerrainSlopeAngleLayer` |
 | 3D models and 3D Tiles | Engine | **In engine**: the model layer and Cesium 3D Tiles (`C3DTTileset`, `B3DM`) exist at 4.6; nothing exercises them |
 | Coordinates (MGRS, UTM), range and bearing, measurement | Engine (math) and app (UI) | **In engine** for the math (`MGRSPoint`, `GeoCalculations`, `CoordinateFormatUtilities`); UI to build |
-| Mission packages, file transfer, UDP mesh | commo and app | **In engine** (commo), switched off. Wiring them in must apply the G1 security rules first: pass the truststore on every transfer (#4) and restrict GDAL's drivers (#10), [dev/g1/NOTES.md](../dev/g1/NOTES.md) §G1.14 |
+| Mesh networking: SA, chat and direct TCP with no server | App and commo | **Working** in the app, on by default as in ATAK: SA on 239.2.3.1:6969, chat on 224.10.10.1:17012, direct TCP on 4242, on every interface as it comes and goes (G3.3) |
+| Mission packages, file transfer | commo and app | **In engine** (commo), switched off. Wiring them in must apply the G1 security rules first: pass the truststore on every transfer (#4) and restrict GDAL's drivers (#10), [dev/g1/NOTES.md](../dev/g1/NOTES.md) §G1.14 |
 | Chat (GeoChat) | App | The messages are CoT, which works; UI to build (G3) |
 | Drawing and shapes | App (`drawing`, `editableShapes`) | **To build**: about 19K lines |
 | Routes and navigation | App (`routes`, `navigation`) | **To build**: about 31K lines |

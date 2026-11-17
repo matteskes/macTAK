@@ -138,6 +138,24 @@ final class MeshTests: XCTestCase {
         XCTAssertEqual(names, [])
     }
 
+    func testATakenTcpPortLeavesTheRestOfTheMeshRunning() async throws {
+        let a = try await meshClient("a", slot: 1)   // holds TCP 4242
+        try await a.seen.wait("A's TCP up", timeout: 15) { $0 == .interfaceUp(endpoint: "tcp:4242") }
+        let tag = UUID().uuidString.prefix(8).lowercased()
+        let second = try TwoClients.Client(uid: "g3-mesh-\(tag)-second")
+        clients.append(second)
+        var config = Self.config(slot: 3)
+        config.tcpPort = 4242
+        try await second.commo.startMesh(config, interfaces: ["lo0"])
+        await second.commo.startBeacon(every: .seconds(1))
+        try await a.seen.wait("A still hears the second client", timeout: 15) {
+            $0 == .contactAdded(uid: second.commo.uid)
+        }
+        try await second.seen.never("the second client's TCP up on A's port", within: 2) {
+            $0 == .interfaceUp(endpoint: "tcp:4242")
+        }
+    }
+
     func testMeshCapableSkipsLoopbackTunnelsAndAwdl() {
         let up = UInt32(IFF_UP | IFF_RUNNING | IFF_MULTICAST)
         XCTAssertTrue(NetworkInterfaces.isMeshCapable(name: "en0", flags: up))

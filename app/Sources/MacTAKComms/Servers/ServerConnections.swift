@@ -6,6 +6,9 @@
 // fingerprints. Each server's status follows commo's interface events,
 // matched to the server by the endpoint id `connect` returned.
 //
+// The same client runs the mesh (G3.3b) when a MeshNetwork is given: it gets
+// the client when commo starts, and commo's events.
+//
 // The client's uid and callsign persist too. They are a placeholder for
 // G3.4's self details (a persistent device uid, ATAK's roles); a profile or
 // package callsign replaces the callsign, as ATAK applies
@@ -13,6 +16,7 @@
 
 import Combine
 import Foundation
+import os
 
 /// Where the server list and the client's identity persist.
 public protocol SettingsStore: AnyObject {
@@ -40,6 +44,7 @@ public final class ServerConnections: ObservableObject {
     public let uid: String
     private let settings: SettingsStore
     private let identities: IdentityStore
+    private let mesh: MeshNetwork?
     private var client: CommoClient?
     private var endpoints: [UUID: String] = [:]
     /// Endpoints commo reported up: an interface can come up before
@@ -47,11 +52,16 @@ public final class ServerConnections: ObservableObject {
     private var upEndpoints: Set<String> = []
     private var listener: Task<Void, Never>?
 
+    /// Contacts in the system log until the app lists them (G3.4):
+    /// `log stream --predicate 'subsystem == "io.github.matteskes.macTAK"'`.
+    private static let log = Logger(subsystem: "io.github.matteskes.macTAK", category: "comms")
+
     private static let serversKey = "mactak.servers", uidKey = "mactak.uid", callsignKey = "mactak.callsign"
 
-    public init(settings: SettingsStore, identities: IdentityStore) {
+    public init(settings: SettingsStore, identities: IdentityStore, mesh: MeshNetwork? = nil) {
         self.settings = settings
         self.identities = identities
+        self.mesh = mesh
         uid = settings.string(forKey: Self.uidKey) ?? "MACTAK-\(UUID().uuidString)"
         callsign = settings.string(forKey: Self.callsignKey) ?? "MACTAK-\(uid.suffix(4))"
         settings.set(uid, forKey: Self.uidKey)
@@ -62,7 +72,7 @@ public final class ServerConnections: ObservableObject {
         for server in servers { status[server.id] = .off }
     }
 
-    /// Starts commo and connects every enabled server.
+    /// Starts commo, connects every enabled server, and starts the mesh.
     public func start() throws {
         guard client == nil else { return }
         let client = try CommoClient(uid: uid, callsign: callsign)
@@ -72,9 +82,11 @@ public final class ServerConnections: ObservableObject {
         }
         Task { await client.startBeacon() }
         for server in servers where server.enabled { connect(server) }
+        mesh?.attach(client)
     }
 
     public func stop() async {
+        await mesh?.detach()
         listener?.cancel()
         await client?.shutdown()
         client = nil
@@ -175,6 +187,7 @@ public final class ServerConnections: ObservableObject {
     }
 
     private func handle(_ event: CommoEvent) {
+        mesh?.handle(event)
         let server: (String) -> UUID? = { endpoint in self.endpoints.first { $0.value == endpoint }?.key }
         switch event {
         case let .interfaceUp(endpoint):
@@ -185,6 +198,10 @@ public final class ServerConnections: ObservableObject {
             if let id = server(endpoint), status[id] == .connected { status[id] = .connecting }
         case let .interfaceError(endpoint, code):
             if let id = server(endpoint) { status[id] = .failed(Self.describe(code)) }
+        case let .contactAdded(uid):
+            Self.log.info("contact added: \(uid, privacy: .public)")
+        case let .contactRemoved(uid):
+            Self.log.info("contact removed: \(uid, privacy: .public)")
         default:
             break
         }
