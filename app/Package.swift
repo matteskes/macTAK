@@ -69,7 +69,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacTAK",
-            dependencies: ["MacTAKCore", "CJavaBoot"],
+            dependencies: ["MacTAKCore", "CJavaBoot", "MacTAKComms"],
             swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])],
             // the bundle's natives live in Contents/Frameworks (app/bundle.sh, #152)
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
@@ -83,11 +83,13 @@ let package = Package(
             name: "CCommoShim",
             cxxSettings: [.unsafeFlags(["-isystem\(commoInclude)", "-isystem\(curlInclude)",
                                         "-DCURL_STATICLIB", "-Wall", "-Wextra"])],
-            linkerSettings: [.unsafeFlags(["-L\(commoLib)", "-lcommoncommo",
-                                           "-Xlinker", "-rpath", "-Xlinker", commoLib])]
+            // No rpath here: it would reach every binary linking the shim, and
+            // the app's must stay inside its bundle (dev/deps/check-bundle.py).
+            linkerSettings: [.unsafeFlags(["-L\(commoLib)", "-lcommoncommo"])]
         ),
         .target(name: "MacTAKComms", dependencies: ["CCommoShim"]),
-        .testTarget(name: "MacTAKCommsTests", dependencies: ["MacTAKComms"]),
+        .testTarget(name: "MacTAKCommsTests", dependencies: ["MacTAKComms"],
+                    linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", commoLib])]),
     ],
     cxxLanguageStandard: .cxx17
 )

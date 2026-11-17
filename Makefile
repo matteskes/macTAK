@@ -20,7 +20,7 @@ help:
 	@echo "  test-gdal-projection - G2.4 b.2: the engine's GdalLibrary.init + GdalDatasetProjection2 on GDAL 3 with the axis-order patch (needs build-angle + gdal-java)"
 	@echo "  deps           - build macTAK's own GDAL, PROJ and libspatialite from dev/deps/deps.lock into dev/deps/dist (no curl, no OpenSSL 4; build-native.sh runs it)"
 	@echo "  check-runtime  - stage the built natives as app/bundle.sh does and check every one loads only what the stage carries (#152; CI)"
-	@echo "  test-app-bundle - build/MacTAK.app's natives run on their own: renders from the bundle alone, dyld loads nothing from outside it (#152; dev Mac)"
+	@echo "  test-app-bundle - build/MacTAK.app's natives run on their own: renders from the bundle alone, commo loads the bundle's OpenSSL legacy provider, dyld loads nothing from outside it (#152, G3.2d; dev Mac)"
 	@echo "  check-deps     - guards: GDAL registers exactly dev/deps/gdal-drivers.txt; the built libraries' closure has no OpenSSL 4 and one GDAL/PROJ"
 	@echo "  gen-gles-shim  - regenerate the android.opengl GLES shim (Java + JNI + stub) from the transplant jar x gl3.h"
 	@echo "  check-gen-gles-shim - regenerate and fail if the committed shim files differ (CI drift gate)"

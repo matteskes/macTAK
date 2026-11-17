@@ -75,7 +75,19 @@ final class FakeServer: @unchecked Sendable {
 
     var log: String { lock.withLock { output } }
 
-    /// Waits, bounded, for `text` to appear in the server's output.
+    /// Waits, bounded, for `text` to appear in the server's output, without
+    /// blocking the caller's thread: the main actor's work goes on meanwhile.
+    func waitFor(_ text: String, within timeout: TimeInterval) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if log.contains(text) { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try waitFor(text, timeout: 0)   // throws with the output
+    }
+
+    /// Waits, bounded, for `text` to appear in the server's output. It
+    /// sleeps the thread: from the main actor, use the async one.
     func waitFor(_ text: String, timeout: TimeInterval) throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
