@@ -154,6 +154,24 @@ public final class IdentityStore: @unchecked Sendable {
         let password: String
     }
 
+    /// The truststore as commo takes it.
+    public func truststore(_ fingerprint: Fingerprint) throws -> TLSTruststore {
+        let stored = try loadTruststore(fingerprint)
+        return TLSTruststore(pkcs12: stored.pkcs12, password: stored.password)
+    }
+
+    /// The truststore's certificates as PEM, as curl takes them
+    /// (TakHTTPS.get). Parsed in memory only.
+    public func truststorePEM(_ fingerprint: Fingerprint) throws -> Data {
+        let stored = try loadTruststore(fingerprint)
+        let certificates = try Self.parse(stored.pkcs12, password: stored.password).chain
+        guard !certificates.isEmpty else { throw IdentityError("truststore \(fingerprint) carries no certificate") }
+        return Data(certificates.map { certificate in
+            let base64 = (SecCertificateCopyData(certificate) as Data).base64EncodedString(options: .lineLength64Characters)
+            return "-----BEGIN CERTIFICATE-----\n\(base64)\n-----END CERTIFICATE-----\n"
+        }.joined().utf8)
+    }
+
     private func loadTruststore(_ fingerprint: Fingerprint) throws -> Truststore {
         var query = truststoreQuery(fingerprint)
         query[kSecReturnData as String] = true
@@ -221,10 +239,5 @@ public final class IdentityStore: @unchecked Sendable {
         Fingerprint(try certificate(of: identity))
     }
 
-    private static func randomPassword() throws -> String {
-        var bytes = [UInt8](repeating: 0, count: 24)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        guard status == errSecSuccess else { throw IdentityError("generating a password", status) }
-        return bytes.map { String(format: "%02x", $0) }.joined()
-    }
+    private static func randomPassword() throws -> String { try TLSTruststore.randomPassword() }
 }
