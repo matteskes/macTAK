@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.3 done — 2026-11-17): servers, identity and mesh
+## State (G3.4 done — 2026-11-17): servers, identity, mesh and SA
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -28,8 +28,28 @@ G3.3 made it a client with no server too. It joins the local network's
 TAK mesh (SA, chat and direct TCP, on ATAK's ports) on every interface,
 on by default as in ATAK (G3.3a, #191). The sidebar's Mesh section
 switches it and shows its status (G3.3b, #192). Two copies of the app
-on `en0` saw each other with no server. Next: G3.4, SA: the CoT model,
-contacts, reporting rate and self details (§Plan revision).
+on `en0` saw each other with no server.
+
+G3.4 made it a TAK client that reports itself and lists its team:
+
+- **The CoT model is Swift** (`MacTAKCot`). The kernel's own `CotEvent`
+  is its test oracle: both are held to the same golden events
+  (`make test-cot-golden` in CI's JVM job) (G3.4a, #196).
+- **The self-SA goes out as ATAK 5.5 sends it.**
+  - At `ReportingRate`'s pace: reliable to servers, unreliable to the
+    mesh, and at once on a change.
+  - With the self details under ATAK's preference keys, including 5.5's
+    custom roles.
+  - With a device uid made from the Mac's hardware UUID.
+  - With a position from CoreLocation, from one placed by hand, or both
+    (G3.4b, #197).
+- **The sidebar's Contacts section** lists who is heard on a server or
+  the mesh, greyed and removed on ATAK's timing. A My Details sheet edits
+  this client's own details. Two copies on `en0` checked it all by hand
+  (G3.4c, #198).
+
+Next: G3.5, GeoChat: All Chat Rooms, one-to-one, team, role and user
+groups, with delivered, read and pending receipts (§Plan revision).
 
 ## The plan (approved 2026-11-13)
 
@@ -941,9 +961,9 @@ Gaps 4 and 5 (§Plan revision) and decision 2's golden leg. Three PRs:
 
 | PR | Branch | What |
 |---|---|---|
-| **a** | `g3/cot-model` | the CoT model in Swift (`MacTAKCot`); the kernel as its test oracle |
-| **b** | `g3/sa-reporting` | `ReportingRate`, the self details, the location source |
-| **c** | `g3/contacts-pane` | contacts and the My Details sheet |
+| **a** (#196) | `g3/cot-model` | the CoT model in Swift (`MacTAKCot`); the kernel as its test oracle |
+| **b** (#197) | `g3/sa-reporting` | `ReportingRate`, the self details, the location source |
+| **c** (#198) | `g3/contacts-pane` | contacts and the My Details sheet |
 
 What ATAK 5.5 does (read at the pin):
 
