@@ -7,7 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Nothing yet.
+### Added
+
+- G3.4a, the CoT model (`dev/g3/NOTES.md` §G3.4a):
+  - `MacTAKCot`, a pure-Swift port of the kernel's CoT event, point and
+    detail classes, and of ATAK 5.5's self-SA (`SelfEvent`, with 5.5's
+    extended roles and `precisionlocation`). It replaces G3.1's
+    `Presence`.
+  - A golden test with the kernel as the oracle: the Swift port (`make
+    test-app`) and takkernel's own `CotEvent` (`make test-cot-golden`,
+    CI's `jvm-tests` job) are held to the same expected events in
+    `dev/g3/test/cot-golden`.
 
 ## [0.3.3] - 2026-11-17 — G3: commo from Swift, servers and identity, mesh networking + the license audit and bundled natives
 

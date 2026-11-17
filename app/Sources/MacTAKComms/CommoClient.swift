@@ -63,6 +63,8 @@ public struct CommoError: Error, CustomStringConvertible {
 public actor CommoClient {
     /// How long after an interface comes up commo can send on it.
     public static let sendableDelay: Duration = .milliseconds(500)
+    /// The self-SA's stale until ReportingRate paces it (G3.4b).
+    static let beaconStale: TimeInterval = 30
 
     public nonisolated let uid: String
     public nonisolated let events: AsyncStream<CommoEvent>
@@ -70,7 +72,7 @@ public actor CommoClient {
     private var handle: OpaquePointer?
     let sink: EventSink
     private let interfaceUps: AsyncStream<Void>
-    private var presence: Presence
+    private var selfReport: SelfEvent
     /// The mesh, while it runs (CommoClient+Mesh.swift).
     var mesh: MeshState?
     private var beaconTasks: [Task<Void, Never>] = []
@@ -94,7 +96,7 @@ public actor CommoClient {
         self.sink = sink
         self.interfaceUps = ups
         self.handle = created
-        self.presence = Presence(uid: uid, callsign: callsign)
+        self.selfReport = SelfEvent(uid: uid, callsign: callsign)
     }
 
     deinit {
@@ -162,14 +164,14 @@ public actor CommoClient {
         }
     }
 
-    /// Where the beacon says this client is.
     /// The callsign the self-SA carries from the next beacon on.
     public func setCallsign(_ callsign: String) {
-        presence.callsign = callsign
+        selfReport.callsign = callsign
     }
 
-    public func setPosition(_ position: Presence.Position?) {
-        presence.position = position
+    /// Where the beacon says this client is, and how it knows.
+    public func setLocation(_ location: SelfEvent.Location?) {
+        selfReport.location = location
     }
 
     /// Beacon self-SA every period, and once more `sendableDelay` after each
@@ -207,7 +209,7 @@ public actor CommoClient {
     private func sendPresence() {
         guard handle != nil else { return }
         do {
-            try broadcast(presence.xml())
+            try broadcast(selfReport.event(stale: CommoClient.beaconStale).xml())
         } catch {
             sink.yield(.log(level: .error, message: "presence not sent: \(error)"))
         }

@@ -934,3 +934,119 @@ ATAK.
 `ServerConnections` logs each contact added or removed to the system log
 (subsystem `io.github.matteskes.macTAK`, category `comms`) until G3.4
 lists contacts in the app.
+
+## G3.4 — SA (plan approved 2026-11-17)
+
+Gaps 4 and 5 (§Plan revision) and decision 2's golden leg. Three PRs:
+
+| PR | Branch | What |
+|---|---|---|
+| **a** | `g3/cot-model` | the CoT model in Swift (`MacTAKCot`); the kernel as its test oracle |
+| b | `g3/sa-reporting` | `ReportingRate`, the self details, the location source |
+| c | `g3/contacts-pane` | contacts and the My Details sheet |
+
+What ATAK 5.5 does (read at the pin):
+
+- **The self-SA** (`CotMapComponent.getSelfEvent`):
+  - `how` is `m-g` with a location provider, `h-e` when placed by hand,
+    and `h-g-i-g-o` otherwise.
+  - The details, in order: `takv`, `contact`, `remarks`, `uid`,
+    `precisionlocation`, `__group`, `status`, `track`.
+  - `__group` comes from the kernel's `GroupDetailHandler`: `name`,
+    `role`, and 5.5's `exrole`, `abbr` and `typeicon`.
+- **`ReportingRate`**: two streams, reliable to servers and unreliable to
+  the mesh, on a 1 s tick.
+  - Dynamic (the default): 30 s and 180 s when stationary, and between
+    20 s and 2 s when moving, linear between 1 and 30 mph.
+  - Constant: 3 s and 15 s.
+  - A report goes out at once on an altitude change over 50 m, a speed
+    change over 7 mph, or a change to the callsign, team, role or
+    remarks.
+  - The stale time is the rate times 4 or 2, plus 15 s.
+
+Decided with the plan (owner, 2026-11-17): **the device uid comes from
+the hardware**, `MACTAK-<IOPlatformUUID>`, as ATAK's comes from the
+device's serial or MAC address. It is kept apart from every settings
+suite, so no import or settings copy carries it (G3.4b).
+
+### G3.4a — the CoT model (2026-11-17, branch `g3/cot-model`)
+
+#### What changed
+
+- **`MacTAKCot`**, a new pure-Swift target with no commo, so its tests
+  run in milliseconds:
+  - `CotEvent`, `CotPoint` and `CotDetail` (an ordered tree), ported
+    from the kernel's `com.atakmap.coremap.cot.event` classes.
+  - **`CotEvent.parse`** follows the kernel's `CotContentHandler`:
+    - uid and type are required, and so are a point's lat and lon.
+    - hae, ce and le that are missing or NaN are 9999999.
+    - A time that can't be read is now.
+    - Only the first `<detail>` counts. Everything under it is kept,
+      unknown elements included.
+    - A leaf keeps its trimmed text.
+
+    Unlike the kernel, a DOCTYPE refuses the whole event, as G1's parser
+    did.
+  - **`CotEvent.xml()`** writes the kernel's layout: the XML
+    declaration, `'` quotes, `access='Undefined'`, and the point rounded
+    to 7, 3 and 1 decimals. It escapes every value; the kernel leaves
+    type and how alone.
+  - **Typed views** of the SA details: `GroupDetail` (with
+    `ensureValidGroup`: an unknown team reads as Pink), `PrecisionLocation`,
+    `TakVersion` and `Track`.
+  - **`SelfEvent`** ports `getSelfEvent` and replaces G3.1's `Presence`.
+    `CommoClient` beacons it (still every 5 s with a 30 s stale, until
+    G3.4b). `setPosition` became `setLocation(_:)`, which takes the
+    source.
+
+  `MacTAKComms` re-exports `MacTAKCot`.
+- **The golden test** (decision 2). The fixtures are in
+  `dev/g3/test/cot-golden`:
+  - `parse/*.xml`: peer events. They cover ATAK 5.5's SA with extended
+    roles, escaping, and unknown details including a second `<detail>`.
+  - `self/*.properties`: self specs, one with no location, one from a
+    provider and one placed by hand with an extended role.
+  - `expected/*.xml`: what each one must write.
+
+  Two legs check the same files:
+  - **The Swift leg** (`MacTAKCotTests.GoldenTests`, in `make test-app`)
+    holds the port to them.
+  - **The kernel's leg** (`dev/g3/test/CotOracle.java`, `make
+    test-cot-golden`) holds the kernel's own `CotEvent` to them. It runs
+    as a source set added to takkernel's `:shared` by an init script
+    (`cot-oracle.gradle`), on `:shared`'s test classpath. CI runs it as
+    its own step in the `jvm-tests` job, after the kernel's unit tests.
+
+  Both legs compare in one canonical form: attributes sorted, `<point>`
+  numbers to 7 decimals, and empty text the same as none. The kernel keeps
+  attributes in a `HashMap`, so byte equality was never on offer.
+  `MACTAK_COT_GOLDEN_WRITE=1 swift test --filter GoldenTests` rewrites
+  the expected files from the port. The kernel's leg must then pass on
+  them unchanged.
+  - **The self specs:** precisionlocation and `how` come from app code
+    (`PrecisionLocationHandler`, `getSelfEvent`), which isn't in the
+    kernel. For those, the oracle restates ATAK's rules. The rest of
+    each event is the kernel's own work: the event, point and detail
+    classes, and `GroupDetailHandler.toCotDetail` for `__group`.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 58 tests pass: 13 CoT (new), 2 core and 43 comms |
+| `make test-cot-golden` | the kernel writes all 6 fixtures as expected |
+| A/B | `role='Medic'` → `'Medics'` in one expected file fails both legs (the kernel's: "FAIL: 1 of 6"; Swift's: `testSelfEventsAreWhatTheKernelBuilds`) |
+| `make app` | the bundle builds; `check-bundle.py` and the license gate pass |
+| `make lint` | passes |
+
+#### Traps
+
+- **12 — android-port's XML pull parser is a stub, and the kernel's parse
+  swallows it.** On `:shared`'s test classpath, the android-port
+  substitute comes before kxml2. Its
+  `org.xmlpull.v1.XmlPullParserFactory.newInstance` throws "Stub!".
+  `CotContentHandler.parseXML` catches every `Throwable`, logs it and
+  returns an empty event, so `CotEvent.parse` "succeeds". The first sign
+  was an NPE in `toString` (no time). `cot-oracle.gradle` puts kxml2
+  first and fails if it isn't on the classpath. This is G55 trap 6's
+  shape (android-port shadowing real classes) in a new package.

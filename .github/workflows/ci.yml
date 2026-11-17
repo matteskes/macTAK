@@ -718,6 +718,14 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: make test-kernel
 
+      - name: CoT golden test, the kernel's leg (make test-cot-golden)
+        # takkernel's own CotEvent writes each fixture in
+        # dev/g3/test/cot-golden and must match the expected files; the
+        # shell job's swift test holds the Swift port to the same files
+        # (G3.4, dev/g3/NOTES.md decision 2).
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-cot-golden
+
       - name: Upload test reports
         if: always() && needs.changes.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

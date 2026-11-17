@@ -1,0 +1,32 @@
+// Gradle init script (dev/g3/test/cot-golden.sh): adds CotOracle.java to
+// takkernel's :shared as its own source set, on :shared's test classpath,
+// and a task that runs it over the golden fixtures. The kernel's own
+// classes, as `make test-kernel` compiles and tests them, are the oracle
+// (dev/g3/NOTES.md, decision 2). Used with dev/g1/kernel/kernel-tests.gradle,
+// which keeps the artifactory-only 2525 glue out of :shared's compile.
+allprojects {
+    afterEvaluate { project ->
+        if (project.path != ':shared') return
+        def oracleDir = project.property('macTakOracleDir')
+        def goldenDir = project.property('macTakGoldenDir')
+        project.sourceSets.create('macTakOracle') { set ->
+            set.java.srcDirs = [oracleDir]
+            set.java.include 'CotOracle.java'
+            set.compileClasspath += project.sourceSets.main.output + project.sourceSets.test.compileClasspath
+            set.runtimeClasspath += set.compileClasspath + project.sourceSets.test.runtimeClasspath
+        }
+        project.tasks.register('macTakCotOracle', JavaExec) {
+            // kxml2 ahead of android-port: the substitute's org.xmlpull
+            // factory is a stub that throws "Stub!", and CotEvent.parse
+            // would read nothing (dev/g3/NOTES.md, G3.4a).
+            classpath = project.files({
+                def cp = project.sourceSets.macTakOracle.runtimeClasspath.files
+                def kxml = cp.findAll { it.name.startsWith('kxml2') }
+                if (kxml.isEmpty()) throw new GradleException("kxml2 is not on :shared's test runtime classpath")
+                kxml + (cp - kxml)
+            })
+            mainClass = 'mactak.g3.CotOracle'
+            args goldenDir
+        }
+    }
+}

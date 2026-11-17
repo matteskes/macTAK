@@ -18,17 +18,10 @@ final class TwoClientTests: XCTestCase {
         let client = try CommoClient(uid: "g3-comms-closed", callsign: "G3-COMMS-CLOSED")
         await client.shutdown()
         do {
-            try await client.broadcast(Presence(uid: "x", callsign: "x").xml())
+            try await client.broadcast(SelfEvent(uid: "x", callsign: "x").event(stale: 30).xml())
             XCTFail("a shut-down client sent")
         } catch let error as CommoError {
             XCTAssertEqual(error.description, "commo is shut down")
         }
-    }
-
-    func testPresenceEscapesItsText() {
-        let xml = Presence(uid: "a'b", callsign: "O'BRIEN & <CO>\n").xml()
-        XCTAssertTrue(xml.contains("uid='a&apos;b'"))
-        XCTAssertTrue(xml.contains("callsign='O&apos;BRIEN &amp; &lt;CO&gt;&#10;'"))
-        XCTAssertFalse(xml.contains("O'BRIEN"))
     }
 }
