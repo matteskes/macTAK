@@ -1,0 +1,21 @@
+diff --git a/core/impl/enrollmentmanager.cpp b/core/impl/enrollmentmanager.cpp
+--- a/core/impl/enrollmentmanager.cpp
++++ b/core/impl/enrollmentmanager.cpp
+@@ -724,7 +724,17 @@
+            throw std::invalid_argument("Invalid root node for signing xml response");
+ 
+          for (xmlNode *child = rootElement->children; child; child = child->next) {
++            // macTAK: only elements carry certificates. The whitespace text
++            // between them in an indented reply has no child nodes, and an
++            // empty element no text: both gave std::string a NULL pointer
++            // (dev/g3/NOTES.md, trap 8)
++            if (child->type != XML_ELEMENT_NODE)
++                continue;
+             xmlChar *certPEMString = xmlNodeListGetString(doc, child->xmlChildrenNode, true);
++            if (!certPEMString || !*certPEMString) {
++                xmlFree(certPEMString);
++                throw std::invalid_argument("Empty certificate returned by server");
++            }
+             // TAK Server does not include PEM header/footer but openssl
+             // requires it.  Also TAK server PEM string may or may not
+             // end with a newline, and OpenSSL requires precisely:

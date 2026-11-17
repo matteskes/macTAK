@@ -83,6 +83,42 @@ final class EnrollmentTests: XCTestCase {
         XCTAssertTrue(server.log.contains("GET /Marti/api/tls/config -> 401"), server.log)
     }
 
+    /// An indented signing reply enrolls. Unpatched commo read the
+    /// whitespace between the elements as a certificate and crashed with
+    /// SIGSEGV (trap 8, commo patch 0009).
+    func testAnIndentedReplyEnrolls() async throws {
+        let pki = try XCTUnwrap(pki)
+        let port = try freePort()
+        let server = try FakeServer.enroll(port: port, pki: pki, user: "alice", password: Self.password,
+                                           ["--reply-shape", "indented"])
+        defer { server.stop() }
+        let commo = try CommoClient(uid: "g3-enroll-indented", callsign: "INDENTED")
+        let enrolled = try await commo.enroll(host: "127.0.0.1", port: port, user: "alice", password: Self.password,
+                                              ca: try pki.truststore(), keyBits: 2048)
+        await commo.shutdown()
+        XCTAssertFalse(enrolled.identity.isEmpty)
+        XCTAssertNotNil(enrolled.truststore, "the reply's CA came through")
+    }
+
+    /// An empty certificate element fails the enrollment with a reason,
+    /// where unpatched commo crashed.
+    func testAnEmptyCertificateFailsTheSigning() async throws {
+        let pki = try XCTUnwrap(pki)
+        let port = try freePort()
+        let server = try FakeServer.enroll(port: port, pki: pki, user: "alice", password: Self.password,
+                                           ["--reply-shape", "empty-ca"])
+        defer { server.stop() }
+        let commo = try CommoClient(uid: "g3-enroll-empty", callsign: "EMPTY")
+        do {
+            _ = try await commo.enroll(host: "127.0.0.1", port: port, user: "alice", password: Self.password,
+                                       ca: try pki.truststore(), keyBits: 2048)
+            XCTFail("enrolled with an empty CA in the reply")
+        } catch let error as EnrollmentError {
+            XCTAssertEqual(error.step, "signing")
+        }
+        await commo.shutdown()
+    }
+
     /// A server whose certificate doesn't chain to the truststore gets no
     /// request: not the enrollment's, not the profile's.
     func testAServerFromAnotherCAIsRefused() async throws {

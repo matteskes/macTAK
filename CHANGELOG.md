@@ -188,6 +188,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- An enrollment server that indents its signing reply, or sends an empty
+  certificate element, no longer crashes the app (G3 trap 8, commo patch
+  0009). commo read the whitespace between the reply's elements as a
+  certificate and passed a NULL pointer to `std::string`. It now reads
+  only elements, and fails the signing step on an empty one.
+
 - commo's address reuse works on macOS (G3 trap 10, commo patch 0007).
   `socketSetAddrReuse` had no macOS branch, so with reuse on, every UDP
   listen socket failed. It now sets `SO_REUSEPORT` with `SO_REUSEADDR`.
