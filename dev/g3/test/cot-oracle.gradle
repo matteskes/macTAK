@@ -16,6 +16,9 @@ allprojects {
             set.runtimeClasspath += set.compileClasspath + project.sourceSets.test.runtimeClasspath
         }
         project.tasks.register('macTakCotOracle', JavaExec) {
+            // the reordered classpath below is a plain file list, which
+            // carries no build dependency: compile the oracle first
+            dependsOn project.sourceSets.macTakOracle.classesTaskName
             // kxml2 ahead of android-port: the substitute's org.xmlpull
             // factory is a stub that throws "Stub!", and CotEvent.parse
             // would read nothing (dev/g3/NOTES.md, G3.4a).
