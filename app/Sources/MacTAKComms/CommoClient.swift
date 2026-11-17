@@ -161,6 +161,11 @@ public actor CommoClient {
     }
 
     /// Where the beacon says this client is.
+    /// The callsign the self-SA carries from the next beacon on.
+    public func setCallsign(_ callsign: String) {
+        presence.callsign = callsign
+    }
+
     public func setPosition(_ position: Presence.Position?) {
         presence.position = position
     }

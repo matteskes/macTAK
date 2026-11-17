@@ -6,20 +6,23 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.2c — 2026-11-17): certificate enrollment, the device profile
+## State (G3.2 done — 2026-11-17): servers and identity
 
-`app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens a window with
-a sidebar (placeholders for contacts and chat) and the engine's live map
-(`make app`; G3.0). Swift talks to TAK servers too: `CommoClient`, an
-actor in `MacTAKComms`, drives commo's C++ API through `CCommoShim`
-(G3.1). Every build links commo, and two clients see each other over
-TCP, over TLS with client certificates and over QUIC (G3.2a). An ATAK
-data package's servers and certificates import into a keychain (G3.2b).
-Since G3.2c a client can enroll for its certificate by username and
-password, through commo, and fetch its device profile through the
-shim's curl; two enrolled clients see each other over mutual TLS
-(`make test-app`, in CI's shell job). The app doesn't connect to
-anything yet. Next: G3.2d, the app's servers pane (§G3.2, the plan).
+`app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
+live map beside a sidebar (G3.0), and talks to TAK servers through
+`CommoClient` over `CCommoShim` (G3.1). G3.2 made it a client of real
+servers:
+
+- over TCP, TLS with client certificates, or QUIC (G3.2a)
+- with certificates kept in the Keychain and ATAK data packages imported
+  (G3.2b)
+- with client certificates enrolled for by username and password, and
+  the device profile fetched (G3.2c)
+- with a Servers section in the sidebar to add, import, enroll and
+  connect, and its status shown per server (G3.2d).
+
+Every TAK connection uses commo's OpenSSL 3, and the bundle carries
+OpenSSL's legacy provider. Next: G3.3, mesh networking (§Plan revision).
 
 ## The plan (approved 2026-11-13)
 
@@ -355,8 +358,8 @@ Four PRs (plan: `~/.claude/plans/refactored-wibbling-muffin.md`):
 |---|---|---|
 | **a** (#184) | `g3/commo-in-app` | commo in every build; the QUIC transport; the mutual-TLS and QUIC legs |
 | **b** (#186) | `g3/keychain-identity` | identities in a file-based keychain, exported to commo as in-memory PKCS#12; data-package import, ported from ATAK 5.5 with `DataPackage.java`'s hardening |
-| **c** | `g3/enrollment` | certificate enrollment through commo; the device profile; a fake enrollment server |
-| d | `g3/servers-pane` | the app's servers pane: add, import, enroll, connect |
+| **c** (#187) | `g3/enrollment` | certificate enrollment through commo; the device profile; a fake enrollment server |
+| **d** | `g3/servers-pane` | the app's servers pane: add, import, enroll, connect |
 
 Decided with the plan (owner, 2026-11-16):
 
@@ -557,7 +560,8 @@ Decided with the plan (owner, 2026-11-16):
   (`cryptoutil.cpp`: `OSSL_PROVIDER_try_load(NULL, "legacy", 1)`), from
   OpenSSL's module directory, which on this Mac is Homebrew's cellar.
   `app/bundle.sh` doesn't stage `ossl-modules/legacy.dylib`, so a
-  self-contained `MacTAK.app` could read neither. G3.2d stages it.
+  self-contained `MacTAK.app` could read neither. **Fixed in G3.2d**: the
+  bundle stages it and the app sets `OPENSSL_MODULES`.
 
 ### G3.2c — certificate enrollment and the device profile (2026-11-17, branch `g3/enrollment`)
 
@@ -647,3 +651,87 @@ Decided with the plan (owner, 2026-11-16):
   same way and keeps `http.server`'s request handling; nothing uses the
   name. The diagnosis is the likely cause, not a measured one: this Mac
   never showed the hang. CI's reruns of the shell job are the check.
+
+### G3.2d — the servers pane (2026-11-17, branch `g3/servers-pane`)
+
+#### What changed
+
+- **`ServerConnections`** (`MacTAKComms/Servers`), the model under the
+  pane:
+  - one `CommoClient` for every enabled server, with a beacon
+  - the server list persisted as JSON in a settings store (`UserDefaults`
+    in the app); certificates only in the `IdentityStore` (the login
+    keychain)
+  - adding, removing, enabling and disabling servers
+  - importing a data package, or a server's `.p12` files
+  - enrolling (G3.2c), applying a package's or profile's
+    `locationCallsign`
+  - a status per server: off, connecting, connected, or failed with
+    commo's reason (`NetInterfaceErrorCode` by name, from
+    `netinterface.h`), matched by endpoint id. An interface can come up
+    before `connect` returns its id, so up endpoints are remembered.
+
+  The uid (`MACTAK-<UUID>`) and callsign persist too, as placeholders
+  for G3.4's self details.
+- **The app**: a Servers section heads the sidebar (`ServersView.swift`):
+  - a row per server with its status and an on/off switch
+  - a + menu: Add Server…, Import Data Package…
+  - sheets to enroll and to import certificates; Remove in the row's menu.
+
+  `AppDelegate` starts the connections at launch, and stops them before
+  the engine at quit. The app target now depends on `MacTAKComms`.
+- **OpenSSL's legacy provider in the bundle** (trap 7): `app/bundle.sh`
+  stages `ossl-modules/legacy.dylib` as one more `stage-runtime.py` root,
+  relinked to the bundle's `libcrypto`. `CommsRuntime.configure()` sets
+  `OPENSSL_MODULES` to `Contents/Frameworks` before any `CommoClient`
+  exists. commo loads the provider in every `Commo` constructor
+  (`CryptoUtil::staticInit`).
+- **`MacTAK --check-comms-runtime`**: starts commo as the app does,
+  prints commo's own line about the legacy provider, and exits 0 when it
+  loaded. `app/test/bundle-runtime.sh` (`make test-app-bundle`) runs it as
+  its third leg. The leg requires `legacy.dylib` to come from the
+  bundle's `Frameworks`, and its images join the "nothing from outside
+  the bundle" check.
+- **The commo rpath moved off `CCommoShim`**, which handed it to every
+  binary linking the shim, onto `MacTAKCommsTests`: the app's binary must
+  carry no absolute rpath. `dev/deps/check-bundle.py` now resolves an
+  `@executable_path` rpath in an executable (the app's own directory),
+  since the app links commo through one. In a library it still counts for
+  nothing.
+- **Tests** (`ServerConnectionsTests`):
+  - a data package imported through the model connects over mutual TLS
+    and shows connected
+  - the list, uid and callsign persist
+  - disabling disconnects (the server sees the client leave), and
+    removing forgets the server
+  - a refused connection shows "connection refused"
+  - an SSL server with no certificates says so.
+
+  `FakeServer.waitFor(_:within:)` is the async wait for main-actor tests
+  (§Found while building).
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 31 tests pass: 2 core and 29 comms (3 new) |
+| `make app` | the bundle builds; `check-bundle.py` passes 136 Mach-O files, `legacy.dylib` among them |
+| `make test-app-bundle` | all three legs pass: commo in the bundle logs "ossl legacy provider loaded successfully" with `OPENSSL_MODULES` at the bundle's `Frameworks`, and nothing loads from outside the bundle |
+| A/B: `CommsRuntime.configure()` made a no-op | commo still loads the provider, from Homebrew's cellar, and the check exits 0: the leg's dyld checks are what catch it (`legacy.dylib` from `/opt/homebrew/Cellar/openssl@3/…`) |
+| The app, launched from the bundle | the map draws and commo starts beside it, with no commo error. The engine's three startup errors (`IO2.cpp` code 8, `file://`, system typefaces) appear on `main`'s bundle too. The first launch's first frame took 439 ms (cold); two relaunches, 19 ms |
+| `make lint` | passes |
+
+Not run by an agent: the pane by hand (add, import, enroll and connect
+through the GUI), against a real TAK server.
+
+#### Found while building
+
+- **A main-actor test can't wait on the main actor with a sleep.** The
+  first run of the disable test failed: the server never saw the client
+  leave. `ServerConnectionsTests` is `@MainActor`, and the synchronous
+  `FakeServer.waitFor` sleeps the thread, so the model's disconnect task,
+  queued on the same actor, never ran until the wait gave up. Two probes
+  showed `CommoClient.disconnect` closing the socket at once over TCP and
+  TLS. Giving the async wait its own label (`within:`) keeps Swift from
+  preferring it at the synchronous call sites: overloading on `async`
+  alone broke them.

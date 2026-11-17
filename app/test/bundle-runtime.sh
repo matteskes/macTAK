@@ -6,6 +6,8 @@
 # runtime: RenderSmoke, from the bundle's classes and jars, renders through
 # the bundle's Frameworks with the bundle's GDAL and PROJ data, and dyld
 # must load nothing from outside the bundle, /usr/lib, /System and the JDK.
+# The app itself then starts commo (--check-comms-runtime), which must load
+# OpenSSL's legacy provider from the bundle (G3.2d).
 #
 # The render: the synthetic UTM 10N GeoTIFF (make-imagery.sh), reprojected
 # to WGS 84 by PROJ (so proj.db must be the bundle's), with three ground
@@ -95,9 +97,19 @@ log "2. GeoJSON through OGR into the feature store"
 smoke layer --layer "$ROOT/dev/g1/headless/test/fixtures/sf-landmarks.geojson" \
   || { log "FAIL: the layer render failed"; tail -15 "$WORK/layer.log" | sed 's/^/    | /'; status=1; }
 
+log "3. commo starts from the bundle and loads OpenSSL's legacy provider from it (G3 trap 7)"
+set +e
+DYLD_PRINT_LIBRARIES=1 "$APP/Contents/MacOS/MacTAK" --check-comms-runtime > "$WORK/comms.log" 2>&1
+comms_rc=$?
+set -e
+grep '^check-comms-runtime:' "$WORK/comms.log" | sed 's/^/    /' || true
+(( comms_rc == 0 )) || { log "FAIL: commo didn't load the legacy provider"; status=1; }
+grep -qE "^dyld\[[0-9]+\]: (<[0-9A-F-]+> )?($(cd "$APP" && pwd -P)|$APP)/Contents/Frameworks/legacy.dylib$" "$WORK/comms.log" \
+  || { log "FAIL: legacy.dylib didn't load from the bundle's Frameworks"; status=1; }
+
 # "dyld[PID]: <UUID> PATH" (or, on older systems, "dyld[PID]: PATH"); dyld's
 # other lines ("move loaded to delayed: ...") name no path
-loaded="$(sed -nE 's#^dyld\[[0-9]+\]: (<[0-9A-F-]+> )?(/.*)$#\2#p' "$WORK/imagery.log" "$WORK/layer.log" | sort -u)"
+loaded="$(sed -nE 's#^dyld\[[0-9]+\]: (<[0-9A-F-]+> )?(/.*)$#\2#p' "$WORK/imagery.log" "$WORK/layer.log" "$WORK/comms.log" | sort -u)"
 [[ -n "$loaded" ]] || die "dyld reported no images (DYLD_PRINT_LIBRARIES had no effect?)"
 app_real="$(cd "$APP" && pwd -P)"
 outside="$(grep -vE "^($app_real/|$APP/|/usr/lib/|/System/|$JDK/)" <<<"$loaded" || true)"
@@ -108,4 +120,4 @@ if [[ -n "$outside" ]]; then
   status=1
 fi
 (( status == 0 )) || exit 1
-log "PASS: both renders ran on the bundle's $from_app Frameworks libraries and its GDAL/PROJ data; nothing loaded from outside it"
+log "PASS: both renders ran on the bundle's $from_app Frameworks libraries and its GDAL/PROJ data, commo loaded the bundle's legacy provider; nothing loaded from outside it"

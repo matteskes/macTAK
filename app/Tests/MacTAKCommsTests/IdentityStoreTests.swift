@@ -100,7 +100,7 @@ final class IdentityStoreTests: XCTestCase {
 
     /// A data package as a TAK server hands one out: a .pref naming the
     /// truststore and the client's certificate, and the two .p12 files.
-    static func package(pki: TestPKI, client: String, port: Int) throws -> Data {
+    static func package(pki: TestPKI, client: String, port: Int, callsign: String? = nil) throws -> Data {
         let credentials = try pki.credentials(client)
         var zip = ZipWriter()
         zip.add("MANIFEST/manifest.xml", "<MissionPackageManifest version='2'/>")
@@ -108,7 +108,7 @@ final class IdentityStoreTests: XCTestCase {
             "connectString": "127.0.0.1:\(port):ssl", "description": "fake", "enabled": "true",
             "caLocation": "cert/truststore.p12", "caPassword": TestPKI.password,
             "certificateLocation": "cert/\(client).p12", "clientPassword": TestPKI.password,
-        ]]))
+        ]], app: callsign.map { ["locationCallsign": $0] } ?? [:]))
         zip.add("\(client)/truststore.p12", credentials.ca)
         zip.add("\(client)/\(client).p12", credentials.identity)
         return zip.archive()

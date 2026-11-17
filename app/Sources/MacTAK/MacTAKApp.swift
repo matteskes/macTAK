@@ -1,9 +1,9 @@
 // MacTAKApp.swift — the macTAK app (G3): a SwiftUI window around the
-// engine's map. G3.0 is the skeleton: the map, live and interactive, beside
-// a sidebar that later milestones fill (contacts G3.2, chat G3.3, servers
-// G3.4, layers and coordinates G3.6).
+// engine's map, beside a sidebar the milestones fill: the TAK servers
+// (G3.2d), contacts (G3.4), chat (G3.5), then coordinates and layers.
 
 import AppKit
+import MacTAKComms
 import MacTAKCore
 import SwiftUI
 
@@ -11,10 +11,15 @@ import SwiftUI
 struct MacTAKApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    init() {
+        if CommandLine.arguments.contains("--check-comms-runtime") { CommsRuntime.checkAndExit() }
+    }
+
     var body: some Scene {
         Window("macTAK", id: "map") {
             ContentView()
                 .environmentObject(delegate.host)
+                .environmentObject(delegate.connections)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -24,14 +29,30 @@ struct MacTAKApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let host = EngineHost()
+    /// The servers, their certificates in the login keychain (G3.2).
+    let connections = ServerConnections(settings: UserDefaults.standard, identities: .login)
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        CommsRuntime.configure()
+        do {
+            try connections.start()
+        } catch {
+            NSLog("macTAK: commo didn't start: \(error)")
+        }
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     /// The engine tears down on its render thread before the process goes:
     /// the JVM is never destroyed (DestroyJavaVM blocks on engine threads).
+    /// commo shuts down first, so the servers see the client leave.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        host.shutdown()
-        return .terminateNow
+        Task {
+            await connections.stop()
+            host.shutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 }
 
@@ -41,11 +62,12 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List {
+                ServersSection()
                 Section("Contacts") {
-                    Text("No contacts yet").foregroundStyle(.secondary)
+                    Text("Coming in G3.4").foregroundStyle(.secondary)
                 }
                 Section("Chat") {
-                    Text("Coming in G3.3").foregroundStyle(.secondary)
+                    Text("Coming in G3.5").foregroundStyle(.secondary)
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
