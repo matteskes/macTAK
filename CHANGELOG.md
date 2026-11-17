@@ -9,6 +9,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.2b, identities in the Keychain and data-package import
+  (`dev/g3/NOTES.md` §G3.2b). `DataPackage` reads an ATAK data
+  package's server connections and certificates the way ATAK 5.5 does
+  (`cot_streams`' `connectString`, `caLocation`, `certificateLocation`
+  and passwords), through a hardened zip reader of its own.
+  `IdentityStore` keeps client identities in a file-based keychain and
+  hands commo in-memory PKCS#12 exports of them; `ServerConfig` is what
+  the app keeps per server. Two clients that each imported a data package
+  see each other over mutual TLS with identities from the keychain
+  (`make test-app`).
+
 - G3.2a, commo in every build, with TLS and QUIC (`dev/g3/NOTES.md`
   §G3.2a). The Swift package always links commo; CI's shell job builds it
   against the comms job's commo. `CommoClient` connects over QUIC as well
