@@ -6,17 +6,20 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.2a — 2026-11-16): commo in every build, TLS and QUIC
+## State (G3.2b — 2026-11-17): identities in the Keychain, data packages
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens a window with
 a sidebar (placeholders for contacts and chat) and the engine's live map
 (`make app`; G3.0). Swift talks to TAK servers too: `CommoClient`, an
 actor in `MacTAKComms`, drives commo's C++ API through `CCommoShim`
-(G3.1). Since G3.2a every build of the package links commo, and two
-clients see each other over TCP, over TLS with client certificates and
-over QUIC (`make test-app`, in CI's shell job against the comms job's
-commo). The app doesn't connect to anything yet. Next: G3.2b, identities
-in the Keychain and data-package import (§G3.2, the plan).
+(G3.1). Every build links commo, and two clients see each other over
+TCP, over TLS with client certificates and over QUIC (G3.2a). Since
+G3.2b an ATAK data package's servers and certificates import into a
+keychain (`DataPackage`, `IdentityStore`, `ServerConfig`), and two
+clients connect over mutual TLS with identities exported from it
+(`make test-app`, in CI's shell job). The app doesn't connect to
+anything yet. Next: G3.2c, certificate enrollment and the device profile
+(§G3.2, the plan).
 
 ## The plan (approved 2026-11-13)
 
@@ -350,8 +353,8 @@ Four PRs (plan: `~/.claude/plans/refactored-wibbling-muffin.md`):
 
 | PR | Branch | What |
 |---|---|---|
-| **a** | `g3/commo-in-app` | commo in every build; the QUIC transport; the mutual-TLS and QUIC legs |
-| b | `g3/keychain-identity` | identities in a file-based keychain, exported to commo as in-memory PKCS#12; a Swift port of `DataPackage.java` |
+| **a** (#184) | `g3/commo-in-app` | commo in every build; the QUIC transport; the mutual-TLS and QUIC legs |
+| **b** | `g3/keychain-identity` | identities in a file-based keychain, exported to commo as in-memory PKCS#12; data-package import, ported from ATAK 5.5 with `DataPackage.java`'s hardening |
 | c | `g3/enrollment` | certificate enrollment through commo; the device profile; a fake enrollment server |
 | d | `g3/servers-pane` | the app's servers pane: add, import, enroll, connect |
 
@@ -449,3 +452,109 @@ Decided with the plan (owner, 2026-11-16):
   handler. The handler now removes itself at end of file, and `stop()`
   waits on a `terminationHandler` for at most 10 s after SIGTERM and 5 s
   after SIGKILL. CI's test step has its own 12-minute limit.
+
+### G3.2b — identities in the Keychain, data-package import (2026-11-17, branch `g3/keychain-identity`)
+
+#### What changed
+
+- **`DataPackage`** (`MacTAKComms/Import`): the server connections an
+  ATAK data package carries. The plan said to port G1's
+  `DataPackage.java`, but its key names turned out not to be ATAK's
+  (§Found while building). So this is a port of what ATAK 5.5 does, read
+  at the pin:
+  - `PreferenceControl.loadSettings`: `cot_streams`' `count`, and for each
+    index `connectString`, `description`, `enabled`, `useAuth`,
+    `cacheCreds`, `caLocation`, `caPassword`, `certificateLocation`,
+    `clientPassword`, `enrollForCertificateWithTrust` and `enrollUseTrust`.
+  - `ImportCertResolver`: certificates named in `app_preferences` are the
+    default for a connection that names none of its own;
+    `locationCallsign` is the callsign.
+
+  It reads every `.pref` in the package, as ATAK does, and finds each
+  named certificate by basename, as ATAK copies every `.p12` into one
+  directory. The hardening of `DataPackage.java` carries over:
+  - suspicious entry names are refused
+  - every entry is size-capped (#31)
+  - two PKCS#12 files with one basename are refused (#32)
+  - the connect string is parsed strictly (#32), now with `quic`
+  - a DOCTYPE or entity declaration is refused
+  - no description prints a password.
+- **`ZipArchive`**: Foundation has no zip reader and commo carries none,
+  so this is about 200 lines over the Compression framework (raw
+  DEFLATE). It reads stored and deflated entries only, and refuses
+  zip64, encryption and multi-disk archives. The size cap holds against
+  the bytes actually inflated: an entry that claims fewer bytes than it
+  holds fills a one-byte overflow and is refused. Every CRC-32 is
+  checked. Nothing is written to disk.
+- **`IdentityStore`** (`MacTAKComms/Identity`), over a file-based keychain
+  (the login keychain, or a test's throwaway one):
+  - A client identity is a real Keychain identity. `credentials` exports
+    it as PKCS#12 under a random password, in memory, each time commo
+    needs it. Apple exports with legacy algorithms (RC2-40, 3DES), which
+    commo reads because it loads OpenSSL's legacy provider (trap 7).
+  - A truststore is kept as the PKCS#12 bytes and password it came with,
+    in one generic-password item. The Keychain can't export certificates
+    alone as PKCS#12 (`SecItemExport` returns -50), and commo needs a
+    PKCS#12.
+  - Both are named by a certificate's SHA-256 (`Fingerprint`). Every
+    `.p12` is parsed in memory first (`kSecImportToMemoryOnly`, macOS 15
+    and later), so a wrong password reaches no keychain (trap 6), and a
+    second import of the same identity is harmless.
+- **`ServerConfig`**: what the app keeps per server, built from a package
+  by `IdentityStore.importServers(from:)`: the address, ATAK's flags and
+  the two fingerprints, no secret, `Codable`. `transport(using:)` gives
+  commo `.tcp`, `.ssl` or `.quic`, with credentials exported from the
+  store.
+- **The tests**:
+  - `ImportParsingTests`: connect strings, the zip reader (including an
+    archive from the system's `zip`), a package with two servers and
+    default certificates, and each refusal.
+  - `IdentityStoreTests`: the gate leg, plus a wrong password, a second
+    import, removal, a truststore offered as an identity, and nothing
+    reaching the login keychain.
+  - Test helpers: `Support/ZipWriter.swift` crafts the hostile archives,
+    and `Support/TemporaryKeychain.swift` makes the throwaway keychain.
+    `SecKeychainCreate` is deprecated, so it lives in the tests, not the
+    library.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 24 tests pass: 2 core and 22 comms (16 new) |
+| The gate leg | two clients import a data package each into a throwaway keychain and see each other over mutual TLS with the exported identities; the server logs CN `a` and `b` |
+| A/B: the export hands commo a wrong password | the gate leg fails |
+| A/B: no overflow byte in the inflate | "an entry larger than its header says" passes the cap, and its test fails |
+| A/B: no entry-name check | the hostile-package test fails |
+| Login keychain after the runs | no test certificate or identity; no throwaway keychain left behind |
+| `make lint` | passes |
+
+#### Found while building
+
+- **G1's importer reads key names ATAK 5.5 doesn't write.**
+  `DataPackage.java` takes the address from `addressN` and the
+  certificates from `plugin_firecrypt`'s `ClientFile`, `CAFile` and
+  `Password`. Its class comment says the shape was a guess ("not yet
+  verified against a real OpenTAKServer package"). ATAK 5.5 reads
+  `connectStringN`, `caLocationN`, `certificateLocationN` and the two
+  passwords (`PreferenceControl`, `ImportCertResolver`). The Swift
+  importer follows 5.5. G1's `--datapackage` flag and its canary still
+  use the old names; whether to fix them is open.
+
+#### Traps
+
+- **6 — `SecPKCS12Import` without a keychain imports into the login
+  keychain.** On macOS, leaving out `kSecImportExportKeychain` doesn't
+  parse in memory: it imports into the default keychain. A probe written
+  while designing the store left a test CA in the login keychain. It was
+  found with `security find-certificate` and deleted by its hash. The
+  store parses every `.p12` with `kSecImportToMemoryOnly` and imports
+  only with an explicit keychain, or none (the login store), on purpose.
+  `testNothingReachesTheLoginKeychain` guards it.
+- **7 — the app bundle has no OpenSSL legacy provider.** Apple's PKCS#12
+  export, and ATAK's own `.p12` files, use RC2 and 3DES, which OpenSSL 3
+  reads only with its legacy provider. commo loads it
+  (`cryptoutil.cpp`: `OSSL_PROVIDER_try_load(NULL, "legacy", 1)`), from
+  OpenSSL's module directory, which on this Mac is Homebrew's cellar.
+  `app/bundle.sh` doesn't stage `ossl-modules/legacy.dylib`, so a
+  self-contained `MacTAK.app` could read neither. G3.2d stages it.
