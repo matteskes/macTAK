@@ -68,7 +68,7 @@ public actor CommoClient {
     public nonisolated let events: AsyncStream<CommoEvent>
 
     private var handle: OpaquePointer?
-    private let sink: EventSink
+    let sink: EventSink
     private let interfaceUps: AsyncStream<Void>
     private var presence: Presence
     private var beaconTasks: [Task<Void, Never>] = []
@@ -206,17 +206,17 @@ public actor CommoClient {
         }
     }
 
-    private func live() throws -> OpaquePointer {
+    func live() throws -> OpaquePointer {
         guard let handle else { throw CommoError(description: "commo is shut down") }
         return handle
     }
 
-    private static func initLibraries() throws {
+    static func initLibraries() throws {
         try check { err, len in mactak_commo_init_libraries(err, len) }
     }
 
     /// Run a shim call that reports failure as nonzero plus a message.
-    private static func check(_ body: (UnsafeMutablePointer<CChar>, Int) -> Int32) throws {
+    static func check(_ body: (UnsafeMutablePointer<CChar>, Int) -> Int32) throws {
         var err = [CChar](repeating: 0, count: 512)
         let count = err.count
         let rc = err.withUnsafeMutableBufferPointer { body($0.baseAddress!, count) }
@@ -234,11 +234,15 @@ public actor CommoClient {
 }
 
 /// Where commo's callbacks land: commo's threads, so only thread-safe parts
-/// (the streams' continuations, which may be called from any thread).
-private final class EventSink: @unchecked Sendable {
+/// (the streams' continuations, which may be called from any thread, and the
+/// enrollments' waiters, under a lock).
+final class EventSink: @unchecked Sendable {
     private let events: AsyncStream<CommoEvent>.Continuation
     private let interfaceUps: AsyncStream<Void>.Continuation
     private let logLevel: CommoLogLevel
+    private let lock = NSLock()
+    private var enrollments: [Int32: CheckedContinuation<EnrolledIdentity, Error>] = [:]
+    private var finished = false
 
     init(events: AsyncStream<CommoEvent>.Continuation,
          interfaceUps: AsyncStream<Void>.Continuation, logLevel: CommoLogLevel) {
@@ -256,6 +260,34 @@ private final class EventSink: @unchecked Sendable {
     func finish() {
         events.finish()
         interfaceUps.finish()
+        let waiting = lock.withLock { () -> [CheckedContinuation<EnrolledIdentity, Error>] in
+            finished = true
+            defer { enrollments.removeAll() }
+            return Array(enrollments.values)
+        }
+        for waiter in waiting { waiter.resume(throwing: CommoError(description: "commo shut down during enrollment")) }
+    }
+
+    /// Waits for enrollment `id` to end; `start` runs once the waiter is in
+    /// place, so no update can arrive before it.
+    func awaitEnrollment(_ id: Int32, start: () throws -> Void) async throws -> EnrolledIdentity {
+        try await withCheckedThrowingContinuation { continuation in
+            let open = lock.withLock { () -> Bool in
+                if !finished { enrollments[id] = continuation }
+                return !finished
+            }
+            guard open else {
+                continuation.resume(throwing: CommoError(description: "commo is shut down"))
+                return
+            }
+            do { try start() } catch { endEnrollment(id, .failure(error)) }
+        }
+    }
+
+    /// Resumes enrollment `id`'s waiter, once; later calls do nothing.
+    func endEnrollment(_ id: Int32, _ result: Result<EnrolledIdentity, Error>) {
+        let waiter = lock.withLock { enrollments.removeValue(forKey: id) }
+        waiter?.resume(with: result)
     }
 
     private static func from(_ context: UnsafeMutableRawPointer?) -> EventSink {
@@ -281,6 +313,12 @@ private final class EventSink: @unchecked Sendable {
         cb.interface_down = { ctx, endpoint in from(ctx).yield(.interfaceDown(endpoint: text(endpoint))) }
         cb.interface_error = { ctx, endpoint, code in
             from(ctx).yield(.interfaceError(endpoint: text(endpoint), code: code))
+        }
+        cb.enrollment_update = { ctx, id, step, status, info, identity, identityCount, ca, caCount in
+            let update = EnrollmentUpdate(step: step, status: status, info: text(info))
+            guard let outcome = update.outcome(identity: identity.map { Data(bytes: $0, count: identityCount) },
+                                               ca: ca.map { Data(bytes: $0, count: caCount) }) else { return }
+            from(ctx).endEnrollment(id, outcome)
         }
         return cb
     }()

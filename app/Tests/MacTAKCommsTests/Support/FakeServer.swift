@@ -63,6 +63,16 @@ final class FakeServer: @unchecked Sendable {
         return try FakeServer(python, [script, String(port), cert, key])
     }
 
+    /// dev/g3/test/fake-enroll-server.py on `port`: TAK Server's enrollment
+    /// port, signing with `pki`'s CA, for `user` and `password`.
+    static func enroll(port: Int, pki: TestPKI, user: String, password: String,
+                       _ options: [String] = []) throws -> FakeServer {
+        let script = repoRoot.appendingPathComponent("dev/g3/test/fake-enroll-server.py").path
+        return try FakeServer("/usr/bin/env", ["OPENSSL=\(TestPKI.opensslPath)", "python3", script, String(port),
+                                                pki.serverCert, pki.serverKey, pki.caPEM, pki.caKey,
+                                                user, password] + options)
+    }
+
     var log: String { lock.withLock { output } }
 
     /// Waits, bounded, for `text` to appear in the server's output.

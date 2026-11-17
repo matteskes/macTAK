@@ -16,7 +16,8 @@
 //
 // Every build links commo (G3.2): a built commo in dev/g1/native-dist
 // (dev/g1/build-commo.sh; CI's shell job downloads the comms job's), or the
-// directory MACTAK_COMMO_LIB names, and the atak-civ headers in src/.
+// directory MACTAK_COMMO_LIB names, the atak-civ headers in src/, and the
+// headers of the curl commo carries (dev/g1/build-curl/prefix/include).
 //
 // jni.h comes from the repo's pinned copy (dev/g1/jdk-include): the JNI
 // surface used here is JNI 1.8's, which JDK 21 serves unchanged, so the
@@ -29,11 +30,15 @@ let jniInclude = repo.appendingPathComponent("dev/g1/jdk-include").path
 let commoLib = ProcessInfo.processInfo.environment["MACTAK_COMMO_LIB"].flatMap { $0.isEmpty ? nil : $0 }
     ?? repo.appendingPathComponent("dev/g1/native-dist").path
 let commoInclude = repo.appendingPathComponent("src/commoncommo/core/include").path
+// The curl commo carries (dev/g1/fetch-curl.sh): the shim calls it for the
+// device profile's https GET (G3.2c), resolved against commo's exports.
+let curlInclude = repo.appendingPathComponent("dev/g1/build-curl/prefix/include").path
 
 // Fail here, with the fix, rather than at link time with "library not found".
 for (path, fix) in [
     ("\(commoLib)/libcommoncommo.dylib", "run dev/g1/build-commo.sh, or set MACTAK_COMMO_LIB to commo's directory"),
     ("\(commoInclude)/commo.h", "check out atak-civ at the pin into src/ (CONTRIBUTING.md, Setup)"),
+    ("\(curlInclude)/curl/curl.h", "run dev/g1/build-commo.sh, which builds commo's curl"),
 ] where !FileManager.default.fileExists(atPath: path) {
     fatalError("app/Package.swift: \(path) is missing — \(fix)")
 }
@@ -76,7 +81,8 @@ let package = Package(
         ),
         .target(
             name: "CCommoShim",
-            cxxSettings: [.unsafeFlags(["-isystem\(commoInclude)", "-Wall", "-Wextra"])],
+            cxxSettings: [.unsafeFlags(["-isystem\(commoInclude)", "-isystem\(curlInclude)",
+                                        "-DCURL_STATICLIB", "-Wall", "-Wextra"])],
             linkerSettings: [.unsafeFlags(["-L\(commoLib)", "-lcommoncommo",
                                            "-Xlinker", "-rpath", "-Xlinker", commoLib])]
         ),

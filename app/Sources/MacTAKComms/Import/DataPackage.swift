@@ -79,7 +79,9 @@ public struct DataPackage: Sendable {
         return try DataPackage(data: Data(contentsOf: url), name: url.lastPathComponent)
     }
 
-    public init(data: Data, name: String) throws {
+    /// `requireServer`: a server connection package must configure one; a
+    /// device profile (G3.2c) may carry preferences only.
+    public init(data: Data, name: String, requireServer: Bool = true) throws {
         let zip: ZipArchive
         do { zip = try ZipArchive(data: data) } catch let e as ZipError { throw ImportError("\(name): \(e)") }
         let files = zip.entries.filter { !$0.isDirectory }
@@ -88,7 +90,7 @@ public struct DataPackage: Sendable {
         let prefs = try files.filter { $0.name.lowercased().hasSuffix(".pref") }.map { entry in
             try PreferenceFile(data: Self.read(zip, entry, limit: Self.maxPreferenceBytes), name: entry.name)
         }
-        guard !prefs.isEmpty else { throw ImportError("\(name) has no .pref file") }
+        guard !prefs.isEmpty || !requireServer else { throw ImportError("\(name) has no .pref file") }
 
         let certificates = try CertificateFiles(zip: zip, files: files)
         let defaults = prefs.lazy.compactMap { pref in Self.appPreferences.lazy.compactMap(pref.block(named:)).first }.first
@@ -118,7 +120,9 @@ public struct DataPackage: Sendable {
                         ?? defaultClient))
             }
         }
-        guard !servers.isEmpty else { throw ImportError("\(name) configures no server (no cot_streams connection)") }
+        guard !servers.isEmpty || !requireServer else {
+            throw ImportError("\(name) configures no server (no cot_streams connection)")
+        }
         self.servers = servers
         callsign = defaults?.entries["locationCallsign"].flatMap { $0.isEmpty ? nil : $0 }
     }

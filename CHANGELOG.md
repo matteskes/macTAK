@@ -9,6 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.2c, certificate enrollment and the device profile
+  (`dev/g3/NOTES.md` §G3.2c). A client enrolls for its certificate by
+  username and password through commo, as ATAK 5.5 does, keeps it in the
+  Keychain, and fetches its device profile through the curl and OpenSSL 3
+  commo carries (`mactak_commo_https_get`), never Apple's TLS. Two
+  enrolled clients see each other over mutual TLS against a fake
+  enrollment server (`dev/g3/test/fake-enroll-server.py`, `make test-app`).
+
 - G3.2b, identities in the Keychain and data-package import
   (`dev/g3/NOTES.md` §G3.2b). `DataPackage` reads an ATAK data
   package's server connections and certificates the way ATAK 5.5 does

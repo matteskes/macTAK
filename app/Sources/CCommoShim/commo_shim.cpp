@@ -3,14 +3,17 @@
 #include "commo_shim.h"
 
 #include <commo.h>
+#include <curl/curl.h>
 
 #include <dlfcn.h>
 #include <signal.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <map>
+#include <stdexcept>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -54,7 +57,8 @@ std::string endpointOf(NetInterface *iface) {
 class Forwarder final : public CommoLogger,
                         public CoTMessageListener,
                         public ContactPresenceListener,
-                        public InterfaceStatusListener {
+                        public InterfaceStatusListener,
+                        public EnrollmentIO {
 public:
     explicit Forwarder(const mactak_commo_callbacks &cb) : cb(cb) {}
 
@@ -85,6 +89,17 @@ public:
     void interfaceError(NetInterface *iface, netinterfaceenums::NetInterfaceErrorCode code) override {
         if (cb.interface_error)
             cb.interface_error(cb.context, endpointOf(iface).c_str(), static_cast<int>(code));
+    }
+    void enrollmentUpdate(const EnrollmentIOUpdate *u) override {
+        if (!cb.enrollment_update || !u)
+            return;
+        // keygen's success carries the private key as PEM: never passed out.
+        const bool signed_ = u->step == ENROLL_STEP_SIGN && u->status == FILEIO_SUCCESS;
+        cb.enrollment_update(cb.context, u->xferid, static_cast<int>(u->step),
+                             static_cast<int>(u->status),
+                             u->additionalInfo ? u->additionalInfo : "",
+                             signed_ ? u->privResult : nullptr, signed_ ? u->privResultLen : 0,
+                             signed_ ? u->caResult : nullptr, signed_ ? u->caResultLen : 0);
     }
 
 private:
@@ -165,6 +180,9 @@ extern "C" mactak_commo *mactak_commo_create(const char *uid, const char *callsi
         shim->commo->addInterfaceStatusListener(&shim->forwarder);
         shim->commo->addContactPresenceListener(&shim->forwarder);
         shim->commo->addCoTMessageListener(&shim->forwarder);
+        CommoResult rc = shim->commo->enableEnrollment(&shim->forwarder);
+        if (rc != COMMO_SUCCESS)
+            throw std::runtime_error(std::string("enableEnrollment: ") + resultName(rc));
         return shim;
     } catch (const std::exception &e) {
         setError(err, errlen, std::string("creating Commo failed: ") + e.what());
@@ -306,6 +324,143 @@ extern "C" int mactak_commo_send(mactak_commo *shim, const char *const *uids, si
         setError(err, errlen, "sendCoT threw");
     }
     return -1;
+}
+
+extern "C" int mactak_commo_enroll_init(mactak_commo *shim, const char *host, int port, int verify_host,
+                                        const char *user, const char *password, int use_token,
+                                        const uint8_t *ca, size_t ca_len, const char *ca_password,
+                                        const char *identity_password, const char *trust_password,
+                                        const char *key_password, int key_bits, const char *version,
+                                        int *enrollment, char *err, size_t errlen) {
+    if (!shim || !host || !user || !password || !enrollment || !identity_password
+        || !trust_password || !key_password) {
+        setError(err, errlen, "enrollment needs a host, a user, a password, three passwords and an id");
+        return -1;
+    }
+    if (!ca || !ca_len || !ca_password) {
+        // With no CA, commo's enrollment accepts any server certificate
+        // (#146, make test-commo-https): never let that happen by default.
+        setError(err, errlen, "enrollment needs the CA the server must chain to");
+        return -1;
+    }
+    try {
+        CommoResult rc = shim->commo->enrollmentInit(
+            enrollment, host, port, verify_host != 0, user, password, use_token != 0,
+            ca, ca_len, ca_password, identity_password, trust_password, key_password,
+            key_bits, version ? version : "");
+        if (rc == COMMO_SUCCESS)
+            return 0;
+        setError(err, errlen, std::string("enrollmentInit: ") + resultName(rc));
+    } catch (const std::exception &e) {
+        setError(err, errlen, std::string("enrollmentInit threw: ") + e.what());
+    } catch (...) {
+        setError(err, errlen, "enrollmentInit threw");
+    }
+    return -1;
+}
+
+extern "C" int mactak_commo_enroll_start(mactak_commo *shim, int enrollment, char *err, size_t errlen) {
+    if (!shim) {
+        setError(err, errlen, "no commo");
+        return -1;
+    }
+    try {
+        CommoResult rc = shim->commo->enrollmentStart(enrollment);
+        if (rc == COMMO_SUCCESS)
+            return 0;
+        setError(err, errlen, std::string("enrollmentStart: ") + resultName(rc));
+    } catch (...) {
+        setError(err, errlen, "enrollmentStart threw");
+    }
+    return -1;
+}
+
+namespace {
+
+struct Download {
+    std::vector<uint8_t> body;
+    size_t limit;
+    bool overflowed = false;
+};
+
+size_t collect(char *data, size_t size, size_t count, void *context) {
+    auto *download = static_cast<Download *>(context);
+    const size_t n = size * count;
+    if (download->body.size() + n > download->limit) {
+        download->overflowed = true;
+        return 0;   // curl stops with CURLE_WRITE_ERROR
+    }
+    download->body.insert(download->body.end(), data, data + n);
+    return n;
+}
+
+}  // namespace
+
+extern "C" int mactak_commo_https_get(const char *url, const char *user, const char *password,
+                                      const uint8_t *ca_pem, size_t ca_len, int verify_host,
+                                      size_t max_bytes, long timeout_s,
+                                      long *status, uint8_t **body, size_t *body_len,
+                                      char *err, size_t errlen) {
+    if (!url || !status || !body || !body_len) {
+        setError(err, errlen, "a URL and places for the status and body are required");
+        return -1;
+    }
+    if (!ca_pem || !ca_len) {
+        setError(err, errlen, "an https GET needs the CA the server must chain to");
+        return -1;
+    }
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        setError(err, errlen, "curl_easy_init failed (is mactak_commo_init_libraries done?)");
+        return -1;
+    }
+    Download download{{}, max_bytes};
+    curl_blob ca{const_cast<uint8_t *>(ca_pem), ca_len, CURL_BLOB_COPY};
+    // Only this CA: no compiled-in bundle or directory adds system roots.
+    curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+    curl_easy_setopt(curl, CURLOPT_CAPATH, nullptr);
+    curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verify_host ? 2L : 0L);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_s);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, collect);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &download);
+    if (user) {
+        curl_easy_setopt(curl, CURLOPT_HTTPAUTH, static_cast<long>(CURLAUTH_BASIC));
+        curl_easy_setopt(curl, CURLOPT_USERNAME, user);
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, password ? password : "");
+    }
+    const CURLcode rc = curl_easy_perform(curl);
+    long code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(curl);
+    if (download.overflowed) {
+        setError(err, errlen, "the response is larger than " + std::to_string(max_bytes) + " bytes");
+        return -1;
+    }
+    if (rc != CURLE_OK) {
+        setError(err, errlen, std::string(curl_easy_strerror(rc)) + " (CURLcode " + std::to_string(rc) + ")");
+        return -1;
+    }
+    auto *out = static_cast<uint8_t *>(std::malloc(download.body.empty() ? 1 : download.body.size()));
+    if (!out) {
+        setError(err, errlen, "out of memory");
+        return -1;
+    }
+    if (!download.body.empty())
+        std::memcpy(out, download.body.data(), download.body.size());
+    *status = code;
+    *body = out;
+    *body_len = download.body.size();
+    return 0;
+}
+
+extern "C" void mactak_commo_free(void *pointer) {
+    std::free(pointer);
 }
 
 extern "C" void mactak_commo_destroy(mactak_commo *shim) {

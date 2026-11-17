@@ -13,6 +13,7 @@ struct TestPKI {
     let dir: URL
 
     var caPEM: String { path("ca.crt") }
+    var caKey: String { path("ca.key") }
     var serverCert: String { path("server.crt") }
     var serverKey: String { path("server.key") }
 
@@ -22,6 +23,12 @@ struct TestPKI {
                        identityPassword: Self.password,
                        ca: try Data(contentsOf: URL(fileURLWithPath: path("truststore.p12"))),
                        caPassword: Self.password)
+    }
+
+    /// The server's CA, or the other CA, as a truststore (PKCS#12).
+    func truststore(other: Bool = false) throws -> TLSTruststore {
+        TLSTruststore(pkcs12: try Data(contentsOf: URL(fileURLWithPath: path(other ? "other-truststore.p12" : "truststore.p12"))),
+                      password: Self.password)
     }
 
     /// Makes the CA, the server leaf, a client leaf per name in `clients`,
@@ -40,6 +47,8 @@ struct TestPKI {
         try pki.makeLeaf("impostor", ca: "other-ca", usage: "clientAuth")
         try pki.openssl(["pkcs12", "-export", "-nokeys", "-in", pki.path("ca.crt"),
                          "-out", pki.path("truststore.p12"), "-passout", "pass:\(password)", "-name", "ca"])
+        try pki.openssl(["pkcs12", "-export", "-nokeys", "-in", pki.path("other-ca.crt"),
+                         "-out", pki.path("other-truststore.p12"), "-passout", "pass:\(password)", "-name", "other-ca"])
         return pki
     }
 
@@ -76,7 +85,7 @@ struct TestPKI {
     }
 
     /// Homebrew's openssl@3: Apple's /usr/bin/openssl is LibreSSL.
-    private static let opensslPath = ProcessInfo.processInfo.environment["MACTAK_OPENSSL"]
+    static let opensslPath = ProcessInfo.processInfo.environment["MACTAK_OPENSSL"]
         ?? "/opt/homebrew/opt/openssl@3/bin/openssl"
 
     private func openssl(_ arguments: [String]) throws {
