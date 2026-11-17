@@ -10,7 +10,8 @@ Fails when a Mach-O file:
   - names an @rpath, @loader_path or @executable_path library that its own
     rpaths don't resolve to a file inside DIR. Each file is checked with its
     own rpaths alone: the engine libraries are dlopen'ed by the JVM, and get
-    no help from an executable's.
+    no help from an executable's. An @executable_path rpath counts only in
+    an executable, where it is the file's own directory.
 
 Usage: check-bundle.py DIR   (exit 0 PASS, 1 FAIL, 2 usage)
 """
@@ -35,6 +36,11 @@ def is_macho(path):
     if head[:4] in THIN_MAGIC:
         return True
     return head[:4] == FAT_MAGIC and 0 < int.from_bytes(head[4:8], "big") < MAX_FAT_ARCHS
+
+
+def is_executable(path):
+    header = subprocess.run(["otool", "-hv", path], capture_output=True, text=True).stdout.split()
+    return "EXECUTE" in header
 
 
 def load_commands(path):
@@ -74,7 +80,11 @@ def main(argv):
         for rp in rpaths:
             if not rp.startswith(("@loader_path", "@executable_path")):
                 failures.append("%s: absolute rpath %s" % (rel, rp))
-        expanded = [rp.replace("@loader_path", here) for rp in rpaths if rp.startswith("@loader_path")]
+        # @executable_path is the file's own directory only in an executable
+        # (the app, since G3.2d links commo through it); in a library it
+        # depends on the process, and the JVM loads the engine's
+        prefixes = ("@loader_path", "@executable_path") if is_executable(path) else ("@loader_path",)
+        expanded = [here + rp[rp.index("_path") + len("_path"):] for rp in rpaths if rp.startswith(prefixes)]
         for name in deps:
             if system(name):
                 continue

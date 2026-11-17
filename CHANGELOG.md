@@ -26,6 +26,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   org.json jar carries the JSON License, which is not GPL-compatible —
   documented as F2 with a remediation path.
 
+- G3.2d, the servers pane, which completes G3.2, servers and identity
+  (`dev/g3/NOTES.md` §G3.2d). The app's sidebar lists its TAK servers
+  with their status: add one, import an ATAK data package, enroll for a
+  certificate, switch each on or off. `ServerConnections` runs one commo
+  client for them all and keeps the list; certificates stay in the login
+  keychain. The bundle carries OpenSSL's legacy provider, which PKCS#12
+  files from TAK servers and the Keychain need, and `make test-app-bundle`
+  checks that commo loads it from the bundle.
+
 - G3.2c, certificate enrollment and the device profile
   (`dev/g3/NOTES.md` §G3.2c). A client enrolls for its certificate by
   username and password through commo, as ATAK 5.5 does, keeps it in the

@@ -3,8 +3,9 @@
 # Assemble the macTAK app bundle (G3.0, `make app`): build/MacTAK.app with
 #
 #   Contents/MacOS/MacTAK              the SwiftUI app (swift build -c release)
-#   Contents/Frameworks/               every native library the engine loads:
-#                                      the engine and its JNI glue, commo,
+#   Contents/Frameworks/               every native library the app loads:
+#                                      the engine and its JNI glue, commo and
+#                                      OpenSSL's legacy provider module,
 #                                      ANGLE, GDAL's Java bindings, our own
 #                                      GDAL/PROJ/libspatialite and the
 #                                      Homebrew libraries they link, all
@@ -92,6 +93,12 @@ roots=("$DIST/libtakengine.dylib" "$DIST/libtakenginejni.dylib" "$DIST/libEGL.dy
 for f in "$DIST/libcommoncommo.dylib" "$DIST/libcommoncommojni.dylib"; do
   [[ -f "$f" ]] && roots+=("$f")
 done
+# OpenSSL's legacy provider, which commo loads for PKCS#12 files in RC2 or
+# 3DES (ATAK's own, and the Keychain's exports); the app points
+# OPENSSL_MODULES at Frameworks (CommsRuntime.swift, G3 trap 7)
+legacy="$(brew --prefix openssl@3)/lib/ossl-modules/legacy.dylib"
+[[ -f "$legacy" ]] || { echo "bundle.sh: no OpenSSL legacy provider at $legacy" >&2; exit 1; }
+roots+=("$legacy")
 python3 -I "$REPO/dev/deps/stage-runtime.py" "$FRAMEWORKS" "${roots[@]}"
 # codesign treats every file in Frameworks as code: the manifest goes beside the data
 mv "$FRAMEWORKS/RUNTIME-MANIFEST.txt" "$ENGINE/"
