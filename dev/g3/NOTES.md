@@ -641,8 +641,18 @@ Decided with the plan (owner, 2026-11-16):
   dies with SIGSEGV. Checked by making the fake server indent its reply,
   which killed the test runner with signal 11. TAK Server sends the reply
   compact, so the fake does too. But any trusted enrollment server that
-  indents its XML would crash the app. The fix is a commo patch (skip
-  non-element children), in G1's patch series; not done here.
+  indents its XML would crash the app. An empty element (`<ca0/>`)
+  crashed it the same way.
+
+  **Fixed (2026-11-17):** commo patch 0009 reads only element children,
+  and fails the signing step ("Empty certificate returned by server")
+  on an element with no text. The fake server's `--reply-shape indented`
+  and `--reply-shape empty-ca` drive two tests in `EnrollmentTests`:
+  - an indented reply enrolls
+  - an empty CA fails at signing.
+
+  Without the patch, both kill the test runner with signal 11. With it,
+  all 44 app tests pass.
 - **9 — `http.server` does a reverse DNS lookup when it binds.**
   `HTTPServer.server_bind` sets `server_name` from
   `socket.getfqdn(host)`. On CI's first run of this PR, three of four

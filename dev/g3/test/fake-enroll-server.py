@@ -14,14 +14,16 @@ Serves, over TLS with the given server certificate, behind basic auth:
 
 The shapes are what commo's enrollment parses (enrollmentmanager.cpp):
 certificates as bare base64, no PEM banners, and the <enrollment> reply
-compact, as TAK Server sends it: commo reads every child node's text, and a
-whitespace node between elements has none. Logs one line per request,
+compact, as TAK Server sends it. --reply-shape indented pretty-prints it
+instead, and --reply-shape empty-ca sends an empty <ca0/>: unpatched commo
+crashed on both (dev/g3/NOTES.md, trap 8; commo patch 0009). Logs one line per request,
 "fake-enroll: METHOD PATH -> STATUS", and "listening" once bound.
 
 USERS is a comma-separated list; all share PASSWORD.
 
 usage: fake-enroll-server.py PORT CERT KEY CA_CERT CA_KEY USERS PASSWORD
                              [--profile FILE] [--no-ca]
+                             [--reply-shape compact|indented|empty-ca]
 needs: openssl (OPENSSL env, default: Homebrew's openssl@3)
 """
 import base64
@@ -122,11 +124,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 leaf = bare(f.read())
         uid = urllib.parse.parse_qs(url.query).get("clientUid", [""])[0]
         log("signed %s for clientUid=%s" % (subject, uid))
-        reply = "<enrollment><signedCert>%s</signedCert>" % leaf
-        if not self.config["no_ca"]:
+        elements = ["<signedCert>%s</signedCert>" % leaf]
+        shape = self.config["reply_shape"]
+        if shape == "empty-ca":
+            elements.append("<ca0/>")
+        elif not self.config["no_ca"]:
             with open(self.config["ca_cert"]) as f:
-                reply += "<ca0>%s</ca0>" % bare(f.read())
-        self.reply(200, (reply + "</enrollment>").encode())
+                elements.append("<ca0>%s</ca0>" % bare(f.read()))
+        if shape == "indented":
+            reply = "<enrollment>\n" + "".join("  %s\n" % e for e in elements) + "</enrollment>\n"
+        else:
+            reply = "<enrollment>" + "".join(elements) + "</enrollment>"
+        self.reply(200, reply.encode())
 
 
 class Server(http.server.ThreadingHTTPServer):
@@ -152,11 +161,18 @@ def main():
     if "--no-ca" in args:
         args.remove("--no-ca")
         no_ca = True
+    reply_shape = "compact"
+    if "--reply-shape" in args:
+        i = args.index("--reply-shape")
+        reply_shape = args[i + 1]
+        del args[i:i + 2]
+        if reply_shape not in ("compact", "indented", "empty-ca"):
+            sys.exit("--reply-shape is compact, indented or empty-ca")
     if len(args) != 7:
         sys.exit(__doc__.split("usage: ")[1].split("needs:")[0].strip())
     port, cert, key, ca_cert, ca_key, users, password = args
     Handler.config = {"users": users.split(","), "password": password, "ca_cert": ca_cert, "ca_key": ca_key,
-                      "profile": profile, "no_ca": no_ca}
+                      "profile": profile, "no_ca": no_ca, "reply_shape": reply_shape}
     server = Server(("127.0.0.1", int(port)), Handler)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.load_cert_chain(cert, key)
