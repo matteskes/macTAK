@@ -22,6 +22,8 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>27.0</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>macTAK finds and talks to other TAK users on your local network (mesh networking) without a server.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

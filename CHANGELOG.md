@@ -26,6 +26,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   org.json jar carries the JSON License, which is not GPL-compatible —
   documented as F2 with a remediation path.
 
+- G3.3b, the Mesh section (`dev/g3/NOTES.md` §G3.3b): the app joins
+  the local network's TAK mesh by default, as ATAK does. The sidebar's
+  Mesh section switches it on or off, shows each network interface and
+  direct messages' port with their status, and edits the ports, groups
+  and TTL. `MeshNetwork` follows interfaces as they come and go
+  (`InterfaceWatcher`, on SystemConfiguration). The app asks for Local
+  Network access, and `--settings-suite NAME` runs a second copy as a
+  second client.
+
 - G3.3a, the mesh transport (`dev/g3/NOTES.md` §G3.3a): with no
   server, `CommoClient.startMesh` puts a client on the local network as
   ATAK 5.5 does, with SA on multicast 239.2.3.1:6969, chat on

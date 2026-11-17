@@ -19,9 +19,13 @@ struct MeshState {
 }
 
 extension CommoClient {
-    /// Start the mesh on these interfaces (`NetworkInterfaces.meshCapable()`
-    /// in the app). Throws if it already runs, or if TCP or any interface
+    /// Start the mesh on these interfaces (the app passes none and adds them
+    /// as they come and go). Throws if it already runs, or if an interface
     /// cannot be opened; what was opened is closed again.
+    ///
+    /// Direct TCP is added even when its port is taken (another TAK app on
+    /// this Mac): commo keeps retrying the bind, and its interface,
+    /// `"tcp:<port>"`, comes up only once it has the port.
     public func startMesh(_ config: MeshConfig, interfaces names: [String]) throws {
         guard mesh == nil else { throw CommoError(description: "the mesh is already running") }
         let commo = try live()

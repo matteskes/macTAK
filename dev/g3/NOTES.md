@@ -108,8 +108,9 @@ from running it.
 3. **Mesh networking.** With no server, ATAK still works peer to peer:
    SA on multicast 239.2.3.1:6969, chat on 224.10.10.1:17012, and direct
    TCP on port 4242 (`TadilJContact`, `ChatManagerMapComponent`,
-   `CotMapComponent`). Still to check: what macOS's local-network
-   permission asks of a multicast client (G3.3b checks it from the app).
+   `CotMapComponent`). macOS's Local Network permission is asked for
+   once, at the first multicast, and the app's `Info.plist` gives the
+   reason (G3.3b).
 4. **SA pacing (`ReportingRate`).**
    - It keeps two streams, unreliable (mesh) and reliable (servers).
    - The strategy is "Dynamic" by default: 30 s and 180 s when
@@ -831,8 +832,8 @@ ATAK.
   and so will the app. The contacts list (G3.4) should still drop its
   own uid.
 - **Multicast on `en0` from this Mac timed out** in a Python probe, while
-  `lo0` worked: likely Local Network privacy. PR b checks it from the
-  app.
+  `lo0` worked. It was Local Network privacy: once the owner granted
+  access, the probe worked (§G3.3b).
 
 #### Traps
 
@@ -851,3 +852,71 @@ ATAK.
   Here it crashed the second time the test removed `lo0`. Patch 0008
   passes the interface map's own copy of the address, which is freed
   only after.
+
+### G3.3b — the Mesh section (2026-11-17, branch `g3/mesh-pane`)
+
+#### What changed
+
+- **`MeshNetwork`** (`MacTAKComms/Mesh`), the model under the section:
+  - It runs the mesh on the app's one `CommoClient`. `ServerConnections`
+    takes it as an optional dependency, hands it the client when commo
+    starts, and forwards commo's events to it.
+  - It is **on by default**, as in ATAK. Being on and the `MeshConfig`
+    persist in the settings store.
+  - It shows a status per interface (starting, up, down, or failed with
+    the reason) and for direct TCP.
+  - Changes queue one after another, so a refresh never interleaves with
+    a restart.
+- **`InterfaceWatcher`**: a `SCDynamicStore` watch on every interface's
+  IPv4 state. Each change calls `MeshNetwork.refresh()`, which opens the
+  mesh on interfaces that appeared (`NetworkInterfaces.meshCapable()`) and
+  closes it on ones that went. SystemConfiguration only watches; no TAK
+  traffic goes through it.
+- **Direct TCP when the port is taken.** commo's `addTcpInboundInterface`
+  doesn't fail when another process holds the port: it returns the
+  interface and retries the bind, so `tcp:<port>` never comes up. The
+  section shows direct messages as "waiting for the port" until it does.
+- **The app:**
+  - a Mesh section under Servers: an on/off switch, a row per interface,
+    direct messages' port
+  - a settings sheet for the SA and chat groups and ports, TCP and UDP
+    ports, TTL and loopback, with ATAK's defaults a click away
+  - `Info.plist` gains `NSLocalNetworkUsageDescription`
+  - `--settings-suite NAME` keeps a copy's settings in another defaults
+    suite, so a second copy on one Mac is a second client.
+- **Tests** (`MeshNetworkTests`, plus one more `MeshTests` leg):
+  - on by default, and the settings persist
+  - it runs on its interfaces and follows them as they go and come back
+  - turning it off closes everything, and an interface change while off
+    opens nothing
+  - an interface that can't open says why
+  - a second client whose TCP port is taken still hears and is heard.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 42 tests pass: 2 core and 40 comms (5 new) |
+| `make app` | the bundle builds; `check-bundle.py` and the license gate pass |
+| The gate, in the app | two copies on `en0` see each other as contacts with no server (by hand, above) |
+| `make lint` | passes |
+
+**By hand, on the dev Mac (owner present, 2026-11-17):**
+
+- **Local Network permission:** macOS asked for it twice, once for the
+  terminal running the probe and once for macTAK. The owner allowed
+  both. With it granted, the `en0` multicast probe that had timed out
+  got its packet back at once. So the earlier timeout was the
+  permission, not the network.
+- **Two copies of the app on `en0`** (`--settings-suite mactak-mesh-1`
+  and `-2`, loopback on in both, the second on TCP 4252): each copy's
+  Mesh section showed `en0` up. Within a second of the second copy
+  starting, each logged the other as a contact (`contact added:
+  MACTAK-MESH-TEST-1` / `-2`, below). Copy 1 sent from `en0`'s address
+  and listened on UDP 6969, 17012 and 4242 and TCP 4242.
+- No ATAK device was on the LAN, so there is no check against ATAK
+  itself yet.
+
+`ServerConnections` logs each contact added or removed to the system log
+(subsystem `io.github.matteskes.macTAK`, category `comms`) until G3.4
+lists contacts in the app.
