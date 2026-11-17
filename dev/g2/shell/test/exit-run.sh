@@ -22,7 +22,8 @@
 #
 # PASS: the live gate (every present succeeded, no GL error, content, and
 # the terrain mesh under three rays at the end), every gesture kind reached
-# the camera, and ZERO DROPPED FRAMES (no present interval over 25 ms).
+# the camera, and ZERO DROPPED FRAMES (no present interval over 1.5
+# refreshes of the run's own cadence).
 # Reported, not gated: fps and interval percentiles, render CPU, GPU time
 # per frame (GL timer queries), the
 # longest GC pause, peak resident memory, cold start (launch to the first
@@ -105,7 +106,7 @@ set -e
 
 field() { sed -nE "$1" "$RUN_LOG" | tail -1; }
 frames_line="$(field 's/^window-app: live: ([0-9]+ frames;.*)$/\1/p')"
-dropped="$(field 's/^window-app: live: .*dropped \(>25 ms\) ([0-9]+);.*/\1/p')"
+dropped="$(field 's/^window-app: live: .*dropped \(>[0-9.]+ ms\) ([0-9]+);.*/\1/p')"
 gc_max="$(sed -nE 's/.*Pause .* ([0-9.]+)ms$/\1/p' "$GC_LOG" 2>/dev/null | sort -g | tail -1)"
 gc_n="$(grep -cE 'Pause .* [0-9.]+ms$' "$GC_LOG" 2>/dev/null || true)"
 # ZGC's other way to stall a thread: an allocation waiting for a collection
@@ -125,5 +126,5 @@ sed 's/^/    /' "$BUILD/exit-run.txt"
 
 [[ "$rc" -eq 0 ]] || { tail -40 "$RUN_LOG" | sed 's/^/    | /' >&2; fail "the shell exited $rc (live or gesture gate)"; }
 [[ -n "$dropped" ]] || fail "no frame-time line in the run log"
-[[ "$dropped" -eq 0 ]] || fail "$dropped dropped frame(s) (present interval > 25 ms)"
+[[ "$dropped" -eq 0 ]] || fail "$dropped dropped frame(s) (present interval > 1.5 refreshes of the run's cadence)"
 log "PASS: full stack, 10 s tour, zero dropped frames ($BUILD/exit-run.txt)"
