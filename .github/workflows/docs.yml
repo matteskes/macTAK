@@ -107,10 +107,17 @@ jobs:
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           # tak.gov rejects cloud-IP fetchers; GitHub issue/PR links trip rate limits.
+          # openjdk.java.net/openjdk.org sit behind Akamai, which 403s CI runners
+          # (the jdk-include README's Classpath Exception link is for humans).
+          # THIRD-PARTY-NOTICES.md is generated and carries ~200 upstream
+          # project URLs as license metadata (some hosts are bot-walled):
+          # their correctness is the license audit's concern, not CI's.
           args: >-
             --no-progress --max-concurrency 4
             --exclude 'tak\.gov'
             --exclude 'github\.com/.+/(issues|pull)/'
+            --exclude 'openjdk\.(java\.net|org)'
+            --exclude-path THIRD-PARTY-NOTICES.md
             './**/*.md'
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}

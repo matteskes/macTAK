@@ -124,6 +124,20 @@ Run the affected gates before pushing; CI will re-run the ones it can.
   aioquic with its dependencies (`--require-hashes`,
   `dev/g1/headless/test/requirements-quic.txt`), and MkDocs for the docs
   site (`--require-hashes`, `dev/docs-site/requirements-docs.txt`).
+- **The shipped license set is inventoried.** `licenses/inventory.csv` is
+  the single list of every third-party component the app bundle carries —
+  the Brewfile's runtime formulas, the pinned-tarball builds, commo's
+  statically linked libraries, ANGLE, every engine jar — each with its
+  SPDX terms and its license text under `licenses/texts/`. Adding or
+  renaming any of those without an inventory row fails
+  `dev/deps/check-licenses.py`: CI's license gate (`supply-chain.yml`) on
+  every PR, and `--bundle` inside every `app/bundle.sh` run against what
+  was actually staged. After editing the inventory, regenerate and commit
+  the notices:
+  `python3 -I dev/deps/stage-licenses.py --notices THIRD-PARTY-NOTICES.md`.
+  The full audit, findings and elections (which license option of a
+  tri-licensed library macTAK takes) live in
+  [docs/license-audit.md](docs/license-audit.md).
 
 ## Where changes land
 
@@ -135,6 +149,7 @@ Run the affected gates before pushing; CI will re-run the ones it can.
 | The GLES shim (`android.opengl.GLES20/30` + JNI forwarder) | the generator `dev/g2/gen-gles-shim.py`, then `make gen-gles-shim` and commit the output | `check-gen-gles-shim` fails on hand-edited output ("a miss is loud, not silent") |
 | The Swift app and the G2 harness (G3) | `app/` (a Swift package: `CJavaBoot`, `MacTAKCore`, `mactak-shell`, `MacTAK`, `CCommoShim` and `MacTAKComms`); the Java side Swift calls is `dev/g2/render/src/mactak/engine/` | `make test-app` (CI): every product builds, drift tests keep the JNI boundary in step, and the comms legs run over TCP, mutual TLS and QUIC |
 | Render harness and headless tools | `dev/g2/shell/` (scripts and gates), `dev/g2/render/`, `dev/g1/headless/` | `shellcheck -x` + `bash -n` via hook and `make lint` |
+| A third-party component (jar, Homebrew formula, tarball build) | `licenses/inventory.csv` + `licenses/texts/`, then regenerate `THIRD-PARTY-NOTICES.md` (`dev/deps/stage-licenses.py --notices`) | `dev/deps/check-licenses.py` — CI's license gate (`supply-chain.yml`) and every `app/bundle.sh` run (`--bundle`) |
 | Docs | the doc itself + `CHANGELOG.md` under **Unreleased** | `docs.yml` (markdownlint + link check) |
 
 ## Branches, commits, pull requests

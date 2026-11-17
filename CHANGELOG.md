@@ -9,6 +9,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The full license audit (docs/license-audit.md, findings F1–F8):
+  `licenses/inventory.csv` records every third-party component the app
+  bundle carries — the 22 runtime Homebrew formulas, macTAK's own
+  GDAL/PROJ/SpatiaLite builds, commo's statically linked curl/ngtcp2/
+  libmicrohttpd, ANGLE from Electron, and all 50 engine jars — each with
+  SPDX terms, origin and license text under `licenses/texts/`.
+  `dev/deps/stage-licenses.py` (called from `app/bundle.sh`) ships the
+  notices, every text and a GPL-3.0 §6 source offer into
+  `Contents/Resources/licenses/` and regenerates the committed
+  `THIRD-PARTY-NOTICES.md`; `dev/deps/check-licenses.py` gates the set in
+  `supply-chain.yml` (repo-declared dependencies vs the inventory) and
+  inside every app build against the actual bundle contents. Notable
+  corrections and open items: mdbtools and librttopo are GPL-2.0-or-later
+  (not LGPL) and ride under GPL-3.0 via their or-later clause; the
+  org.json jar carries the JSON License, which is not GPL-compatible —
+  documented as F2 with a remediation path.
+
 - G3.2d, the servers pane, which completes G3.2, servers and identity
   (`dev/g3/NOTES.md` §G3.2d). The app's sidebar lists its TAK servers
   with their status: add one, import an ATAK data package, enroll for a

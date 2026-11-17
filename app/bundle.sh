@@ -17,6 +17,9 @@
 #     data/                            the map's starting data (--layer etc.)
 #     RUNTIME-MANIFEST.txt             each staged library's source and SHA-256
 #     launch.json                      what the app boots with (LaunchConfig.swift)
+#   Contents/Resources/licenses/       third-party notices, every component's
+#                                      license text and the GPL-3.0 source offer
+#                                      (dev/deps/stage-licenses.py, check-licenses.py)
 #
 # The natives load nothing from the build machine (issue #152):
 # dev/deps/check-bundle.py checks every Mach-O file, and the build fails
@@ -105,6 +108,12 @@ python3 -I "$REPO/dev/deps/brew-pins.py" --manifest "$ENGINE/RUNTIME-MANIFEST.tx
 cp -R "$DEPS/share/gdal" "$ENGINE/gdal"
 cp -R "$DEPS/share/proj" "$ENGINE/proj"
 
+# Third-party notices, every component's license text and the GPL-3.0
+# source offer (docs/license-audit.md): a pure function of licenses/,
+# staged before codesign seals Resources.
+python3 -I "$REPO/dev/deps/stage-licenses.py" "$CONTENTS/Resources/licenses" \
+  || { echo "bundle.sh: license staging failed" >&2; exit 1; }
+
 # copy one data file or directory into data/; print its bundle-relative path
 stage() {
   cp -R "$1" "$ENGINE/data/"
@@ -141,4 +150,6 @@ codesign --force --sign - "$APP_OUT" >/dev/null 2>&1 \
   || { echo "bundle.sh: ad-hoc codesign failed" >&2; exit 1; }
 python3 -I "$REPO/dev/deps/check-bundle.py" "$APP_OUT" \
   || { echo "bundle.sh: the bundle loads something from outside itself" >&2; exit 1; }
+python3 -I "$REPO/dev/deps/check-licenses.py" --bundle "$APP_OUT" \
+  || { echo "bundle.sh: the bundle carries something the license inventory doesn't know" >&2; exit 1; }
 echo "bundle.sh: $APP_OUT ($(du -sh "$APP_OUT" | cut -f1))"
