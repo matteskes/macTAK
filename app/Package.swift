@@ -12,7 +12,9 @@
 //
 //   CCommoShim    C++: commo's listener classes forwarded to C callbacks,
 //                 behind a plain C API (commo_shim.h)
-//   MacTAKComms   the CommoClient actor and the self-SA presence
+//   MacTAKCot     the CoT model: events, details, the self-SA (G3.4); pure
+//                 Swift, so its tests need no commo
+//   MacTAKComms   the CommoClient actor, servers, identity and the mesh
 //
 // Every build links commo (G3.2): a built commo in dev/g1/native-dist
 // (dev/g1/build-commo.sh; CI's shell job downloads the comms job's), or the
@@ -50,6 +52,7 @@ let package = Package(
         .executable(name: "MacTAK", targets: ["MacTAK"]),
         .executable(name: "mactak-shell", targets: ["mactak-shell"]),
         .library(name: "MacTAKCore", targets: ["MacTAKCore"]),
+        .library(name: "MacTAKCot", targets: ["MacTAKCot"]),
         .library(name: "MacTAKComms", targets: ["MacTAKComms"]),
     ],
     targets: [
@@ -87,7 +90,11 @@ let package = Package(
             // the app's must stay inside its bundle (dev/deps/check-bundle.py).
             linkerSettings: [.unsafeFlags(["-L\(commoLib)", "-lcommoncommo"])]
         ),
-        .target(name: "MacTAKComms", dependencies: ["CCommoShim"]),
+        .target(name: "MacTAKCot"),
+        // reads the golden fixtures in dev/g3/test/cot-golden, which the
+        // kernel's leg reads too (make test-cot-golden)
+        .testTarget(name: "MacTAKCotTests", dependencies: ["MacTAKCot"]),
+        .target(name: "MacTAKComms", dependencies: ["CCommoShim", "MacTAKCot"]),
         .testTarget(name: "MacTAKCommsTests", dependencies: ["MacTAKComms"],
                     linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", commoLib])]),
     ],
