@@ -100,9 +100,7 @@ struct ContentView: View {
             List {
                 ServersSection()
                 MeshSection()
-                Section("Contacts") {
-                    Text("Coming in G3.4").foregroundStyle(.secondary)
-                }
+                ContactsSection()
                 Section("Chat") {
                     Text("Coming in G3.5").foregroundStyle(.secondary)
                 }

@@ -16,7 +16,6 @@
 
 import Combine
 import Foundation
-import os
 
 /// Where the server list and the client's identity persist.
 public protocol SettingsStore: AnyObject {
@@ -43,6 +42,8 @@ public final class ServerConnections: ObservableObject {
     public var callsign: String { me.details.callsign }
 
     public let me: SelfReporter
+    /// Who this client hears, on any server or the mesh (G3.4c).
+    public let contacts: ContactStore
     private let settings: SettingsStore
     private let identities: IdentityStore
     private let mesh: MeshNetwork?
@@ -52,10 +53,9 @@ public final class ServerConnections: ObservableObject {
     /// `connect` has handed its id back.
     private var upEndpoints: Set<String> = []
     private var listener: Task<Void, Never>?
-
-    /// Contacts in the system log until the app lists them (G3.4):
-    /// `log stream --predicate 'subsystem == "io.github.matteskes.macTAK"'`.
-    private static let log = Logger(subsystem: "io.github.matteskes.macTAK", category: "comms")
+    private var expiry: Task<Void, Never>?
+    /// How often stale contacts are checked for removal.
+    static let expiryPeriod: Duration = .seconds(5)
 
     private static let serversKey = "mactak.servers"
     /// G3.2d's random uid, replaced by the device's (DeviceUID).
@@ -66,6 +66,7 @@ public final class ServerConnections: ObservableObject {
         self.identities = identities
         self.me = me
         self.mesh = mesh
+        contacts = ContactStore(selfUID: me.details.uid)
         settings.set(nil, forKey: Self.legacyUIDKey)
         if let data = settings.data(forKey: Self.serversKey),
            let decoded = try? JSONDecoder().decode([ServerConfig].self, from: data) {
@@ -85,17 +86,25 @@ public final class ServerConnections: ObservableObject {
         me.attach(client)
         for server in servers where server.enabled { connect(server) }
         mesh?.attach(client)
+        expiry = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.expiryPeriod)
+                self?.contacts.expire()
+            }
+        }
     }
 
     public func stop() async {
         await mesh?.detach()
         me.detach()
+        expiry?.cancel()
         listener?.cancel()
         await client?.shutdown()
         client = nil
         endpoints.removeAll()
         upEndpoints.removeAll()
         for server in servers { status[server.id] = .off }
+        contacts.removeAll()
     }
 
     // MARK: - the list
@@ -201,10 +210,10 @@ public final class ServerConnections: ObservableObject {
             if let id = server(endpoint), status[id] == .connected { status[id] = .connecting }
         case let .interfaceError(endpoint, code):
             if let id = server(endpoint) { status[id] = .failed(Self.describe(code)) }
-        case let .contactAdded(uid):
-            Self.log.info("contact added: \(uid, privacy: .public)")
+        case let .cot(xml, endpoint):
+            contacts.receive(xml, via: server(endpoint).map { .server($0) } ?? .mesh)
         case let .contactRemoved(uid):
-            Self.log.info("contact removed: \(uid, privacy: .public)")
+            contacts.remove(uid)
         default:
             break
         }

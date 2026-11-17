@@ -943,7 +943,7 @@ Gaps 4 and 5 (§Plan revision) and decision 2's golden leg. Three PRs:
 |---|---|---|
 | **a** | `g3/cot-model` | the CoT model in Swift (`MacTAKCot`); the kernel as its test oracle |
 | **b** | `g3/sa-reporting` | `ReportingRate`, the self details, the location source |
-| c | `g3/contacts-pane` | contacts and the My Details sheet |
+| **c** | `g3/contacts-pane` | contacts and the My Details sheet |
 
 What ATAK 5.5 does (read at the pin):
 
@@ -1129,3 +1129,96 @@ suite, so no import or settings copy carries it (G3.4b).
 
 The app's CoreLocation prompt and a placed position seen by a peer are
 checked by hand with the owner in G3.4c, with the sheet that sets them.
+
+### G3.4c — contacts and My Details (2026-11-17, branch `g3/contacts-pane`)
+
+#### What changed
+
+- **`ContactStore`** (`MacTAKComms/Contacts`) keeps everyone the client
+  hears, on a server or the mesh.
+  - A contact is an atom (`a-…`) event with a `<contact endpoint>`, as
+    ATAK's `ContactListDetailHandler` takes it. A dropped marker has a
+    callsign but no endpoint, so it isn't one. The client's own uid is
+    dropped.
+  - Each `Contact` keeps its team, role and custom role, point, `how`,
+    `precisionlocation`, takv, track and battery. It also keeps how it
+    was heard (`.mesh` or `.server(id)`, matched by commo's endpoint id).
+  - Stale and removal follow ATAK 5.5 (`MarkerImporter`,
+    `CotMarkerRefresher`), timed by this Mac's clock from when the SA
+    arrived:
+    - a contact goes stale 1.5 × (stale − start) after its last SA
+      (`autoStaleDuration`), and is listed greyed
+    - it is removed 5 minutes after it went stale
+      (`expireStaleItemsTime`), or when commo reports the contact gone.
+  - `ServerConnections` feeds it commo's CoT and expires it every 5 s.
+    This replaces G3.3b's `os_log` of contacts.
+- **The Contacts section** of the sidebar:
+  - "me" first: callsign, role, where the self-SA says this Mac is, and
+    the My Details button
+  - then a row per contact: team colour, callsign, role, how long ago,
+    greyed when stale
+  - a popover per contact: team, role and custom role, position, source,
+    track, battery, how it was heard, the client and the uid.
+- **My Details** (`MyDetailsView.swift`) edits a draft and applies it on
+  Save:
+  - callsign, team (ATAK's 14 teams), role (the kernel's `RolesManager`
+    defaults), custom role and abbreviation, the type-icon flag, unit
+    type, remarks
+  - the location source and a placed position
+  - the reporting strategy and its rates.
+
+  The unit type is a CoT type text field. ATAK picks it from the whole
+  2525 type tree (`CoTSelector`), which comes with G3.7's symbols, so a
+  short list would have been invented.
+- **`TypedPosition.parse`** reads a position as people type it:
+  - `lat, lon`, `lat lon` or `lat, lon, hae`
+  - N/S/E/W and degree signs
+  - any dash or minus character (trap 13).
+
+  If the field can't be read, the sheet quotes it, with the codes of any
+  non-ASCII characters. MGRS and the other formats are G3.6's.
+- Positions show as decimal degrees until G3.6.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 90 tests pass: 13 CoT, 2 core and 75 comms (8 new: `ContactStoreTests` 6, `TypedPositionTests` 2) |
+| `ContactStoreTests.testTwoClientsOnAServerListEachOther` | two `ServerConnections` on `fake-cot-server.py` list each other with team and role, heard via the server |
+| `make app` | the bundle builds; `check-bundle.py` and the license gate pass |
+| `make lint` | passes |
+
+**By hand, on the dev Mac (owner present, 2026-11-17).** Two copies ran
+from `build/MacTAK.app` (`--settings-suite mactak-mesh-1` and `-2`,
+loopback on, the second on TCP 4252), with copy 2 set to Red and Medic:
+
+- **The contacts list:** copy 1 listed MAC-COPY-2 with a red dot and
+  "Medic", heard seconds before.
+- **CoreLocation:** macOS asked for location permission.
+- **A detail change at once:** copy 2's team set to Green in My Details
+  turned its dot green in copy 1 right away. Dynamic's next mesh report
+  was 30 s off.
+- **A placed position:** after trap 13's fix, copy 1's
+  `51.5007, -0.1246` saved, and copy 2's popover for MAC-COPY-1 showed
+  it.
+
+The device uid file holds `MACTAK-<IOPlatformUUID>`.
+
+#### Traps
+
+- **13 — a minus typed into the sheet may not reach it as `-`.** Placing
+  a position failed twice by hand while the parser's tests passed on the
+  same text:
+  - first with separate latitude and longitude fields, which couldn't
+    take the pair the owner was asked to type
+  - then with one field that read "lat, lon", but only ASCII
+    hyphen-minus.
+
+  The next build read every dash and minus character (U+2010–2015,
+  U+2212, U+FE63, U+FF0D) and a no-break space, and it worked. Nothing
+  else about the parsing changed between the second and third tries, so
+  a substituted character is the likely cause. The owner's account has
+  macOS's smart dashes at their default, on. The character itself was
+  never seen: the warning that would have shown it shipped with the
+  fix. Text that people type in this app should be read with that
+  substitution in mind.
