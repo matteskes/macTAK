@@ -28,7 +28,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     both.
   - The battery is reported.
 
-- G3.4c, contacts and My Details (`dev/g3/NOTES.md` §G3.4c):
+- G3.4c, contacts and My Details, which completes G3.4, SA
+  (`dev/g3/NOTES.md` §G3.4c):
   - The sidebar lists every TAK user heard on a server or the mesh, with
     team, role, position and how it was heard. Stale contacts are greyed
     and removed on ATAK's timing.
