@@ -46,6 +46,43 @@ public struct LocationFix: Sendable, Equatable {
     }
 }
 
+/// A position as people type it (G3.4c): "lat, lon", "lat lon" or
+/// "lat, lon, hae", in decimal degrees, with a typographic minus or N/S/E/W
+/// in place of a sign ("51.5007 N, 0.1246 W"). MGRS and the other formats
+/// come with G3.6.
+public enum TypedPosition {
+    /// U+2010…2015 (hyphens, figure dash, en and em dash), U+2212 (minus),
+    /// U+FE63 and U+FF0D (small and full-width hyphen-minus).
+    static let dashes: Set<Unicode.Scalar> = ["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}",
+                                             "\u{2015}", "\u{2212}", "\u{FE63}", "\u{FF0D}"]
+
+    public static func parse(_ text: String) -> CotPoint? {
+        let normalized = String(String.UnicodeScalarView(text.unicodeScalars.map { scalar -> Unicode.Scalar in
+            // macOS's smart dashes, a typographic minus, full-width forms:
+            // all read as a minus sign; a degree sign as a space
+            if dashes.contains(scalar) { return "-" }
+            if scalar == "°" || scalar == "\u{00A0}" { return " " }
+            return scalar
+        }))
+        let tokens = normalized.split { $0 == "," || $0 == ";" || $0.isWhitespace }.map(String.init)
+        var numbers: [Double] = []
+        for token in tokens {
+            let upper = token.uppercased()
+            if ["N", "E"].contains(upper), !numbers.isEmpty { continue }
+            if ["S", "W"].contains(upper), let last = numbers.popLast() { numbers.append(-abs(last)); continue }
+            if let hemisphere = upper.last, "NSEW".contains(hemisphere), let v = Double(upper.dropLast()) {
+                numbers.append("SW".contains(hemisphere) ? -abs(v) : abs(v))
+                continue
+            }
+            guard let v = Double(token) else { return nil }
+            numbers.append(v)
+        }
+        guard numbers.count == 2 || numbers.count == 3 else { return nil }
+        let p = CotPoint(lat: numbers[0], lon: numbers[1], hae: numbers.count == 3 ? numbers[2] : CotPoint.unknown)
+        return p.isValid ? p : nil
+    }
+}
+
 public enum SelfLocation {
     /// What the self-SA reports: its location (nil when there is none) and
     /// track. A placed position isn't moving.

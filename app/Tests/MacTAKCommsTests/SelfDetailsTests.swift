@@ -160,3 +160,21 @@ final class SelfDetailsTests: XCTestCase {
         XCTAssertTrue((0...100).contains(SelfLocation.batteryPercent()))
     }
 }
+
+/// G3.4c: a position as people type it into My Details.
+final class TypedPositionTests: XCTestCase {
+    func testReadsWhatPeopleType() {
+        let london = CotPoint(lat: 51.5007, lon: -0.1246)
+        for text in ["51.5007, -0.1246", "51.5007,-0.1246", "51.5007 -0.1246", "  51.5007 ,  -0.1246 ",
+                     "51.5007, \u{2212}0.1246", "51.5007, \u{2013}0.1246", "51.5007,\u{00A0}\u{2014}0.1246", "51.5007, \u{FF0D}0.1246", "51.5007 N, 0.1246 W", "51.5007N 0.1246W", "51.5007° N, 0.1246° W"] {
+            XCTAssertEqual(TypedPosition.parse(text), london, text)
+        }
+        XCTAssertEqual(TypedPosition.parse("-33.8568, 151.2153, 42.5"), CotPoint(lat: -33.8568, lon: 151.2153, hae: 42.5))
+    }
+
+    func testRefusesWhatIsNotAPosition() {
+        for text in ["", "51.5007", "51.5007, x", "91, 0", "0, 181", "1, 2, 3, 4", "18TWL8040"] {
+            XCTAssertNil(TypedPosition.parse(text), text)
+        }
+    }
+}

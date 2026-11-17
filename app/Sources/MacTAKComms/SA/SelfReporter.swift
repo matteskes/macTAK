@@ -21,7 +21,8 @@ public final class SelfReporter: ObservableObject {
     @Published public private(set) var location: SelfEvent.Location?
 
     private let settings: SettingsStore
-    private let locator: LocationService?
+    /// CoreLocation, when this reporter uses it (its status is the app's).
+    public let locator: LocationService?
     private var client: CommoClient?
     private var batteryTask: Task<Void, Never>?
     /// The last update sent: each waits for the one before, so the client
@@ -118,10 +119,7 @@ public final class SelfReporter: ObservableObject {
 
     /// "lat,lon" or "lat,lon,hae".
     static func point(_ text: String) -> CotPoint? {
-        let parts = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard parts.count == 2 || parts.count == 3 else { return nil }
-        let p = CotPoint(lat: parts[0], lon: parts[1], hae: parts.count == 3 ? parts[2] : CotPoint.unknown)
-        return p.isValid ? p : nil
+        TypedPosition.parse(text)
     }
 
     static func text(_ p: CotPoint) -> String {
