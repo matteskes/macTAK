@@ -30,6 +30,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The exit gate judges dropped frames by each run's own cadence
+  (issue #125; G2 trap #77; `dev/g2/NOTES.md` §The 60 fps gate). A
+  dropped frame was a present interval past a fixed 25 ms — 1.5 × the
+  60 Hz refresh the gate always meant — so a run whose display paced
+  120 fps was judged at half the intent: the issue's second reproducer
+  (a panel reporting 60.00 Hz while pacing 120.0–120.1 fps, mean
+  interval 8.330 ms) held 4 intervals past the scale-equivalent 12.5 ms
+  in 20 runs, worst 17.97 ms, and read as zero. `WindowApp` derives the
+  threshold from the run's median present interval (25.0 ms at 60 Hz,
+  12.5 at 120), and the frame log's `present_wall_ms` is now documented
+  as the `eglSwapBuffers` enqueue alone: the wait for the next drawable,
+  taken lazily at the first draw, lands in `render_wall_ms`, where those
+  hitches sit (his log: 17.962 of 17.974 ms). The G2 smoke's fatal
+  message no longer says `git submodule update --init src/khronos`: the
+  repo has no submodules; `src/` is the sparse upstream clone of
+  CONTRIBUTING's Setup.
+
 - The Homebrew versions are pinned and checked (issue #151; G1.14 finding
   11; `dev/g1/NOTES.md` §G1.33; bundling plan PR D).
   `dev/deps/brew-pins.py` compares each formula's opt link with

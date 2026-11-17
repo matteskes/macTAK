@@ -1543,7 +1543,12 @@ GeoTIFFs), so no 200–460 MB source file is downloaded.
 Dev Mac, manual, like `make test-shell`: a scripted 10 s pan, zoom and
 rotate (the injected events below) on a Retina window at the shell's
 default size, full stack. **Pass: zero dropped frames** (a present
-interval over 25 ms, 1.5 × the 60 Hz refresh) **and no failed presents.**
+interval over 1.5 refreshes of the run's own cadence — the median
+present interval, so 25 ms at 60 Hz and 12.5 ms at 120) **and no failed
+presents.** Restated 2026-11-16 from "over 25 ms": the gate's intent was
+always 1.5 × the refresh, but the constant was frozen at the 60 Hz
+reading until issue #125's second reproducer, a panel reporting 60.00 Hz
+while pacing 120 fps, was judged at half the intent (trap #77).
 p95 and the other interval figures are reported, not gated: presents are
 quantized to the display, so a perfect 60 Hz run reads p95 ≈ 17–17.8 ms
 (trap #61; restated 2026-11-12 from "p95 ≤ 16.7 ms", which such a run
@@ -2095,6 +2100,21 @@ frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
   whether anything we do starts it, is open. How to reproduce it, what
   was tried and the open leads: [issue #125](https://github.com/matteskes/macTAK/issues/125),
   which asks for drop rates from other Macs and displays.
+  A second reproducer arrived 2026-11-16 ([issue #125's
+  comment](https://github.com/matteskes/macTAK/issues/125#issuecomment-6934940140)):
+  an M4 mini on a 2560×1440 panel that `system_profiler` reports at
+  60.00 Hz, but whose harness paces 120.0–120.1 fps (mean interval
+  8.330 ms). At the gate's scale, 1.5 × 8.33 = 12.5 ms, his 20 runs hold
+  4 intervals past it (worst 17.97 ms, 2.16 slots — one whole slot
+  missed, the same shape as our 26–33 ms), and the frozen 25 ms constant
+  — 3× his frame slot — read them as zero; the gate is now derived from
+  each run's median interval (the restated gate above). His per-frame log
+  also settles where the wait sits: `present_wall_ms` ≤ 0.03 on every
+  frame, the stall inside `render_wall_ms` (17.962 of 17.974 ms) — the
+  instrumentation boundary is the render stage, not eglSwapBuffers (now
+  said in WindowApp's CSV writer). Whether macOS drove that panel at 120
+  while reporting 60 is open in the issue; his Metal System Trace of the
+  ~4.2 s turn would say.
 
 ## Audit finding 7's rest — the stand-ins match Android (2026-11-14, branch `g2/audit-finding-7-stand-ins`, issues 131–133)
 

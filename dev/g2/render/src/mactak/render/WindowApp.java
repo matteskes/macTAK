@@ -745,15 +745,32 @@ public final class WindowApp {
      * drain (what the engine costs on
      * the CPU; GPU time and the wait for a drawable are not in it).
      * {@link #report} prints mean/p50/p95/max and the dropped frames
-     * (intervals past {@link #DROPPED_NS}) and, given a path, writes CSV.
+     * (intervals past {@link #DROPPED_REFRESHES} refreshes of the run's
+     * own cadence) and, given a path, writes CSV.
      */
     private static final class FrameTimes {
-        /** A dropped frame at 60 Hz: an interval past 1.5 refreshes (G2's exit gate, NOTES §M3.3). */
-        static final long DROPPED_NS = 25_000_000L;
+        /**
+         * A dropped frame: an interval past this many refreshes of the run's
+         * own cadence, which {@link #report} reads as the median present
+         * interval — presents quantize to the display, so the median is one
+         * refresh at whatever rate it actually paces (G2's exit gate, NOTES
+         * §The 60 fps gate; 25 ms at 60 Hz, 12.5 ms at 120). The gate said
+         * 1.5 refreshes from the start but was frozen at 25 ms, the 60 Hz
+         * reading, until issue #125's second reproducer paced 120 fps and
+         * the frozen gate judged its frames at half the intent (trap #77).
+         */
+        static final double DROPPED_REFRESHES = 1.5;
         private long[] interval = new long[1024];
         private long[] work = new long[1024];
         private long[] at = new long[1024];
-        /** Wall time in the queued work + render (includes waiting for a drawable), and in the present. */
+        /**
+         * Wall time in the queued work + render, and in the present. ANGLE's
+         * Metal backend takes the next drawable lazily at the first draw
+         * (the live loop's comment above), so the wait for the display lands
+         * in renderWall, not swapWall: in the CSV, render_wall_ms includes
+         * that wait and present_wall_ms is the eglSwapBuffers enqueue alone
+         * (trap #77: hitches of ~28 ms renderWall beside a ~0.01 ms present).
+         */
         private long[] renderWall = new long[1024], swapWall = new long[1024];
         /** GPU time per frame, -1 until (or unless) its timer query arrives. */
         private long[] gpu = filled(1024);
@@ -809,18 +826,21 @@ public final class WindowApp {
             if (iv.length == 0) {
                 System.out.println(tag + ": no frame intervals recorded");
             } else {
-                final long dropped = java.util.Arrays.stream(iv).filter(v -> v > DROPPED_NS).count();
+                // The gate follows the run's own cadence: the median present
+                // interval is one refresh, at whatever rate the display paces.
+                final long droppedNs = Math.round(pct(iv, 50) * DROPPED_REFRESHES);
+                final long dropped = java.util.Arrays.stream(iv).filter(v -> v > droppedNs).count();
                 System.out.printf("%s: %d frames; interval ms mean %.2f p50 %.2f p95 %.2f max %.2f (%.1f fps); "
-                        + "dropped (>%.0f ms) %d; render CPU ms p50 %.2f p95 %.2f max %.2f%n",
+                        + "dropped (>%.1f ms) %d; render CPU ms p50 %.2f p95 %.2f max %.2f%n",
                         tag, n, mean(iv) / 1e6, pct(iv, 50) / 1e6, pct(iv, 95) / 1e6, iv[iv.length - 1] / 1e6,
-                        1e9 / mean(iv), DROPPED_NS / 1e6, dropped, pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
+                        1e9 / mean(iv), droppedNs / 1e6, dropped, pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
                 final long[] gp = java.util.Arrays.stream(gpu, 0, n).filter(v -> v >= 0).sorted().toArray();
                 if (gp.length > 0)
                     System.out.printf("%s: GPU ms p50 %.2f p95 %.2f max %.2f (%d of %d frames timed)%n",
                             tag, pct(gp, 50) / 1e6, pct(gp, 95) / 1e6, gp[gp.length - 1] / 1e6, gp.length, n);
                 // each one, to set against the gesture script and the GC log
                 for (int i = 0; i < n; i++)
-                    if (interval[i] > DROPPED_NS)
+                    if (interval[i] > droppedNs)
                         System.out.printf("%s: dropped frame %d at %.3f s: interval %.2f ms, render CPU %.2f ms, GPU %s; "
                                         + "wall: render %.2f ms, present %.2f ms%n",
                                 tag, i, at[i] / 1e9, interval[i] / 1e6, work[i] / 1e6,
@@ -829,6 +849,9 @@ public final class WindowApp {
             }
             if (csvPath != null) {
                 try (java.io.PrintWriter out = new java.io.PrintWriter(new FileOutputStream(csvPath))) {
+                    // present_wall_ms is the eglSwapBuffers enqueue alone; the
+                    // wait for the next drawable lands in render_wall_ms (the
+                    // renderWall field's javadoc, and trap #77).
                     out.println("frame,t_s,interval_ms,render_cpu_ms,gpu_ms,render_wall_ms,present_wall_ms");
                     for (int i = 0; i < n; i++)
                         out.printf("%d,%.4f,%s,%.3f,%s,%.3f,%.3f%n", i, at[i] / 1e9,
