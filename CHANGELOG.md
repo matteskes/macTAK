@@ -9,6 +9,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.2a, commo in every build, with TLS and QUIC (`dev/g3/NOTES.md`
+  §G3.2a). The Swift package always links commo; CI's shell job builds it
+  against the comms job's commo. `CommoClient` connects over QUIC as well
+  as TCP and TLS, with the client identity and CA as in-memory
+  `TLSCredentials`. `make test-app` runs the two-client round trip over
+  mutual TLS (`fake-cot-server.py --client-ca`) and QUIC
+  (`fake-quic-server.py` now relays between clients), and checks that a
+  client whose certificate comes from another CA is refused.
+
 - G3.1, commo from Swift (`dev/g3/NOTES.md`): the `CommoClient` actor
   connects to TAK servers over TCP or TLS, beacons self-SA, broadcasts
   and sends CoT, and reports CoT, contacts, interface changes and commo's
@@ -114,6 +123,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to GitHub's macOS 27 image (`xcode-27`, a preview).
 
 ### Fixed
+
+- A Swift process using commo no longer dies of SIGPIPE when a server
+  closes a connection commo writes to (G3 trap 4, `dev/g3/NOTES.md`).
+  commo's socket writes don't suppress the signal, and only the JVM
+  ignored it; `CCommoShim` now ignores it for the whole process when it
+  initializes commo's libraries.
 
 - CI installs the same Homebrew versions in every job (`dev/g1/NOTES.md`
   §G1.33, Traps). Each runner installed what its image's Homebrew snapshot

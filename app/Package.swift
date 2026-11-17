@@ -10,14 +10,13 @@
 //                 rebuilt on MacTAKCore with the same flags and log lines
 //   MacTAK        the SwiftUI app (app/bundle.sh makes build/MacTAK.app)
 //
-// With MACTAK_COMMO_LIB set to commo's directory, dev/g1/native-dist (`make
-// test-app-comms`), three more targets join, all of which need a built
-// commo and the atak-civ headers in src/:
+//   CCommoShim    C++: commo's listener classes forwarded to C callbacks,
+//                 behind a plain C API (commo_shim.h)
+//   MacTAKComms   the CommoClient actor and the self-SA presence
 //
-//   CCommoShim       C++: commo's listener classes forwarded to C callbacks,
-//                    behind a plain C API (commo_shim.h)
-//   MacTAKComms      the CommoClient actor and the self-SA presence
-//   MacTAKCommsTests two clients through dev/g1/headless/fake-cot-server.py
+// Every build links commo (G3.2): a built commo in dev/g1/native-dist
+// (dev/g1/build-commo.sh; CI's shell job downloads the comms job's), or the
+// directory MACTAK_COMMO_LIB names, and the atak-civ headers in src/.
 //
 // jni.h comes from the repo's pinned copy (dev/g1/jdk-include): the JNI
 // surface used here is JNI 1.8's, which JDK 21 serves unchanged, so the
@@ -28,7 +27,16 @@ import Foundation
 let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
 let jniInclude = repo.appendingPathComponent("dev/g1/jdk-include").path
 let commoLib = ProcessInfo.processInfo.environment["MACTAK_COMMO_LIB"].flatMap { $0.isEmpty ? nil : $0 }
+    ?? repo.appendingPathComponent("dev/g1/native-dist").path
 let commoInclude = repo.appendingPathComponent("src/commoncommo/core/include").path
+
+// Fail here, with the fix, rather than at link time with "library not found".
+for (path, fix) in [
+    ("\(commoLib)/libcommoncommo.dylib", "run dev/g1/build-commo.sh, or set MACTAK_COMMO_LIB to commo's directory"),
+    ("\(commoInclude)/commo.h", "check out atak-civ at the pin into src/ (CONTRIBUTING.md, Setup)"),
+] where !FileManager.default.fileExists(atPath: path) {
+    fatalError("app/Package.swift: \(path) is missing — \(fix)")
+}
 
 let package = Package(
     name: "MacTAK",
@@ -37,6 +45,7 @@ let package = Package(
         .executable(name: "MacTAK", targets: ["MacTAK"]),
         .executable(name: "mactak-shell", targets: ["mactak-shell"]),
         .library(name: "MacTAKCore", targets: ["MacTAKCore"]),
+        .library(name: "MacTAKComms", targets: ["MacTAKComms"]),
     ],
     targets: [
         .target(
@@ -65,13 +74,6 @@ let package = Package(
             dependencies: ["MacTAKCore"],
             swiftSettings: [.unsafeFlags(["-Xcc", "-I\(jniInclude)"])]
         ),
-    ],
-    cxxLanguageStandard: .cxx17
-)
-
-if let commoLib {
-    package.products.append(.library(name: "MacTAKComms", targets: ["MacTAKComms"]))
-    package.targets += [
         .target(
             name: "CCommoShim",
             cxxSettings: [.unsafeFlags(["-isystem\(commoInclude)", "-Wall", "-Wextra"])],
@@ -80,5 +82,7 @@ if let commoLib {
         ),
         .target(name: "MacTAKComms", dependencies: ["CCommoShim"]),
         .testTarget(name: "MacTAKCommsTests", dependencies: ["MacTAKComms"]),
-    ]
-}
+    ],
+    cxxLanguageStandard: .cxx17
+)
+
