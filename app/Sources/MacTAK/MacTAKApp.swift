@@ -1,7 +1,8 @@
 // MacTAKApp.swift — the macTAK app (G3): a SwiftUI window around the
 // engine's map, beside a sidebar the milestones fill: the TAK servers
-// (G3.2d), the mesh (G3.3b), contacts (G3.4), chat (G3.5), then coordinates
-// and layers.
+// (G3.2d), the mesh (G3.3b), contacts (G3.4), chat (G3.5), coordinates
+// (G3.6: the Units settings and the self readout over the map), then
+// markers and layers.
 //
 // `--settings-suite NAME` keeps this copy's settings (self details,
 // servers, mesh) in the defaults suite NAME instead of the app's own, its
@@ -29,6 +30,7 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.mesh)
                 .environmentObject(delegate.me)
                 .environmentObject(delegate.chatSelection)
+                .environmentObject(delegate.units)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -41,6 +43,12 @@ struct MacTAKApp: App {
                 .frame(minWidth: 560, minHeight: 360)
         }
         .defaultSize(width: 760, height: 520)
+
+        // ⌘, (G3.6b)
+        Settings {
+            UnitsSettings()
+                .environmentObject(delegate.units)
+        }
     }
 }
 
@@ -57,6 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let connections: ServerConnections
     /// The room the Chat window shows.
     let chatSelection = ChatSelection()
+    /// How positions and altitudes show (G3.6b), and the geoid for MSL.
+    let units: UnitPreferences
     private let watcher: InterfaceWatcher
 
     override init() {
@@ -65,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.mesh = mesh
         let details = SelfDetails(settings: settings, uid: DeviceUID.resolve(suite: suite))
         me = SelfReporter(settings: settings, details: details, locator: LocationService())
+        units = UnitPreferences(settings: settings, geoid: UnitPreferences.bundledGeoid())
         // Chat history and user groups, one file per settings suite (G3.5b).
         let chatStore: ChatStore?
         do {
@@ -115,6 +126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct ContentView: View {
     @EnvironmentObject private var host: EngineHost
+    @EnvironmentObject private var me: SelfReporter
+    @EnvironmentObject private var units: UnitPreferences
 
     var body: some View {
         NavigationSplitView {
@@ -129,6 +142,10 @@ struct ContentView: View {
             ZStack(alignment: .bottom) {
                 MapView(host: host)
                 status
+                if host.state == .running {
+                    SelfReadoutView(me: me, details: me.details, units: units, host: host)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
         }
     }

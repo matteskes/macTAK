@@ -1592,3 +1592,105 @@ readout's heading (true only until there is a magnetic model).
   5.5's, the pole and rounding quirks included.
 - A/B: making the port round only digits above 5 (not HALF_UP) failed
   18 of 5.5's strings. Restored, they pass.
+
+### G3.6b — coordinates in the app (2026-11-17, branch `g3/coord-pane`)
+
+Decided while building (owner, 2026-11-17): **typed positions read
+exactly as 5.5 reads them** (`Coordinates.parse`). Only text in 5.5's
+own spacing, or plain signed numbers, reads; making entry more forgiving
+can come later. The only thing undone first is macOS's own text
+substitution: a smart dash or typographic minus is a minus (trap 13).
+
+#### What changed
+
+- **`UnitPreferences`** (MacTAKComms) keeps the choices under 5.5's keys:
+  `coord_display_pref`, `alt_display_pref`, `alt_unit_pref`,
+  `speed_unit_pref` and `self_coord_action`. The defaults are 5.5's:
+  MGRS, MSL, feet, MPH, pan to self. A value ATAK would have written (a
+  data package's or device profile's) reads back. The geoid comes from
+  the bundle (`app/bundle.sh` stages `egm96-15.grid`). Without it, MSL
+  shows unknown rather than passing HAE off as MSL.
+- **The Settings window** (⌘,) has a Units pane: coordinate format (with
+  an example), altitude reference and units, speed units, and what a
+  click on the self readout does. ADDR isn't offered.
+- **Contacts:** the Me row, a contact's position, and a new Altitude row
+  follow the settings.
+- **My Details:** a placed position is typed in a chosen format (the
+  display format by default), and its altitude in the chosen reference
+  and units. A field left as shown keeps the placed point as it was,
+  since MGRS and UTM floor to the metre. A change of format rewrites
+  what's typed. 5.5's own error messages show.
+- **The self readout** sits in the map's lower right, as 5.5's
+  `SelfCoordOverlayUpdater` lays it out:
+  - the source, green for CoreLocation, or "NO GPS" in red for a placed
+    position
+  - the callsign (cut at 40 characters)
+  - the position (MGRS as `getFormattedString`)
+  - altitude and heading (AngleUtilities' bearing, then T)
+  - speed and accuracy.
+
+  With no location at all, only NO GPS shows. A click pans to self (the
+  default) or cycles the format DD → DM → DMS → UTM → MGRS.
+- **`EngineBridge.panTo(lat, lon)`** (Java and Swift) queues
+  `CameraController.Programmatic.panTo` (animated) on the render thread.
+  It is the map's first programmatic camera call.
+- `SelfReporter` publishes the self track, for the readout.
+- The oracle gains AngleUtilities' headings (`headings.tsv`).
+  `Motion.heading` must match them, plus the T.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+- `make test-coord-golden` PASS, with headings added.
+- `UnitPreferencesTests`: 7 tests, and `CoordinateTests`: 11 tests, all
+  PASS.
+- `make app` PASS: the grid is in `Contents/Resources`, and
+  `check-bundle.py` and the license check pass.
+
+#### To check by hand (owner present)
+
+1. **Settings › Units:** every coordinate format shows its example. The
+   choices survive a relaunch.
+2. **The readout:**
+   - It shows NO GPS with no location.
+   - With CoreLocation or a placed position, it shows the position in
+     each format.
+   - A click pans the map to the position.
+   - With "Changes the coordinate format" set, a click steps DD → DM →
+     DMS → UTM → MGRS.
+3. **My Details:** place yourself by MGRS (e.g. `10S EG 53376 83302`,
+   the Ferry Building), with an altitude in ft MSL. The Me row and the
+   readout show it, and reopening the sheet shows the same text.
+4. **Contacts:** a second copy's position and altitude follow the Units
+   settings.
+
+Two things to know first:
+
+- **Test inside San Francisco.** The bundle's only basemap is
+  `sf-naip-2024.tif`. A pan to anywhere else (DC, say) works, but the
+  map shows black because there's nothing to draw there.
+- **Two copies on one Mac need loopback.** In each copy's Mesh
+  settings, turn on "Hear this Mac's own multicast" and click **Save**:
+  the sheet keeps nothing without Save. The second copy can't hold TCP
+  4242 (its Direct messages waits for the port) unless it is moved, to
+  4252 say. SA doesn't need it.
+
+**By hand, on the dev Mac (owner present, 2026-11-17):**
+
+- **Settings › Units** (1): each picker takes effect at once. The
+  choices are saved under 5.5's keys (`coord_display_pref = UTM`,
+  `alt_display_pref = HAE` read back from the suite). A relaunch wasn't
+  run for this leg; the copies were relaunched earlier in the session.
+- **The readout** (2): NO GPS with no location, the position with a
+  placed one, and a click pans to it. The first try looked like a
+  black-screen bug: the point was in DC, outside the imagery. With
+  "Tapping my coordinates" set to "Changes the coordinate format", each
+  click steps to the next format.
+- **My Details** (3): the Me row and the readout show the typed MGRS
+  and its altitude, and the sheet reopens with the same text. That
+  holds only after a fix found here: the Me row showed the position
+  without the altitude. It now adds the altitude, when known, in the
+  chosen reference and units, on up to two lines.
+- **Contacts** (4): two copies (default suite and `--settings-suite
+  mactak-coord-2`), mesh with loopback on. Each lists the other, and
+  the other's position and Altitude row follow every change in Settings
+  › Units: format, MSL/HAE and ft/m.

@@ -54,4 +54,7 @@ public final class EngineBridge {
     public static void input(int kind, float x, float y, float dx, float dy, double amount) {
         WindowApp.input(kind, x, y, dx, dy, amount);
     }
+
+    /** Centre the map on (lat, lon), animated (G3.6b). */
+    public static void panTo(double lat, double lon) { WindowApp.panTo(lat, lon); }
 }

@@ -5,6 +5,7 @@
 // the mesh: team colour, callsign, role, how long ago, greyed once stale as
 // ATAK greys a stale contact. A row's popover has the rest. The work happens
 // in ContactStore and SelfReporter (MacTAKComms), which the tests drive.
+// Positions and altitudes show as the Units settings say (G3.6b).
 
 import MacTAKComms
 import SwiftUI
@@ -12,21 +13,23 @@ import SwiftUI
 struct ContactsSection: View {
     @EnvironmentObject private var connections: ServerConnections
     @EnvironmentObject private var me: SelfReporter
+    @EnvironmentObject private var units: UnitPreferences
     @State private var editing = false
 
     var body: some View {
         Section {
-            MeRow(details: me.details, location: me.location) { editing = true }
-            ContactRows(store: connections.contacts, servers: connections.servers)
+            MeRow(details: me.details, units: units, location: me.location) { editing = true }
+            ContactRows(store: connections.contacts, servers: connections.servers, units: units)
         } header: {
             Text("Contacts")
         }
-        .sheet(isPresented: $editing) { MyDetailsSheet(details: me.details, me: me) }
+        .sheet(isPresented: $editing) { MyDetailsSheet(details: me.details, me: me, units: units) }
     }
 }
 
 private struct MeRow: View {
     @ObservedObject var details: SelfDetails
+    @ObservedObject var units: UnitPreferences
     let location: SelfEvent.Location?
     let edit: () -> Void
 
@@ -35,7 +38,7 @@ private struct MeRow: View {
             TeamDot(team: details.team, stale: false)
             VStack(alignment: .leading) {
                 Text("\(details.callsign) (me)")
-                Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer()
             Button(action: edit) { Image(systemName: "person.crop.circle") }
@@ -48,13 +51,16 @@ private struct MeRow: View {
         let role = details.customRoleAbbreviation.isEmpty ? details.role : details.customRoleAbbreviation
         guard let location else { return "\(role) · no location" }
         let source = location.source == .provider ? "CoreLocation" : "placed"
-        return "\(role) · \(Coordinates.text(location.point)) · \(source)"
+        let p = location.point
+        let altitude = Altitude.isValid(p.hae) ? " · \(units.altitude(p))" : ""
+        return "\(role) · \(units.position(p))\(altitude) · \(source)"
     }
 }
 
 private struct ContactRows: View {
     @ObservedObject var store: ContactStore
     let servers: [ServerConfig]
+    let units: UnitPreferences
 
     var body: some View {
         if store.contacts.isEmpty {
@@ -63,7 +69,7 @@ private struct ContactRows: View {
         // ages and stale states move with the clock, not with new SA
         TimelineView(.periodic(from: .now, by: 5)) { timeline in
             ForEach(store.contacts) { contact in
-                ContactRow(contact: contact, now: timeline.date, servers: servers)
+                ContactRow(contact: contact, now: timeline.date, servers: servers, units: units)
             }
         }
     }
@@ -73,6 +79,7 @@ private struct ContactRow: View {
     let contact: Contact
     let now: Date
     let servers: [ServerConfig]
+    let units: UnitPreferences
     @State private var showing = false
 
     var body: some View {
@@ -87,7 +94,7 @@ private struct ContactRow: View {
         .contentShape(Rectangle())
         .onTapGesture { showing = true }
         .popover(isPresented: $showing, arrowEdge: .trailing) {
-            ContactDetails(contact: contact, servers: servers).padding().frame(width: 300)
+            ContactDetails(contact: contact, servers: servers, units: units).padding().frame(width: 320)
         }
     }
 
@@ -100,13 +107,15 @@ private struct ContactRow: View {
 private struct ContactDetails: View {
     let contact: Contact
     let servers: [ServerConfig]
+    @ObservedObject var units: UnitPreferences
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, verticalSpacing: 4) {
             row("Callsign", contact.callsign)
             row("Team", contact.group?.team ?? "—")
             row("Role", role)
-            row("Position", contact.point == .zero ? "unknown" : Coordinates.text(contact.point))
+            row("Position", contact.point == .zero ? "unknown" : units.position(contact.point))
+            if contact.point != .zero { row("Altitude", units.altitude(contact.point)) }
             row("Source", source)
             if let track = contact.track, track.speed > 0 {
                 row("Moving", String(format: "%.1f m/s, %.0f°", track.speed, track.course))
@@ -185,13 +194,6 @@ struct TeamDot: View {
         case "Pink": .pink
         default: .gray
         }
-    }
-}
-
-/// Decimal degrees until G3.6 brings MGRS and the other formats.
-enum Coordinates {
-    static func text(_ p: CotPoint) -> String {
-        String(format: "%.5f, %.5f", p.lat, p.lon)
     }
 }
 

@@ -105,6 +105,25 @@ final class CoordinateTests: XCTestCase {
         }
     }
 
+    func testHeadingsAs55WritesThem() throws {
+        let expected = try rows("expected/headings.tsv")
+        XCTAssertGreaterThan(expected.count, 15)
+        for row in expected {
+            // the readout adds T (true north) to AngleUtilities.format
+            XCTAssertEqual(Motion.heading(try XCTUnwrap(Double(row[0]))), row[1] + "T", row[0])
+        }
+        XCTAssertEqual(Motion.heading(.nan), "---°")
+    }
+
+    func testSpeedAndAccuracy() {
+        XCTAssertEqual(SpeedUnits.milesPerHour.format(10), "22 MPH")
+        XCTAssertEqual(SpeedUnits.kilometersPerHour.format(10), "36 km/h")
+        XCTAssertEqual(SpeedUnits.knots.format(10), "19 Kts")
+        XCTAssertEqual(SpeedUnits.metersPerSecond.format(.nan), "--- MPS")
+        XCTAssertEqual(Motion.accuracy(4.5), "+/- 5m")
+        XCTAssertEqual(Motion.accuracy(.nan), "+/- ---m")
+    }
+
     func testGeoidHeightsAreTheEngines() throws {
         let geoid = try Geoid(contentsOf: Self.grid)
         let expected = try rows("expected/geoid.tsv")

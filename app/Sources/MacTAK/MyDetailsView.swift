@@ -6,6 +6,12 @@
 // reports (ReportingRate's strategy and rates). Edits are a draft until
 // Save, which applies them to SelfDetails and SelfReporter at once: a
 // changed callsign, team or role goes out on the next tick.
+//
+// A placed position is typed in any of 5.5's formats (G3.6b), read exactly
+// as 5.5's CoordinateFormatUtilities reads it (owner, 2026-11-17), and its
+// altitude in the Units settings' reference and units. What was placed
+// shows in that format; left as shown, it is kept as it was rather than
+// re-read (MGRS and UTM floor to the metre).
 
 import MacTAKComms
 import SwiftUI
@@ -13,6 +19,7 @@ import SwiftUI
 struct MyDetailsSheet: View {
     @ObservedObject var details: SelfDetails
     @ObservedObject var me: SelfReporter
+    @ObservedObject var units: UnitPreferences
     @Environment(\.dismiss) private var dismiss
 
     @State private var callsign = ""
@@ -24,8 +31,12 @@ struct MyDetailsSheet: View {
     @State private var unitType = SelfEvent.defaultType
     @State private var remarks = ""
     @State private var mode = LocationMode.both
+    @State private var entryFormat = CoordinateFormat.mgrs
     @State private var position = ""
-    @State private var hae = ""
+    @State private var altitude = ""
+    /// What load() showed, so an untouched field keeps the placed point.
+    @State private var shownPosition = ""
+    @State private var shownAltitude = ""
     @State private var reporting = ReportingRate.Settings.atak
     @State private var loaded = false
 
@@ -57,10 +68,14 @@ struct MyDetailsSheet: View {
                     Text("Placed by hand only").tag(LocationMode.manual)
                 }
                 if let locator = me.locator, mode != .manual {
-                    LocatorStatus(locator: locator)
+                    LocatorStatus(locator: locator, units: units)
                 }
-                TextField("My position", text: $position, prompt: Text("lat, lon, e.g. 51.5007, -0.1246"))
-                TextField("Altitude HAE (m)", text: $hae, prompt: Text("optional"))
+                Picker("Format", selection: $entryFormat) {
+                    ForEach(UnitsSettings.formats, id: \.self) { Text($0.fullName).tag($0) }
+                }
+                .onChange(of: entryFormat) { old, new in reformat(from: old, to: new) }
+                TextField("My position", text: $position, prompt: Text(example))
+                TextField("Altitude (\(units.altitudeLabel))", text: $altitude, prompt: Text("optional"))
                 if placedProblem != nil {
                     Text(placedProblem ?? "").font(.caption).foregroundStyle(.red)
                 }
@@ -102,30 +117,81 @@ struct MyDetailsSheet: View {
         TextField(label, value: value, format: .number.grouping(.never)).help("seconds")
     }
 
-    /// .some(nil) when no position is given, nil when what's typed isn't one.
-    private var placed: CotPoint?? {
+    /// Where a position typed in the format would be: 5.5's own example.
+    private var example: String {
+        Coordinates.format(lat: 38.8977, lng: -77.0365, as: entryFormat)
+            .replacingOccurrences(of: "\u{200E}", with: "")
+    }
+
+    /// The placed point, or why there isn't one: .success(nil) when
+    /// nothing is typed.
+    private var placed: Result<CotPoint?, PlacedError> {
         let text = position.trimmingCharacters(in: .whitespaces)
-        let h = hae.trimmingCharacters(in: .whitespaces)
-        if text.isEmpty { return h.isEmpty ? .some(nil) : nil }
-        guard var p = TypedPosition.parse(text) else { return nil }
-        if !h.isEmpty {
-            guard let height = Double(h.replacingOccurrences(of: "\u{2212}", with: "-")) else { return nil }
+        let typedAltitude = altitude.trimmingCharacters(in: .whitespaces)
+        if text.isEmpty {
+            return typedAltitude.isEmpty ? .success(nil) : .failure(.init("Type a position for the altitude"))
+        }
+        var p: CotPoint
+        if position == shownPosition, let kept = me.placed {
+            p = kept
+        } else {
+            do {
+                guard let read = try TypedPosition.parse(text, as: entryFormat) else {
+                    return .failure(.init(unread(text)))
+                }
+                p = read
+            } catch let e as CoordinateError where !e.malformed && !e.description.isEmpty {
+                return .failure(.init(e.description))
+            } catch {
+                return .failure(.init(unread(text)))
+            }
+        }
+        if altitude == shownAltitude, position == shownPosition, let kept = me.placed {
+            p.hae = kept.hae
+        } else if typedAltitude.isEmpty {
+            p.hae = CotPoint.unknown
+        } else {
+            let minus = typedAltitude.replacingOccurrences(of: "\u{2212}", with: "-")
+            guard let value = Double(minus) else { return .failure(.init("Couldn't read “\(typedAltitude)” as an altitude")) }
+            guard let height = units.hae(fromTyped: value, lat: p.lat, lng: p.lon) else {
+                return .failure(.init("Without the geoid an altitude in MSL can't be placed; set Units to HAE"))
+            }
             p.hae = height
         }
-        return .some(p)
+        return .success(p)
+    }
+
+    struct PlacedError: Error {
+        let message: String
+        init(_ message: String) { self.message = message }
+    }
+
+    /// What the field holds, character codes included, so a substituted
+    /// character shows (G3.4c: smart dashes).
+    private func unread(_ text: String) -> String {
+        let codes = text.unicodeScalars.filter { $0.value > 0x7E && $0 != "°" && $0 != "\u{200E}" }
+            .map { String(format: "U+%04X", $0.value) }
+        let shown = "“\(text)”" + (codes.isEmpty ? "" : " (non-ASCII: \(codes.joined(separator: " ")))")
+        return "Couldn't read \(shown) as \(entryFormat.displayName), written as macTAK writes it (e.g. \(example))"
     }
 
     private var placedProblem: String? {
-        if placed == nil {
-            // what the field holds, character codes included, so a substituted
-            // character shows (G3.4c: smart dashes)
-            let codes = position.unicodeScalars.filter { $0.value > 0x7E }
-                .map { String(format: "U+%04X", $0.value) }
-            let shown = "“\(position)”" + (codes.isEmpty ? "" : " (non-ASCII: \(codes.joined(separator: " ")))")
-            return "Couldn't read \(shown) as lat, lon in decimal degrees (−90…90, −180…180); altitude in metres"
+        switch placed {
+        case let .failure(e): return e.message
+        case .success(nil) where mode == .manual: return "Place yourself, or pick a source with CoreLocation"
+        case .success: return nil
         }
-        if mode == .manual, case .some(nil) = placed { return "Place yourself, or pick a source with CoreLocation" }
-        return nil
+    }
+
+    /// Shows what's typed in the new format, when it reads in the old one.
+    private func reformat(from old: CoordinateFormat, to new: CoordinateFormat) {
+        let text = position.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        let p = position == shownPosition ? me.placed : (try? TypedPosition.parse(text, as: old)) ?? nil
+        guard let p else { return }
+        let wasShown = position == shownPosition
+        position = Coordinates.format(lat: p.lat, lng: p.lon, as: new)
+        if wasShown { shownPosition = position }
     }
 
     private var valid: Bool {
@@ -148,10 +214,14 @@ struct MyDetailsSheet: View {
         remarks = details.remarks
         reporting = details.reporting
         mode = me.mode
+        entryFormat = units.coordinateFormat == .address ? .dd : units.coordinateFormat
         if let p = me.placed {
-            position = "\(p.lat), \(p.lon)"
-            hae = p.hae == CotPoint.unknown ? "" : "\(p.hae)"
+            position = Coordinates.format(lat: p.lat, lng: p.lon, as: entryFormat)
+            altitude = units.typedAltitude(hae: p.hae, lat: p.lat, lng: p.lon)
+                .map { String(format: "%.0f", $0) } ?? ""
         }
+        shownPosition = position
+        shownAltitude = altitude
     }
 
     private func save() {
@@ -164,20 +234,21 @@ struct MyDetailsSheet: View {
         details.unitType = unitType.trimmingCharacters(in: .whitespaces)
         details.remarks = remarks.trimmingCharacters(in: .whitespacesAndNewlines)
         details.reporting = reporting
-        if case let .some(p) = placed { me.placed = p }
+        if case let .success(p) = placed { me.placed = p }
         me.mode = mode
     }
 }
 
 private struct LocatorStatus: View {
     @ObservedObject var locator: LocationService
+    @ObservedObject var units: UnitPreferences
 
     var body: some View {
         switch locator.status {
         case .off, .waiting:
             Text("CoreLocation: waiting for a fix…").font(.caption).foregroundStyle(.secondary)
         case .located:
-            Text("CoreLocation: \(locator.fix.map { Coordinates.text($0.point) } ?? "located")")
+            Text("CoreLocation: \(locator.fix.map { units.position($0.point) } ?? "located")")
                 .font(.caption).foregroundStyle(.secondary)
         case .denied:
             Text("CoreLocation is off for macTAK: allow it in System Settings › Privacy & Security › Location Services, or place yourself.")

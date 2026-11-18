@@ -1,5 +1,6 @@
 package mactak.g3;
 
+import com.atakmap.coremap.conversions.AngleUtilities;
 import com.atakmap.coremap.conversions.CoordinateFormat;
 import com.atakmap.coremap.conversions.CoordinateFormatUtilities;
 import com.atakmap.coremap.conversions.Span;
@@ -34,6 +35,8 @@ import java.util.Locale;
  * throws (NumberFormatException, an index out of range).</li>
  * <li>{@code altitudes.tsv} (metres) → {@code expected/altitudes.tsv}:
  * SpanUtilities.format to feet and to metres.</li>
+ * <li>{@code headings.tsv} (degrees) → {@code expected/headings.tsv}:
+ * AngleUtilities.format, as the self readout writes a heading (G3.6b).</li>
  * </ul>
  *
  * <p>U+200E (the left-to-right mark 5.5 puts before each space) is written
@@ -88,11 +91,17 @@ public final class CoordOracle {
                     .append('\t').append(SpanUtilities.format(metres, Span.METER, Span.METER)).append('\n');
         }
 
+        StringBuilder headings = new StringBuilder();
+        for (String[] p : rows(new File(root, "headings.tsv"), 1)) {
+            headings.append(p[0]).append('\t').append(AngleUtilities.format(Double.parseDouble(p[0]))).append('\n');
+        }
+
         int failures = 0;
         failures += result(root, "format.tsv", format.toString(), write);
         failures += result(root, "roundtrip.tsv", roundTrip.toString(), write);
         failures += result(root, "parse.tsv", parse.toString(), write);
         failures += result(root, "altitudes.tsv", altitudes.toString(), write);
+        failures += result(root, "headings.tsv", headings.toString(), write);
         if (!write)
             System.out.println(failures == 0
                     ? "[coord-golden] PASS: 5.5's formatter writes what the expected files say"

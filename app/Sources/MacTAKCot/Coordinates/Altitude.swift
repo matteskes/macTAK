@@ -25,7 +25,7 @@ public enum AltitudeUnits: Int, CaseIterable, Sendable {
 
     public static let `default` = AltitudeUnits.feet
 
-    var abbreviation: String { self == .feet ? "ft" : "m" }
+    public var abbreviation: String { self == .feet ? "ft" : "m" }
 }
 
 public enum Altitude {
@@ -36,12 +36,15 @@ public enum Altitude {
     /// AGL (5.5's off-by-default `alt_display_agl`, which needs elevation
     /// data).
     public static func format(hae: Double, lat: Double, lng: Double, reference: AltitudeReference,
-                              units: AltitudeUnits, geoid: Geoid) -> String {
+                              units: AltitudeUnits, geoid: Geoid?) -> String {
         // UnitPreferences: a point off the earth is R.string.ft_msl2
         guard isValidPosition(lat: lat, lng: lng) else { return "-- ft MSL" }
         switch reference {
         case .msl:
             guard isValid(hae) else { return "-- ft MSL" }
+            // No geoid at all (a broken bundle): unknown, where the engine
+            // would subtract 0 and pass HAE off as MSL.
+            guard let geoid else { return "-- ft MSL" }
             // EGM96.getMSL: UNKNOWN (NaN) when the geoid has no answer,
             // which Math.round writes as 0
             let msl = geoid.offset(lat: lat, lng: lng).map { hae - $0 } ?? .nan
@@ -64,6 +67,7 @@ public enum Altitude {
         abs(lat) <= 90 && abs(lng) <= 180
     }
 
-    /// ConversionFactors.METERS_TO_FEET.
-    static let metersToFeet = 3.280839895
+    /// ConversionFactors.METERS_TO_FEET and FEET_TO_METERS.
+    public static let metersToFeet = 3.280839895
+    public static let feetToMeters = 0.3048
 }

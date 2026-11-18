@@ -43,6 +43,12 @@ final class EngineHost: ObservableObject {
         }
     }
 
+    /// Centre the map on (lat, lon); nothing until the map runs.
+    func panTo(lat: Double, lon: Double) {
+        guard state == .running else { return }
+        engine?.panTo(lat: lat, lon: lon)
+    }
+
     private func startPolling() {
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }

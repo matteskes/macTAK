@@ -58,7 +58,7 @@ public final class EngineBridge {
     private let cls: jclass
     private let configCls: jclass
     private let configCtor: jmethodID
-    private let midStart, midPoll, midExit, midStop, midResize, midVisible, midInput: jmethodID
+    private let midStart, midPoll, midExit, midStop, midResize, midVisible, midInput, midPanTo: jmethodID
     /// Called when a call across JNI raises; defaults to printing and exit(2).
     public var onFailure: (String) -> Never = { msg in
         fputs("EngineBridge: \(msg)\n", stderr)
@@ -77,6 +77,7 @@ public final class EngineBridge {
         midResize = try jni.staticMethod(cls, "resize", "(IID)V")
         midVisible = try jni.staticMethod(cls, "setVisible", "(Z)V")
         midInput = try jni.staticMethod(cls, "input", "(IFFFFD)V")
+        midPanTo = try jni.staticMethod(cls, "panTo", "(DD)V")
     }
 
     /// Start the render thread on `layer` (w x h pixels at dpi) and return.
@@ -150,6 +151,13 @@ public final class EngineBridge {
         a[0].i = jint(g.rawValue); a[1].f = jfloat(x); a[2].f = jfloat(y)
         a[3].f = jfloat(dx); a[4].f = jfloat(dy); a[5].d = jdouble(amount)
         call { try jni.callStaticVoid(cls, midInput, a) }
+    }
+
+    /// Centre the map on (lat, lon), animated, keeping zoom and tilt.
+    public func panTo(lat: Double, lon: Double) {
+        var a = [jvalue](repeating: jvalue(), count: 2)
+        a[0].d = jdouble(lat); a[1].d = jdouble(lon)
+        call { try jni.callStaticVoid(cls, midPanTo, a) }
     }
 
     private func call<T>(_ body: () throws -> T) -> T {
