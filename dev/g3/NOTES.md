@@ -1249,8 +1249,8 @@ Gap 6 (§Plan revision). Three PRs, then a docs PR:
 
 | PR | Branch | What |
 |---|---|---|
-| **a** | `g3/chat-model` | the chat and receipt events in `MacTAKCot`; chat fixtures in the golden test |
-| b | `g3/chat-service` | rooms, sending, receiving, receipts; history and user groups in SQLite |
+| **a** (#200) | `g3/chat-model` | the chat and receipt events in `MacTAKCot`; chat fixtures in the golden test |
+| **b** | `g3/chat-service` | rooms, sending, receiving, receipts; history and user groups in SQLite |
 | c | `g3/chat-pane` | the sidebar's Chat section and the Chat window |
 
 What ATAK 5.5 does (read at the pin, `atak/.../android/chat`):
@@ -1342,3 +1342,71 @@ the access, caveat and releasability preferences (`Undefined`).
 | `make test-cot-golden` | the kernel writes all 18 fixtures as expected (11 new) |
 | A/B | numbering `chatgrp` from `uid1` fails 8 of the 18 chat tests |
 | `swift build` | every product builds |
+
+### G3.5b — rooms, sending, receipts, history (2026-11-17, branch `g3/chat-service`)
+
+#### What changed
+
+- **`ChatStore`** (`MacTAKComms/Chat`) keeps the history and user groups
+  in SQLite through the system's `libsqlite3`. It uses `ChatDatabase`'s
+  table and column names where they carry over, and adds `outgoing` and
+  `seen`. The app opens `Application Support/macTAK/chat.sqlite`, or
+  `chat-<suite>.sqlite` for a `--settings-suite` copy. Deleting a group
+  deletes its history, as `ChatDatabase.removeGroup` does.
+- **`ChatService`** ports `GeoChatService` and the sending half of
+  `ChatManagerMapComponent`:
+  - **Rooms** (`ChatConversation`) come from the contacts:
+    - All Chat Rooms
+    - a room for each of the 14 teams
+    - a room for each role but Team Member, hidden while empty
+    - the user groups
+    - a one-to-one for each contact, and for each past conversation with
+      a contact that has gone.
+
+    Only your own team's and role's rooms take messages.
+  - **Sending:** All Chat Rooms is broadcast (`SendRoute.any`). Any other
+    room is sent to each member's uid through commo, and a user group
+    carries its hierarchy. The line is kept even when no member is there.
+  - **Receiving** does the contact lookups G3.5a left out:
+    - an old GeoChat event is resolved by callsign
+    - a room equal to this client's uid is a one-to-one, filed under the
+      sender
+    - a hierarchy updates the user groups. A group made here never
+      changes; the owner replaces a group's members, anyone else adds to
+      them
+    - a legacy group is made from the `chatgrp`
+    - `deleteChild` removes the group.
+  - **Receipts:** a one-to-one from a known contact is answered with
+    delivered, and with read when `markSeen` shows it. Read is sent once.
+    An incoming receipt moves the status up only.
+  - Sends go out in order on one task. A failure is shown in
+    `lastError`, not thrown.
+- **`ServerConnections`** takes an optional `ChatStore`. With one, every
+  CoT event also goes to its `ChatService`, which sends through the same
+  `CommoClient`. A change to the self details refreshes the rooms.
+  `SelfReporter.chatIdentity` names the sender: the uid, callsign, unit
+  type and self position, plus this Mac's address
+  (`NetworkInterfaces.primaryIPv4`).
+
+#### Unlike 5.5 (decided while building)
+
+- **A sender with no SA gets no receipt.** 5.5 makes a contact from the
+  packet's source address. commo doesn't pass that address on, and
+  `CommoClient.send` reaches only contacts commo knows.
+- **A message heard twice is kept once**, for example over a server and
+  the mesh.
+- **TADIL-J messages are dropped** (out of scope).
+- **A group-delete notice isn't kept as a line.** Its "Deleted group: …"
+  would otherwise open a stray Groups room.
+- **An old GeoChat room named by this client's callsign is a one-to-one.**
+  5.5 looks the callsign up in its contacts, which this client isn't in.
+  It would then file the message under a room named by the callsign.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | passes; `MacTAKCommsTests` 99 tests, 24 new: 16 `ChatServiceTests`, 5 `ChatStoreTests`, 3 `ChatCommsTests` |
+| the G3.5 gate legs (`ChatCommsTests`) | over `fake-cot-server.py`: All Chat Rooms, a team, a role and a user group each reach their members, with no receipts; a one-to-one comes back delivered, then read. On the mesh (lo0): All Chat Rooms on the chat group, and a one-to-one over direct TCP |
+| A/B | sending a delivered receipt in every room fails 6 assertions in `ChatServiceTests` and 12 in the server's room leg |
+| `make app` | the bundle builds; `check-bundle.py` and the license gate pass |

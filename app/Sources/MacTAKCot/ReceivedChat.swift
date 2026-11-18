@@ -33,6 +33,9 @@ public struct ReceivedChat: Sendable, Equatable {
     /// The room's id; nil when an old GeoChat event names it only by
     /// callsign (`chatroom`), which the contacts must resolve.
     public var conversationId: String?
+    /// The room from the event uid (getFallbackConversationId), for an old
+    /// GeoChat event whose `chatroom` names no known contact.
+    public var fallbackConversationId: String
     /// The room's name (`chatroom`), All Streaming read as All Chat Rooms.
     public var chatroom: String
     /// The sender's uid; nil when an old GeoChat event names it only by
@@ -86,6 +89,7 @@ public struct ReceivedChat: Sendable, Equatable {
             // No __chat: the remarks' source is the room and the sender.
             let source = event.detail("remarks")?["source"]
             version = nil
+            fallbackConversationId = ChatRoom.allChatRooms
             conversationId = source; chatroom = source ?? ""
             senderUid = source; senderCallsign = source ?? ""
             destinations = []
@@ -97,12 +101,13 @@ public struct ReceivedChat: Sendable, Equatable {
         let version: Version = chatgrp != nil ? .chat3 : .geoChat
         self.version = version
         chatroom = Self.currentName(chat["chatroom"] ?? "")
+        fallbackConversationId = Self.currentName(Self.fallbackConversationId(event, parts))
 
         switch version {
         case .chat3:
             var id = chat["id"] ?? ""
             if id == "Streaming" { id = ChatRoom.allChatRoomsLegacy }
-            if id.isEmpty { id = Self.fallbackConversationId(event, parts) }
+            if id.isEmpty { id = fallbackConversationId }
             conversationId = Self.currentName(id)
             senderUid = Self.senderUid(event.detail("remarks"), section: uidSenderSection)
         case .geoChat:
