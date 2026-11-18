@@ -1242,3 +1242,103 @@ The device uid file holds `MACTAK-<IOPlatformUUID>`.
   never seen: the warning that would have shown it shipped with the
   fix. Text that people type in this app should be read with that
   substitution in mind.
+
+## G3.5 — GeoChat (plan approved 2026-11-17)
+
+Gap 6 (§Plan revision). Three PRs, then a docs PR:
+
+| PR | Branch | What |
+|---|---|---|
+| **a** | `g3/chat-model` | the chat and receipt events in `MacTAKCot`; chat fixtures in the golden test |
+| b | `g3/chat-service` | rooms, sending, receiving, receipts; history and user groups in SQLite |
+| c | `g3/chat-pane` | the sidebar's Chat section and the Chat window |
+
+What ATAK 5.5 does (read at the pin, `atak/.../android/chat`):
+
+- **A message** is a `b-t-f` event (`GeoChatService.bundleToCot` and
+  `addSendDetails`):
+  - uid `GeoChat.<sender>.<room>.<messageId>`, how `h-g-i-g-o`, stale a
+    day later, at the self position (0,0 when hidden)
+  - `__chat` with the room (`id`, `chatroom`), `messageId`,
+    `senderCallsign`, `parent` and `groupOwner`; a `chatgrp` child lists
+    the sender (`uid0`) and the destinations; a user group adds its
+    members as a `hierarchy`
+  - a `p-p` link to the sender, `__serverdestination`, and `remarks`
+    with the text (`to` only in a one-to-one).
+- **Rooms.** All Chat Rooms is a broadcast (its old name, All Streaming,
+  is still read). One-to-one, team, role and user-made rooms go point to
+  point to each member. A team room has a member for each contact in the
+  team and the parent `TeamGroups`. A role room has one for each contact
+  with the role (no Team Member room). Only your own team's and role's
+  rooms take messages (`setUnmodifiable`).
+- **Receipts** are `b-t-f-d` (delivered) and `b-t-f-r` (read), with
+  `__chatreceipt` in place of `__chat`, the message id as the event uid,
+  and sender and receiver swapped. 5.5 sends them **only in one-to-one
+  chats**: delivered on arrival, read when the line is shown. A status
+  only replaces a lower one, in `ChatLine.Status`'s order. `b-t-f-p`
+  (pending) is in that enum but 5.5 never sends it.
+
+Decided with the plan (owner, 2026-11-17):
+
+1. History and user groups persist in **SQLite**, as `ChatDatabase`
+   does: system `libsqlite3`, in Application Support, one file per
+   settings suite.
+2. Conversations show in a **Chat window** laid out like Messages; the
+   sidebar gets a Chat section with unread counts.
+3. Receipts **match 5.5 exactly**: delivered and read in one-to-one
+   chats only; pending is read and shown, never sent.
+
+Left out: TADIL-J, plugin connectors, attachments, canned replies, and
+the access, caveat and releasability preferences (`Undefined`).
+
+### G3.5a — the chat events (2026-11-17, branch `g3/chat-model`)
+
+#### What changed
+
+- **Sending** (`ChatEvent.swift`):
+  - `OutgoingChat` builds a message event and `ChatReceipt` a delivered
+    or read receipt, both through one port of `addSendDetails`. What 5.5
+    reads from the map, the contacts and the preferences comes in as
+    values: `ChatSender` is this client (uid, callsign, type, position,
+    address), and the service (G3.5b) supplies the room's members,
+    parent and hierarchy.
+  - `ChatStatus` keeps `ChatLine.Status`'s order, and `takes(_:)` is its
+    forward-only rule.
+  - `ChatHierarchy` is a user group's member tree (`Contacts.buildPaths`,
+    `ChatMessageParser.getPaths`).
+- **Receiving** (`ReceivedChat.swift`) ports `ChatMessageParser` as far
+  as the event alone goes:
+  - CHAT3 (with a `chatgrp`) and the older GeoChat. In GeoChat the room
+    and the sender are named by callsign, which the contacts resolve in
+    G3.5b.
+  - The sender's uid comes from WinTAK's `sourceID`, else from `remarks`
+    `source`, else from the event uid. The room falls back to the event
+    uid, and the destinations fall back to `__serverdestination`.
+  - A receipt's message is the event's uid.
+  - `isLegacyGroupCandidate` is 5.5's legacy-group test, short of the
+    contact lookup.
+- **Golden fixtures**: 11 ATAK-shaped chat events in
+  `dev/g3/test/cot-golden/parse`, written by hand from `addSendDetails`.
+  There is one for each room kind, plus a user group with its hierarchy,
+  escaped text, delivered and read receipts, a pending receipt from a
+  peer, an ATAK one-to-one and an old GeoChat event. The kernel's leg
+  round-trips them like the SA fixtures. `ChatTests` holds the builders
+  to them, so what this client sends is ATAK's form, not just
+  self-consistent.
+
+#### Found while building
+
+- **`pending` outranks `read`.** `ChatLine.Status` is `NONE, DELIVERED,
+  READ, PENDING`, and `GeoChatService.onCotEvent` drops a receipt whose
+  ordinal isn't higher. A pending receipt after a read one is therefore
+  taken. That's an upstream quirk, kept (decision 3), and pinned in
+  `testStatusOnlyMovesUpIn55sOrderPendingLast`.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `swift test --filter MacTAKCotTests` | 31 tests pass: 18 chat (new), 11 model and 2 golden |
+| `make test-cot-golden` | the kernel writes all 18 fixtures as expected (11 new) |
+| A/B | numbering `chatgrp` from `uid1` fails 8 of the 18 chat tests |
+| `swift build` | every product builds |

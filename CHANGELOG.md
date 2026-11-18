@@ -37,6 +37,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     unit type, remarks, location source and a placed position, and the
     reporting rate.
 
+- G3.5a, the GeoChat events (`dev/g3/NOTES.md` §G3.5a): messages for
+  All Chat Rooms, one-to-one, team, role and user-made rooms, and
+  delivered and read receipts, built and read as ATAK 5.5 does. Eleven
+  ATAK-shaped chat fixtures join the golden test, and the kernel
+  round-trips them too.
+
 ### Changed
 
 - The device uid is now `MACTAK-<hardware UUID>`, kept outside the
