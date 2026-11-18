@@ -1,19 +1,47 @@
-// MarkerIcons.swift — which icon a marker draws with (G3.7b), as ATAK 5.5's
-// Icon2525cIconAdapter.adapt2525cMarkerIcon picks it, and the colours it
-// uses (teamToColor; CotMarkerRefresher for stale).
+// MarkerIcons.swift — which icon a marker draws with (G3.7b, G3.7c), as
+// ATAK 5.5 picks it (IconsMapAdapter.adaptMarkerIcon, then
+// Icon2525cIconAdapter.adapt2525cMarkerIcon), and the colours it uses
+// (teamToColor; CotMarkerRefresher for stale).
 //
-// A team member (an SA with a team) draws its role's icon, tinted with its
-// team colour: icons/roles/<role>[_human|_nogps].png, the variant from how
-// ("h-*" placed by hand, "m-g-l" no GPS). A custom role draws team.png (5.5
-// draws the role's abbreviation on it: not yet). Anything else, and a team
-// member that asks to show as a symbol (displayAsSymbologyGraphic), draws
-// its type's 2525C symbol, or else 5.5's unknown-type icon for its
-// affiliation. Stale: a team member's tint is GRAY, anything else DKGRAY.
+// The marker's <usericon iconsetpath> goes first: COT_MAPPING_SPOTMAP draws
+// an atom as a dot in its affiliation's colour, a base64:// path is the icon
+// itself, and anything else (2525C, a user icon set) goes on to 5.5's 2525C
+// adapter, its default mapping:
+//   1. readiness=false: the "damaged" icon for its affiliation;
+//   2. a team member draws its role's icon, tinted with its team colour:
+//      icons/roles/<role>[_human|_nogps].png, the variant from how ("h-*"
+//      placed by hand, "m-g-l" no GPS); a custom role draws team.png (5.5
+//      draws the role's abbreviation on it: not yet). This replaces 1.
+//      Otherwise a <color> tints the icon;
+//   3. else its type: icon_filters.xml (IconFilters), then its 2525C symbol,
+//      then 5.5's unknown-type icon for its affiliation, untinted.
+// A team member that asks to show as a symbol (displayAsSymbologyGraphic)
+// skips 2. Stale: a team member's tint is GRAY, anything else DKGRAY.
 //
-// Not yet (5.5 has them): the readiness=false "damaged" icons, jumper
-// above/below icons, the custom role's abbreviation.
+// Not yet (5.5 has them): jumper above/below icons, the custom role's
+// abbreviation, user icon sets (they fall through to 2525C, as 5.5 does when
+// a set isn't installed).
 
 import MacTAKCot
+
+/// What 5.5 reads from a marker to pick its icon.
+public struct MarkerTraits: Sendable, Equatable {
+    public var type: String
+    public var how: String
+    public var group: GroupDetail?
+    /// The <color argb> tint, as Android's signed ARGB; 0 or nil: none.
+    public var color: UInt32?
+    /// <status readiness>; false draws the "damaged" icon.
+    public var ready: Bool
+    /// <usericon iconsetpath>.
+    public var iconsetPath: String?
+
+    public init(type: String, how: String, group: GroupDetail? = nil, color: UInt32? = nil, ready: Bool = true,
+                iconsetPath: String? = nil) {
+        self.type = type; self.how = how; self.group = group
+        self.color = color; self.ready = ready; self.iconsetPath = iconsetPath
+    }
+}
 
 /// What a marker draws: an icon URI the engine loads, its ARGB tint and its size.
 public struct MarkerIcon: Sendable, Equatable {
@@ -98,16 +126,74 @@ public enum MarkerIcons {
     /// A contact's icon. `symbol` gives the icon of a CoT type's 2525C
     /// symbol, or nil when none draws.
     public static func contact(_ contact: Contact, stale: Bool, symbol: (String) -> String?) -> MarkerIcon {
-        let group = contact.group
-        let teamMember = group?.team != nil
-        if teamMember, group?.displayAsSymbologyGraphic != true {
-            let uri = roleIcon(role: group?.role ?? GroupDetail.defaultRole, customRole: group?.customRole,
-                               how: contact.how)
-            return MarkerIcon(uri: uri, color: stale ? staleContact : teamColor(group?.team))
-        }
-        let uri = symbol(contact.type) ?? unknownTypeIcon(contact.type)
-        return MarkerIcon(uri: uri, color: stale ? (teamMember ? staleContact : staleMarker) : white)
+        icon(MarkerTraits(type: contact.type, how: contact.how, group: contact.group), stale: stale, symbol: symbol)
     }
+
+    /// A marker's icon, as 5.5 adapts it. `symbol` gives the icon of a CoT
+    /// type's 2525C symbol, or nil when none draws.
+    public static func icon(_ m: MarkerTraits, stale: Bool, symbol: (String) -> String?) -> MarkerIcon {
+        let teamMember = m.group?.team != nil
+        var icon = iconsetIcon(m) ?? milStd2525CIcon(m, symbol: symbol)
+        if stale { icon.color = teamMember ? staleContact : staleMarker }
+        return icon
+    }
+
+    /// The <usericon iconsetpath> mappings IconsMapAdapter handles itself;
+    /// nil sends the marker on to the 2525C adapter.
+    private static func iconsetIcon(_ m: MarkerTraits) -> MarkerIcon? {
+        guard let path = m.iconsetPath else { return nil }
+        if path.hasPrefix(spotMapMapping) {
+            return spotMapIcon(m)
+        }
+        if path.hasPrefix("base64://") {
+            return MarkerIcon(uri: path)
+        }
+        return nil
+    }
+
+    /// SpotMapIconAdapter for an atom: reference_point.png in its
+    /// affiliation's colour (Color.BLUE, RED, GREEN, else YELLOW).
+    private static func spotMapIcon(_ m: MarkerTraits) -> MarkerIcon? {
+        guard m.type.hasPrefix("a-") else { return nil }
+        let color: UInt32
+        if m.type.hasPrefix("a-f") {
+            color = 0xFF00_00FF
+        } else if m.type.hasPrefix("a-h") {
+            color = 0xFFFF_0000
+        } else if m.type.hasPrefix("a-n") {
+            color = 0xFF00_FF00
+        } else {
+            color = 0xFFFF_FF00
+        }
+        return MarkerIcon(uri: "asset://icons/reference_point.png", color: color)
+    }
+
+    /// Icon2525cIconAdapter.adapt2525cMarkerIcon.
+    private static func milStd2525CIcon(_ m: MarkerTraits, symbol: (String) -> String?) -> MarkerIcon {
+        var uri: String? = m.ready ? nil : damagedIcon(m.type)
+        var color: UInt32? = nil
+        if let group = m.group, group.team != nil, !group.displayAsSymbologyGraphic {
+            uri = roleIcon(role: group.role, customRole: group.customRole, how: m.how)
+            color = teamColor(group.team)
+        } else if let tint = m.color, tint != 0 {
+            color = tint
+        }
+        if let uri = uri ?? IconFilters.icon(forType: m.type) ?? symbol(m.type) {
+            return MarkerIcon(uri: uri, color: color ?? white)
+        }
+        return MarkerIcon(uri: unknownTypeIcon(m.type))
+    }
+
+    /// 5.5's icon for a marker whose readiness is false, by affiliation.
+    public static func damagedIcon(_ type: String) -> String {
+        let suffix = type.hasPrefix("a-h") ? "_hostile"
+            : type.hasPrefix("a-n") ? "_neutral"
+            : type.hasPrefix("a-u") ? "_unknown" : ""
+        return "asset://icons/damaged\(suffix).png"
+    }
+
+    /// The iconsetpath prefix of 5.5's Spot Map mapping (SpotMapPallet).
+    public static let spotMapMapping = "COT_MAPPING_SPOTMAP"
 
     /// 5.5's icon for a type no symbol draws, by affiliation.
     public static func unknownTypeIcon(_ type: String) -> String {

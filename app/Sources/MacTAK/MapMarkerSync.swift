@@ -1,13 +1,16 @@
-// MapMarkerSync.swift — the map's markers follow the contacts and the self
-// position (G3.7b).
+// MapMarkerSync.swift — the map's markers follow the contacts, the CoT
+// markers heard (G3.7c) and the self position (G3.7b).
 //
 // Once a second it works out every marker the map should show, as ATAK 5.5
 // draws them (MarkerIcons), and sends the engine only what changed:
 //   - each contact at its point, its icon, its callsign as the label; grey
 //     once stale, gone once the contact store drops it
+//   - each CoT marker likewise, labelled with its callsign (or uid), in
+//     5.5's icon for its type and details
 //   - the self marker: 5.5's self icon (SelfIcon on the engine side), turned
 //     by the track's course, no label.
-// The tick also catches contacts going stale, which publishes nothing.
+// The tick also catches contacts and markers going stale, which publishes
+// nothing.
 // While the map isn't running nothing is sent; when it starts, everything is
 // (the engine's marker layer starts empty).
 
@@ -31,6 +34,7 @@ final class MapMarkerSync {
 
     private let host: EngineHost
     private let contacts: ContactStore
+    private let cotMarkers: CotMarkerStore
     private let me: SelfReporter
     private var timer: Timer?
     /// What the engine has, by uid; nil until the map takes markers.
@@ -39,9 +43,10 @@ final class MapMarkerSync {
     private var symbolIcons: [String: String?] = [:]
     private var selfIcon: String?
 
-    init(host: EngineHost, contacts: ContactStore, me: SelfReporter) {
+    init(host: EngineHost, contacts: ContactStore, cotMarkers: CotMarkerStore, me: SelfReporter) {
         self.host = host
         self.contacts = contacts
+        self.cotMarkers = cotMarkers
         self.me = me
     }
 
@@ -79,6 +84,11 @@ final class MapMarkerSync {
 
     private func markers(_ engine: EngineBridge, now: Date) -> [String: Marker] {
         var want: [String: Marker] = [:]
+        for m in cotMarkers.markers {
+            let icon = MarkerIcons.icon(m.traits, stale: m.isStale(at: now)) { symbolIcon($0, engine) }
+            want[m.uid] = Marker(lat: m.point.lat, lon: m.point.lon, hae: Self.hae(m.point), icon: icon,
+                                 rotation: nil, label: m.label)
+        }
         for c in contacts.contacts {
             let icon = MarkerIcons.contact(c, stale: c.isStale(at: now)) { symbolIcon($0, engine) }
             want[c.uid] = Marker(lat: c.point.lat, lon: c.point.lon, hae: Self.hae(c.point), icon: icon,

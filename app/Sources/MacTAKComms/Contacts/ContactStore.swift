@@ -76,9 +76,8 @@ public final class ContactStore: ObservableObject {
     /// contact's SA is ignored. Returns whether it was one.
     @discardableResult
     public func receive(_ xml: String, via path: Contact.Path, at now: Date = Date()) -> Bool {
-        guard let event = try? CotEvent.parse(xml, now: now), event.uid != selfUID,
-              event.type.hasPrefix("a-"), let contact = event.detail("contact"),
-              let endpoint = contact["endpoint"], !endpoint.isEmpty else { return false }
+        guard let event = try? CotEvent.parse(xml, now: now), event.uid != selfUID, Self.isContactSA(event),
+              let contact = event.detail("contact"), let endpoint = contact["endpoint"] else { return false }
         let autoStale = max(0, event.stale.timeIntervalSince(event.start) * 1.5)
         var paths = byUID[event.uid]?.paths ?? []
         paths.insert(path)
@@ -92,6 +91,11 @@ public final class ContactStore: ObservableObject {
             lastHeard: now, staleAt: staleAt, removeAt: staleAt.addingTimeInterval(Self.removeAfterStale))
         publish()
         return true
+    }
+
+    /// Whether an event is a contact's SA: an atom with a <contact endpoint>.
+    public static func isContactSA(_ event: CotEvent) -> Bool {
+        event.type.hasPrefix("a-") && event.detail("contact")?["endpoint"]?.isEmpty == false
     }
 
     /// commo reports the contact gone.

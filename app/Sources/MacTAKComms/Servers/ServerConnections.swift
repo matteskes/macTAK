@@ -47,6 +47,8 @@ public final class ServerConnections: ObservableObject {
     public let me: SelfReporter
     /// Who this client hears, on any server or the mesh (G3.4c).
     public let contacts: ContactStore
+    /// The CoT markers it hears that aren't contacts (G3.7c).
+    public let markers: CotMarkerStore
     /// GeoChat, when the app gave a ChatStore (G3.5b).
     public let chat: ChatService?
     private var detailsWatch: AnyCancellable?
@@ -60,7 +62,7 @@ public final class ServerConnections: ObservableObject {
     private var upEndpoints: Set<String> = []
     private var listener: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
-    /// How often stale contacts are checked for removal.
+    /// How often stale contacts and markers are checked for removal.
     static let expiryPeriod: Duration = .seconds(5)
 
     private static let serversKey = "mactak.servers"
@@ -75,6 +77,7 @@ public final class ServerConnections: ObservableObject {
         self.mesh = mesh
         let contacts = ContactStore(selfUID: me.details.uid)
         self.contacts = contacts
+        markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
         let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
         self.chat = chat
         // A new team or role changes which rooms take messages.
@@ -105,6 +108,7 @@ public final class ServerConnections: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.expiryPeriod)
                 self?.contacts.expire()
+                self?.markers.expire()
             }
         }
     }
@@ -121,6 +125,7 @@ public final class ServerConnections: ObservableObject {
         upEndpoints.removeAll()
         for server in servers { status[server.id] = .off }
         contacts.removeAll()
+        markers.removeAll()
     }
 
     // MARK: - the list
@@ -228,6 +233,7 @@ public final class ServerConnections: ObservableObject {
             if let id = server(endpoint) { status[id] = .failed(Self.describe(code)) }
         case let .cot(xml, endpoint):
             contacts.receive(xml, via: server(endpoint).map { .server($0) } ?? .mesh)
+            markers.receive(xml)
             chat?.receive(xml)
         case let .contactRemoved(uid):
             contacts.remove(uid)

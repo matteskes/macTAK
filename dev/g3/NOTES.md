@@ -1891,7 +1891,8 @@ user icon sets.
   `LabelPointStyle` aligned below drew it over the icon.
 - A custom role's abbreviation drawn on `team.png`.
 - Heading arrows on moving contacts.
-- The `readiness=false` damaged icons, and the jumper icons.
+- The jumper icons. (The `readiness=false` damaged icons came with
+  G3.7c.)
 
 #### Traps
 
@@ -1907,3 +1908,99 @@ user icon sets.
   #210 had no resources directory, and `env.sh`'s staleness `find`
   failed the first render step. The ignore file now makes an exception
   for `render/resources/**/*.png`.
+
+### G3.7c — CoT markers on the map (2026-11-18, branch `g3/cot-markers`)
+
+#### What changed
+
+- **`CotMarkerStore`** (`MacTAKComms`) holds the CoT markers the client
+  hears that aren't contacts. These are atoms (`a-…`) with no `<contact
+  endpoint>`, which 5.5's marker importers put on the map.
+  - A contact's SA under a marker's uid removes the marker, and a uid the
+    contacts hold is never a marker. Its own uid is dropped.
+  - Stale and removal are 5.5's, timed by this Mac's clock as contacts
+    are: stale 1.5 × (stale − start) after it arrived, removed 5 minutes
+    later (`expireEverything`, on by default).
+  - A delete task (`t-x-d-d`, `CotDeleteImporter`) makes the marker stale
+    now, or removes it with `<__forcedelete>`.
+  - The label is the callsign, else the uid unless it is a UUID
+    (`MarkerImporter`).
+  - Each event's details replace the last one's. 5.5 keeps a detail an
+    update leaves out; senders resend them all.
+
+  `ServerConnections.markers` feeds it every CoT event, expires it with
+  the contacts and clears it on stop. `MapMarkerSync` draws its markers;
+  a contact wins a uid both hold.
+- **`MarkerIcons.icon(_:stale:symbol:)`** follows 5.5's order for any
+  marker (`MarkerTraits`), and contacts go through it too:
+  1. `<usericon iconsetpath>` (`IconsMapAdapter`): `COT_MAPPING_SPOTMAP`
+     draws an atom as `reference_point.png` in its affiliation's colour;
+     a `base64://` path is the icon itself. Anything else (2525C, a user
+     icon set) goes on to the 2525C adapter, 5.5's default mapping.
+  2. `readiness=false`: the damaged icon for its affiliation.
+  3. A team member: its role icon in its team colour (this replaces 2).
+     Otherwise `<color argb>` (else `value`) tints the icon.
+  4. Its type: `icon_filters.xml`, then its 2525C symbol, then the
+     unknown-type icon, untinted.
+- **`IconFilters`** is 5.5's `filters/icon_filters.xml`, all 63 entries
+  in order. A type matches by prefix, and the last match wins, as
+  `FiltersConfig.lookupFilter` does. A copy of 5.5's file sits in
+  `dev/g3/test/icon-filters`, and a test holds the table to it.
+- **Six more of 5.5's icons**: `ttl-icon[-f|-n|-u].png`, `green_flag.png`
+  (the filters' atom entries) and `reference_point.png` (Spot Map). A test
+  checks that every icon an atom can name ships.
+- **`dev/g3/test/send-markers.py`** sends a typed set of markers to a
+  copy's direct TCP port, one per rule, or a delete task.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+- `CotMarkerStoreTests` 7, `MarkerIconsTests` 11, `ContactStoreTests` 6:
+  PASS.
+- `make app` PASS (the license gate included).
+- **Hand check** (owner, 2026-11-18): one copy, its self position placed
+  at the Ferry Building, `send-markers.py` to its port 4242. The row
+  drew as 5.5 would:
+  - friendly infantry, hostile armour, neutral ground and unknown air as
+    2525C symbols
+  - `a-f-G-E-S-t` as the filters' `ttl-icon-f`, not a symbol
+  - `readiness=false` as the hostile damaged icon
+  - `<color argb=-65536>` tinting the symbol red
+  - the Spot Map mapping as a red dot
+  - `a-u-Q` as the unknown-type icon
+  - the 20-second marker dark grey once stale.
+
+  Resending at a new latitude moved every marker in place. A delete task
+  greyed one marker at once, and a forced one removed another.
+
+#### Not yet (5.5 has them)
+
+- User icon sets (`<usericon>` with a set's uuid): they fall through to
+  2525C, as 5.5 does when the set isn't installed.
+- 2525D/E markers (`__milsym`), with the type picker.
+- 5.5's b-/u- point items (waypoints, SPIs, Spot Map points, CASEVAC):
+  their importers, their filter icons, and the rule that a non-atom is
+  removed as soon as it goes stale.
+- Readiness for contacts: a non-team contact with `readiness=false`
+  still draws its symbol.
+
+#### Found during the hand check (not in this PR)
+
+- **The wheel pans with a Logitech MX Master 3** (#211). Its smooth scrolling
+  reports precise deltas, which `MetalView.scrollWheel` reads as a
+  trackpad: the wheel pans instead of zooming, and there is no way to
+  zoom out with it. Trackpad scrolls carry a gesture phase; a wheel's
+  don't.
+- **The map stopped once while the owner was zooming** (#212) (app launched
+  with `open`, so no log). The UI stayed up; the engine's render thread
+  was gone. Not seen again with the log on.
+- **EGL failed at start (exit 3) once** (#213): `eglCreatePbufferSurface`
+  returned `EGL_BAD_ATTRIBUTE` (0x3004) when the binary was started
+  straight from a background shell, not through LaunchServices. Started
+  with `open`, it drew.
+
+#### Traps
+
+- **18 — commo reads a TCP connection to its direct port as one
+  message.** `send-markers.py` first sent ten events on one connection,
+  and none arrived. It now opens one connection per event, as a TAK
+  client sends to port 4242.
