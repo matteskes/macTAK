@@ -19,6 +19,9 @@ public final class SelfReporter: ObservableObject {
     @Published public var placed: CotPoint? { didSet { if placed != oldValue { placedChanged() } } }
     /// What the self-SA reports now.
     @Published public private(set) var location: SelfEvent.Location?
+    /// How it is moving (still when placed): the self readout's speed and
+    /// heading (G3.6b).
+    @Published public private(set) var track = Track(speed: 0, course: 0)
 
     private let settings: SettingsStore
     /// CoreLocation, when this reporter uses it (its status is the app's).
@@ -82,6 +85,7 @@ public final class SelfReporter: ObservableObject {
     private func resolve() -> (location: SelfEvent.Location?, track: Track) {
         let chosen = SelfLocation.choose(mode: mode, fix: locator?.fix, placed: placed)
         if location != chosen.location { location = chosen.location }
+        if track != chosen.track { track = chosen.track }
         return chosen
     }
 

@@ -64,6 +64,16 @@ final class InputBridge {
         ctx.requestRefresh();
     }
 
+    /**
+     * Any thread: centre the map on (lat, lon), animated, keeping the zoom
+     * and tilt (G3.6b: the self readout's "pan to self", 5.5's
+     * {@code panTo(self.getPoint(), true, false)}).
+     */
+    void panTo(double lat, double lon) {
+        ctx.queueEvent(() -> CameraController.Programmatic.panTo(renderer, new GeoPoint(lat, lon), true));
+        ctx.requestRefresh();
+    }
+
     /** How many gestures of {@code kind} have been applied. Render thread. */
     int applied(int kind) { return applied[kind]; }
 

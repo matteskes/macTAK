@@ -17,6 +17,7 @@
 #     data/                            the map's starting data (--layer etc.)
 #     RUNTIME-MANIFEST.txt             each staged library's source and SHA-256
 #     launch.json                      what the app boots with (LaunchConfig.swift)
+#   Contents/Resources/egm96-15.grid   the EGM96 geoid, for altitudes in MSL (G3.6)
 #   Contents/Resources/licenses/       third-party notices, every component's
 #                                      license text and the GPL-3.0 source offer
 #                                      (dev/deps/stage-licenses.py, check-licenses.py)
@@ -107,6 +108,8 @@ python3 -I "$REPO/dev/deps/brew-pins.py" --manifest "$ENGINE/RUNTIME-MANIFEST.tx
   || { echo "bundle.sh: the bundle would ship unpinned Homebrew libraries" >&2; exit 1; }
 cp -R "$DEPS/share/gdal" "$ENGINE/gdal"
 cp -R "$DEPS/share/proj" "$ENGINE/proj"
+# the EGM96 geoid for altitudes in MSL (G3.6): the engine's own grid
+cp "$HERE/Resources/egm96-15.grid" "$CONTENTS/Resources/egm96-15.grid"
 
 # Third-party notices, every component's license text and the GPL-3.0
 # source offer (docs/license-audit.md): a pure function of licenses/,

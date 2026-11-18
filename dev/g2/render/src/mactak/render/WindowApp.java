@@ -210,6 +210,12 @@ public final class WindowApp {
         if (b != null) b.post(new InputBridge.Gesture(kind, x, y, dx, dy, amount));
     }
 
+    /** Centre the map on (lat, lon), animated; dropped before the view exists (G3.6b). */
+    public static void panTo(double lat, double lon) {
+        final InputBridge b = bridge;
+        if (b != null) b.panTo(lat, lon);
+    }
+
     /** The window's occlusion state; the loop pauses while it is hidden. */
     public static synchronized void setVisible(boolean isVisible) {
         visible = isVisible;

@@ -46,15 +46,25 @@ public struct LocationFix: Sendable, Equatable {
     }
 }
 
-/// A position as people type it (G3.4c): "lat, lon", "lat lon" or
-/// "lat, lon, hae", in decimal degrees, with a typographic minus or N/S/E/W
-/// in place of a sign ("51.5007 N, 0.1246 W"). MGRS and the other formats
-/// come with G3.6.
+/// A position as typed.
+///
+/// - `parse(_:as:)` (G3.6b, My Details): any of 5.5's formats, read exactly
+///   as 5.5's CoordinateFormatUtilities.convert reads it (owner, 2026-11-17:
+///   no more forgiving than 5.5 for now). Only macOS's own substitutions are
+///   undone first: a smart dash or typographic minus is a minus (trap 13).
+/// - `parse(_:)` (G3.4c): "lat, lon" or "lat, lon, hae" in decimal degrees,
+///   how SelfReporter stores a placed position.
 public enum TypedPosition {
     /// U+2010…2015 (hyphens, figure dash, en and em dash), U+2212 (minus),
     /// U+FE63 and U+FF0D (small and full-width hyphen-minus).
     static let dashes: Set<Unicode.Scalar> = ["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}",
                                              "\u{2015}", "\u{2212}", "\u{FE63}", "\u{FF0D}"]
+
+    public static func parse(_ text: String, as format: CoordinateFormat) throws -> CotPoint? {
+        let undashed = String(String.UnicodeScalarView(text.unicodeScalars.map { dashes.contains($0) ? "-" : $0 }))
+        guard let p = try Coordinates.parse(undashed, as: format) else { return nil }
+        return CotPoint(lat: p.lat, lon: p.lng)
+    }
 
     public static func parse(_ text: String) -> CotPoint? {
         let normalized = String(String.UnicodeScalarView(text.unicodeScalars.map { scalar -> Unicode.Scalar in
