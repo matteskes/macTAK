@@ -1,0 +1,52 @@
+# Edge cases for the symbol golden test (G3.7, make test-symbol-golden), on
+# top of one type per 2525C unit, which SymbolOracle takes from the
+# renderer's own table. One CoT type per line.
+#
+# every affiliation letter 5.5 maps: f a n s j k h u, and one it doesn't (p)
+a-f-G-U-C-I
+a-a-G-U-C-I
+a-n-G-U-C-I
+a-s-G-U-C-I
+a-j-G-U-C-I
+a-k-G-U-C-I
+a-h-G-U-C-I
+a-u-G-U-C-I
+a-p-G-U-C-I
+# what TAK clients send most: ground unit combat, the self-SA default
+a-f-G-U-C
+a-f-G
+a-h-G
+a-u-G
+a-n-G
+a-f-A
+a-f-A-M-F
+a-h-A-M-F-Q
+a-f-S
+a-h-U
+a-f-P
+a-f-F
+a-f-G-E-V
+a-h-G-E-V-A-T
+a-h-G-U-C-F
+a-h-G-E-X-M
+a-h-G-U-C-I-d
+# no such symbol at the deepest levels: falls back to a parent
+a-f-G-U-C-I-z
+a-f-G-U-C-I-z-z-z
+a-h-G-U-C-Z
+a-f-G-Z
+# installations (g…i): "h" in position 11
+a-f-G-I
+a-f-G-I-B
+a-h-G-I-R
+# lower case where CoT has it
+a-f-g-u-c-i
+# deeper than 15 characters
+a-f-G-U-C-I-d-x-y-z-q-r-s
+# too short, or not an atom: ""
+a
+a-
+a-f
+b-m-p-s-p-i
+u-d-r
+t-x-c-t

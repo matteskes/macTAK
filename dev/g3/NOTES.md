@@ -1706,3 +1706,120 @@ Two things to know first:
   mactak-coord-2`), mesh with loopback on. Each lists the other, and
   the other's position and Altitude row follow every change in Settings
   › Units: format, MSL/HAE and ft/m.
+
+## G3.7 — markers with 2525 symbols (plan approved 2026-11-18)
+
+Gap 8 (§Plan revision). Three PRs, then a docs PR:
+
+| PR | Branch | What |
+|---|---|---|
+| **a** | `g3/milsym` | missioncommand's 2525 renderers in the app's JVM; `EngineBridge.symbolPng` / `canRenderSymbol`; the CoT type → 2525C mapping in Swift, golden-tested against the kernel |
+| **b** | `g3/map-markers` | the engine's marker layer; contacts drawn as 5.5 draws them, and the self marker; a render test in CI |
+| **c** | `g3/cot-markers` | received non-contact CoT as markers: `icon_filters.xml`, then 2525, then unknown-type; hand check |
+
+Not in G3.7: placing markers by hand, the CoT type picker
+(`CoTSelector`), marker details and the radial menu, tactical graphics,
+user icon sets.
+
+### Spike #171: a public 2525 renderer (2026-11-18)
+
+- **It exists, on Maven Central, under Apache-2.0.** ATAK 5.5's 2525
+  providers run on missioncommand's renderers, and their desktop builds
+  are public: `mil-sym-renderer` 0.1.41 with five sibling jars
+  (`ArmyC2.C2SD`, `sec.web.renderer`) for 2525C, and `mil-sym-java`
+  2.1.5 (`armyc2.c5isr`, with jsvg 1.6.1 and geodesy 1.1.3) for 2525D
+  and E. Both draw headless on JDK 21 (`java.awt`). takkernel's own
+  `gradle/versions.gradle` pins exactly these versions.
+- **5.5's CoT markers are 2525C.** A marker's code comes from
+  `CotUtils.mil2525cFromCotType`: 15 characters, which picks the 2525C
+  provider. `mil-sym-java` 2.1.5 serves only the 2525D and E providers,
+  which the type picker and the drawing tools use.
+- **G1.15 had the cause wrong** (trap 14): the glue doesn't need an
+  artifactory-only renderer; android-port shadowed the public one.
+- **Decided (owner, 2026-11-18):** the renderers run on the app's JVM,
+  called through `EngineBridge`; Swift ports only the type → code
+  mapping; the app still ships no `shared` (decision 2 stands). **Both
+  families ship now**: the 2525C set for markers, and 2525D/E ready for
+  the drawing tools (about 3.5 MB of jars).
+
+### G3.7a — the renderers in the app (2026-11-18, branch `g3/milsym`)
+
+#### What changed
+
+- **Nine jars join the engine's** (`dev/g1/kernel/runtime-classpath.gradle`
+  resolves them at takkernel's own versions into `kernel-dist`;
+  `classpath.sh` already puts android-port last). Each has an
+  `inventory.csv` row and is in `engine-jars.txt`. JSVG's MIT text is its
+  jar's own (`licenses/texts/jsvg-license.txt`); `JavaRendererUtils`
+  carries the project's symbol fonts under its Apache-2.0.
+- **`mactak.engine.Symbols`** draws one code as 5.5's providers would
+  for a marker. A 15-character code goes to the 2525C renderer, anything
+  else to 2525D/E. The icon is 32 pixels times the relative scaling;
+  for 2525C, `KEEPUNITRATIO` and `ICON` are false. Civilian units are
+  filled purple unless hostile or suspect. No modifiers are drawn. A
+  2525C code renders only if 5.5's symbol table would take it (a graphic,
+  or a unit, with a path and not under "Basic Shapes") and it is a point.
+  `EngineBridge.symbolPng(code)` returns PNG bytes, and `canRenderSymbol`
+  says whether that call would draw.
+- **`CotSymbols`** (`MacTAKCot`) is the Swift port of
+  `mil2525cFromCotType`, with its quirks: a lower-case result, the
+  parent-type fallback, the cache, and "" for non-atoms. The app passes
+  `EngineBridge.canRenderSymbol` to it.
+- **The golden test** (`make test-symbol-golden`, CI's `jvm-tests` job)
+  works like this:
+  - takkernel compiles `:shared` with its 2525 glue, with the mil-sym
+    jars ahead of android-port.
+  - It registers 5.5's three providers, as `ATAKUtilities` does.
+  - The kernel's own mapping runs over 900 types: one per 2525C unit,
+    plus `types.txt`'s edge cases.
+  - For every code the mapping can ask about (1,233), it records
+    whether the kernel draws it.
+  - `Symbols` must answer every code the same way. Each symbol both
+    draw (1,200) must match the kernel's pixel for pixel.
+
+  `CotSymbolsTests` holds the Swift port to the same files, answering
+  its renderer's questions from `renderable.tsv`.
+- **`MacTAK --check-symbols`**: the bundle's JVM draws a 2525C and a
+  2525D code, and refuses nonsense; `bundle-runtime.sh` leg 4 runs it.
+- **G2's `android.graphics.Bitmap`** gains the private
+  `(BufferedImage)` constructor and `getAwtBufferedImageImplementation`.
+  takkernel's desktop `BitmapMarshal` reaches for both by reflection
+  (trap 15).
+- **Left out of the plan's PR a:** `get2525DFrom2525C`. It needs the
+  kernel's C→D table and both providers' affiliation and status setters,
+  and nothing in G3.7 draws 2525D. It comes with the type picker.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+- `make test-symbol-golden` PASS: 900 types, 1,233 codes, and 1,200
+  symbols pixel-identical to the kernel's.
+- `CotSymbolsTests` 4 tests PASS. The port matched every type on the
+  first run.
+- `make app` PASS: 59 jars, and the license gate passes.
+  `make test-app-bundle` PASS, leg 4 included.
+
+#### Traps
+
+- **14 — android-port shadows missioncommand's 2525 renderer.**
+  `android-port-3.1.0-g55.jar` (from the 5.5.1.8 apk) carries its own
+  Android-typed `armyc2.c5isr` classes, 326 entries. Ahead of the real
+  jars on a classpath, they break the kernel's desktop glue at compile
+  time; G1.15 read that as "artifactory-only renderer". With the
+  mil-sym jars first, all of `:shared` compiles. The app's classpath
+  already ends with android-port.
+- **15 — the kernel's 2525 providers fail silently on the public
+  android-port.** Three things break, each silently:
+  - The symbol tables open a raw resource through
+    `JavaResourceManager`, which is `new Context()`: android-port's
+    `getResources()` is null.
+  - `BitmapMarshal` builds `android.graphics.Bitmap(BufferedImage)` by
+    reflection, which the substitute lacks, and returns null.
+  - `AtakMapView.getDefaultTextFormat()` dereferences android-port's
+    null `Typeface.DEFAULT`.
+
+  `mil2525cFromCotType` swallows the failures, so every type maps to
+  its root. The oracle runs the providers on G2's Android runtime
+  (`dev/g2/render/src/android`, which the app runs on), with the new
+  `Bitmap` hooks, plus a test-only `Context` and `Resources` that open
+  `:shared`'s `res/raw` (`dev/g3/test/oracle-android`). The app never
+  calls the providers.

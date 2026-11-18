@@ -1,0 +1,54 @@
+// Gradle init script (dev/g3/test/symbol-golden.sh): compiles takkernel's
+// :shared WITH its desktop 2525 glue, adds SymbolOracle.java and the app's
+// mactak/engine/Symbols.java as their own source set, and a task that runs
+// the oracle (G3.7).
+//
+// The glue compiles from public sources once missioncommand's jars come
+// before android-port: the substitute carries Android-typed copies of the
+// renderers' armyc2.c5isr classes that shadow the real ones (spike #171;
+// dev/g1/NOTES.md G1.15 put it down to an artifactory-only renderer). Not
+// used with kernel-tests.gradle, which leaves the glue out.
+//
+// The providers also need a working Android runtime, which android-port
+// (compile stubs) is not. The oracle compiles the app's own one, G2's
+// dev/g2/render/src/android (Bitmap, Typeface, Paint, ...), plus
+// oracle-android/: a test-only Context and Resources that open raw
+// resources, which the providers' symbol tables are built from. The source
+// set's output comes before android-port on the oracle's classpath.
+def milSymFirst = { Collection<File> files ->
+    def sym = files.findAll { f -> ['mil-sym-', 'Java', 'RendererPluginInterface', 'jsvg', 'geodesy'].any { f.name.startsWith(it) } }
+    def port = files.findAll { it.name.startsWith('android-port') }
+    if (sym.isEmpty()) throw new GradleException('no mil-sym jars on :shared\'s classpath')
+    sym + (files - sym - port) + port
+}
+
+allprojects {
+    afterEvaluate { project ->
+        if (project.path != ':shared') return
+        def oracleDir = project.property('macTakOracleDir')
+        def renderSrc = project.property('macTakRenderSrcDir')
+        def outDir = project.property('macTakOutDir')
+
+        project.sourceSets.create('macTakSymbolOracle') { set ->
+            set.java.srcDirs = [oracleDir, renderSrc, oracleDir + '/oracle-android']
+            set.java.include 'SymbolOracle.java', 'mactak/engine/Symbols.java', 'android/**'
+            set.compileClasspath += project.sourceSets.main.output + project.sourceSets.main.compileClasspath
+            set.runtimeClasspath += set.compileClasspath + project.sourceSets.main.runtimeClasspath
+        }
+        [project.tasks.named('compileJava'), project.tasks.named('compileMacTakSymbolOracleJava')].each { task ->
+            task.configure { t ->
+                t.doFirst { t.classpath = project.files(milSymFirst(t.classpath.files)) }
+            }
+        }
+        project.tasks.register('macTakSymbolOracle', JavaExec) {
+            // the reordered classpath is a plain file list, which carries
+            // no build dependency: compile the oracle first
+            dependsOn project.sourceSets.macTakSymbolOracle.classesTaskName
+            classpath = project.files({ milSymFirst(project.sourceSets.macTakSymbolOracle.runtimeClasspath.files) })
+            mainClass = 'mactak.g3.SymbolOracle'
+            jvmArgs '-Djava.awt.headless=true'
+            systemProperty 'mactak.oracle.res', project.file('src/main/res').path
+            args oracleDir + '/symbol-golden', outDir
+        }
+    }
+}

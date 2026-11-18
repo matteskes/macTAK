@@ -20,6 +20,7 @@ struct MacTAKApp: App {
 
     init() {
         if CommandLine.arguments.contains("--check-comms-runtime") { CommsRuntime.checkAndExit() }
+        if CommandLine.arguments.contains("--check-symbols") { SymbolsRuntime.checkAndExit() }
     }
 
     var body: some Scene {

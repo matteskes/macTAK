@@ -738,6 +738,18 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: make test-coord-golden
 
+      - name: Symbol golden test, the kernel's leg (make test-symbol-golden)
+        # takkernel's own CotUtils.mil2525cFromCotType, with ATAK 5.5's 2525
+        # providers on missioncommand's public renderers (:shared compiled
+        # with its 2525 glue, the mil-sym jars ahead of android-port), maps
+        # every type in dev/g3/test/symbol-golden; the answers must match the
+        # committed files, which the shell job's swift test holds the Swift
+        # port to, and the app's renderer must draw the same codes, pixel for
+        # pixel (G3.7a, dev/g3/NOTES.md). Last: it recompiles :shared with
+        # the glue that make test-kernel leaves out.
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-symbol-golden
+
       - name: Upload test reports
         if: always() && needs.changes.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

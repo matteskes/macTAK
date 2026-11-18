@@ -59,6 +59,7 @@ public final class EngineBridge {
     private let configCls: jclass
     private let configCtor: jmethodID
     private let midStart, midPoll, midExit, midStop, midResize, midVisible, midInput, midPanTo: jmethodID
+    private let midSymbolPng, midCanRenderSymbol: jmethodID
     /// Called when a call across JNI raises; defaults to printing and exit(2).
     public var onFailure: (String) -> Never = { msg in
         fputs("EngineBridge: \(msg)\n", stderr)
@@ -78,6 +79,8 @@ public final class EngineBridge {
         midVisible = try jni.staticMethod(cls, "setVisible", "(Z)V")
         midInput = try jni.staticMethod(cls, "input", "(IFFFFD)V")
         midPanTo = try jni.staticMethod(cls, "panTo", "(DD)V")
+        midSymbolPng = try jni.staticMethod(cls, "symbolPng", "(Ljava/lang/String;)[B")
+        midCanRenderSymbol = try jni.staticMethod(cls, "canRenderSymbol", "(Ljava/lang/String;)Z")
     }
 
     /// Start the render thread on `layer` (w x h pixels at dpi) and return.
@@ -158,6 +161,29 @@ public final class EngineBridge {
         var a = [jvalue](repeating: jvalue(), count: 2)
         a[0].d = jdouble(lat); a[1].d = jdouble(lon)
         call { try jni.callStaticVoid(cls, midPanTo, a) }
+    }
+
+    /// A MIL-STD-2525 point symbol as PNG (a 15-character code is 2525C,
+    /// anything else 2525D/E), or nil when it isn't one the renderers draw.
+    public func symbolPNG(_ code: String) -> [UInt8]? {
+        call {
+            let js = try jni.newString(code)
+            defer { jni.deleteLocalRef(js) }
+            var a = [jvalue](repeating: jvalue(), count: 1)
+            a[0].l = js
+            return try jni.callStaticBytes(cls, midSymbolPng, a)
+        }
+    }
+
+    /// Whether `symbolPNG` draws `code`: what 5.5 asks when it maps a CoT type.
+    public func canRenderSymbol(_ code: String) -> Bool {
+        call {
+            let js = try jni.newString(code)
+            defer { jni.deleteLocalRef(js) }
+            var a = [jvalue](repeating: jvalue(), count: 1)
+            a[0].l = js
+            return try jni.callStaticBool(cls, midCanRenderSymbol, a)
+        }
     }
 
     private func call<T>(_ body: () throws -> T) -> T {

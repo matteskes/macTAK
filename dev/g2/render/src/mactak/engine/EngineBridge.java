@@ -57,4 +57,10 @@ public final class EngineBridge {
 
     /** Centre the map on (lat, lon), animated (G3.6b). */
     public static void panTo(double lat, double lon) { WindowApp.panTo(lat, lon); }
+
+    /** A MIL-STD-2525 point symbol as PNG, or null (G3.7, {@link Symbols}). */
+    public static byte[] symbolPng(String code) { return Symbols.renderPng(code); }
+
+    /** Whether {@link #symbolPng} draws {@code code}. */
+    public static boolean canRenderSymbol(String code) { return Symbols.canRender(code); }
 }
