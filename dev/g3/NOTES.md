@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.5 done — 2026-11-17): servers, identity, mesh, SA and GeoChat
+## State (G3.6 done — 2026-11-17): servers, identity, mesh, SA, GeoChat and coordinates
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -63,8 +63,20 @@ G3.5 made it a GeoChat client, as ATAK 5.5 chats:
   sidebar. Two copies checked every room kind, the receipts, user groups
   and the history by hand (G3.5c, #202).
 
-Next: G3.6, coordinates: MGRS (the default), DD, DM, DMS and UTM, and
-altitude in MSL or HAE (§Plan revision, gap 7).
+G3.6 gave it ATAK's coordinates:
+
+- **The coordinate math is Swift** (`MacTAKCot`): MGRS (the default),
+  UTM, DD, DM and DMS, written and read as 5.5 does, and altitude in
+  MSL or HAE from the engine's EGM96 grid. 5.5's own formatter and the
+  engine's geoid code are the golden test's oracles (G3.6a, #206).
+- **The app shows them as set:** a Units pane in Settings under ATAK's
+  preference keys; contacts and My Details in the chosen format and
+  altitude; positions typed in any format, read exactly as 5.5 reads
+  them; and a self readout over the map that pans to you or cycles the
+  format. Two copies checked it all by hand (G3.6b, #207).
+
+Next: G3.7, markers with MIL-STD-2525 symbols, whose renderer waits on
+spike #171 (§Plan revision, gap 8).
 
 ## The plan (approved 2026-11-13)
 
@@ -1483,8 +1495,8 @@ Gap 7 (§Plan revision). Two PRs, then a docs PR:
 
 | PR | Branch | What |
 |---|---|---|
-| **a** | `g3/coord-model` | MGRS, UTM, DD, DM and DMS, the geoid and altitude in `MacTAKCot`; the coordinate golden test |
-| **b** | `g3/coord-pane` | the Units settings, positions in every format in the app, typed positions in any format, the self readout over the map |
+| **a** (#206) | `g3/coord-model` | MGRS, UTM, DD, DM and DMS, the geoid and altitude in `MacTAKCot`; the coordinate golden test |
+| **b** (#207) | `g3/coord-pane` | the Units settings, positions in every format in the app, typed positions in any format, the self readout over the map |
 
 What ATAK 5.5 does (read at the pin):
 

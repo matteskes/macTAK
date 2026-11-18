@@ -62,7 +62,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A golden test with 5.5's own formatter and the engine's geoid code
     as the oracles (`make test-coord-golden`, CI's `jvm-tests` job),
     and the Swift port held to the same files (`make test-app`).
-- G3.6b, coordinates in the app (`dev/g3/NOTES.md` §G3.6b):
+- G3.6b, coordinates in the app, which completes G3.6, coordinates
+  (`dev/g3/NOTES.md` §G3.6b):
   - A Units pane in Settings (⌘,): the coordinate format, the altitude
     reference and units, speed units, and what a click on the self
     readout does. The choices are saved under ATAK's own preference keys.
