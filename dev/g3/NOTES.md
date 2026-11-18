@@ -1657,8 +1657,40 @@ substitution: a smart dash or typographic minus is a minus (trap 13).
    - A click pans the map to the position.
    - With "Changes the coordinate format" set, a click steps DD → DM →
      DMS → UTM → MGRS.
-3. **My Details:** place yourself by MGRS (e.g. `18S UJ 23487 06483`),
-   with an altitude in ft MSL. The Me row and the readout show it, and
-   reopening the sheet shows the same text.
+3. **My Details:** place yourself by MGRS (e.g. `10S EG 53376 83302`,
+   the Ferry Building), with an altitude in ft MSL. The Me row and the
+   readout show it, and reopening the sheet shows the same text.
 4. **Contacts:** a second copy's position and altitude follow the Units
    settings.
+
+Two things to know first:
+
+- **Test inside San Francisco.** The bundle's only basemap is
+  `sf-naip-2024.tif`. A pan to anywhere else (DC, say) works, but the
+  map shows black because there's nothing to draw there.
+- **Two copies on one Mac need loopback.** In each copy's Mesh
+  settings, turn on "Hear this Mac's own multicast" and click **Save**:
+  the sheet keeps nothing without Save. The second copy can't hold TCP
+  4242 (its Direct messages waits for the port) unless it is moved, to
+  4252 say. SA doesn't need it.
+
+**By hand, on the dev Mac (owner present, 2026-11-17):**
+
+- **Settings › Units** (1): each picker takes effect at once. The
+  choices are saved under 5.5's keys (`coord_display_pref = UTM`,
+  `alt_display_pref = HAE` read back from the suite). A relaunch wasn't
+  run for this leg; the copies were relaunched earlier in the session.
+- **The readout** (2): NO GPS with no location, the position with a
+  placed one, and a click pans to it. The first try looked like a
+  black-screen bug: the point was in DC, outside the imagery. With
+  "Tapping my coordinates" set to "Changes the coordinate format", each
+  click steps to the next format.
+- **My Details** (3): the Me row and the readout show the typed MGRS
+  and its altitude, and the sheet reopens with the same text. That
+  holds only after a fix found here: the Me row showed the position
+  without the altitude. It now adds the altitude, when known, in the
+  chosen reference and units, on up to two lines.
+- **Contacts** (4): two copies (default suite and `--settings-suite
+  mactak-coord-2`), mesh with loopback on. Each lists the other, and
+  the other's position and Altitude row follow every change in Settings
+  › Units: format, MSL/HAE and ft/m.

@@ -38,7 +38,7 @@ private struct MeRow: View {
             TeamDot(team: details.team, stale: false)
             VStack(alignment: .leading) {
                 Text("\(details.callsign) (me)")
-                Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer()
             Button(action: edit) { Image(systemName: "person.crop.circle") }
@@ -51,7 +51,9 @@ private struct MeRow: View {
         let role = details.customRoleAbbreviation.isEmpty ? details.role : details.customRoleAbbreviation
         guard let location else { return "\(role) · no location" }
         let source = location.source == .provider ? "CoreLocation" : "placed"
-        return "\(role) · \(units.position(location.point)) · \(source)"
+        let p = location.point
+        let altitude = Altitude.isValid(p.hae) ? " · \(units.altitude(p))" : ""
+        return "\(role) · \(units.position(p))\(altitude) · \(source)"
     }
 }
 
