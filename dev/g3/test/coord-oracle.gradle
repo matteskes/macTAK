@@ -1,0 +1,26 @@
+// Gradle init script (dev/g3/test/coord-golden.sh): adds CoordOracle.java
+// and ATAK 5.5's own CoordinateFormat + CoordinateFormatUtilities (from the
+// app at the pin, which the kernel doesn't carry) to takkernel's :shared as
+// a source set on :shared's test classpath, and a task that runs the oracle
+// over the coordinate fixtures (dev/g3/NOTES.md, G3.6a). Used with
+// dev/g1/kernel/kernel-tests.gradle, as cot-oracle.gradle is.
+allprojects {
+    afterEvaluate { project ->
+        if (project.path != ':shared') return
+        def oracleDir = project.property('macTakOracleDir')
+        def appSrcDir = project.property('macTakAppSrcDir')
+        def goldenDir = project.property('macTakGoldenDir')
+        def mode = project.findProperty('macTakGoldenMode') ?: 'check'
+        project.sourceSets.create('macTakCoordOracle') { set ->
+            set.java.srcDirs = [oracleDir, appSrcDir]
+            set.java.include 'CoordOracle.java', 'com/atakmap/coremap/conversions/CoordinateFormat*.java'
+            set.compileClasspath += project.sourceSets.main.output + project.sourceSets.test.compileClasspath
+            set.runtimeClasspath += set.compileClasspath + project.sourceSets.test.runtimeClasspath
+        }
+        project.tasks.register('macTakCoordOracle', JavaExec) {
+            classpath = project.sourceSets.macTakCoordOracle.runtimeClasspath
+            mainClass = 'mactak.g3.CoordOracle'
+            args goldenDir, mode
+        }
+    }
+}

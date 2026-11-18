@@ -1476,3 +1476,119 @@ and in both copies' `chat-*.sqlite`:
      it from both.
 6. **History:** both copies quit and relaunched with their All Chat Rooms
    and one-to-one lines.
+
+## G3.6 — coordinates (plan approved 2026-11-17)
+
+Gap 7 (§Plan revision). Two PRs, then a docs PR:
+
+| PR | Branch | What |
+|---|---|---|
+| **a** | `g3/coord-model` | MGRS, UTM, DD, DM and DMS, the geoid and altitude in `MacTAKCot`; the coordinate golden test |
+| **b** | `g3/coord-pane` | the Units settings, positions in every format in the app, typed positions in any format, the self readout over the map |
+
+What ATAK 5.5 does (read at the pin):
+
+- **`CoordinateFormat`** (app): MGRS (0, the default), DD, DM, DMS, ADDR
+  and UTM, under the `coord_display_pref` key. An unknown name reads as
+  MGRS.
+- **`CoordinateFormatUtilities`** (app) writes and reads each format. It
+  puts N/S and E/W in place of signs and a left-to-right mark (U+200E)
+  before each space, and rounds HALF_UP with `DecimalFormat`. Its parsing
+  is the reverse; it returns null for some bad input and throws for the
+  rest. It uses only kernel classes.
+- **`MGRSPoint`** and **`UTMPoint`** (kernel, pure Java) cover WGS84
+  between 80°S and 84°N, with no UPS. Norway's 32V and Svalbard's
+  31X–37X zones are special-cased.
+- **Altitude** (`UnitPreferences`): `alt_display_pref` is MSL (the
+  default) or HAE, and `alt_unit_pref` is feet (the default) or metres.
+  The strings come from `EGM96.formatMSL` and `formatHAE`, through
+  `SpanUtilities.format`.
+- **The geoid.** `EGM96.getOffset` calls
+  `ElevationManager_getGeoidHeight`. 5.5 configures no `egm96-file`, so it
+  always falls through to the WMM grid compiled into the engine
+  (`formats/wmm/EGM9615.h`: 721 × 1441 floats at 15′), interpolated
+  bilinearly by `MAG_GetGeoidHeight`. The WMM code is public domain.
+- **The self readout** (`SelfCoordOverlayUpdater`) shows the location
+  source, the callsign, the position in the chosen format, the altitude,
+  heading, speed and accuracy. A tap does what `self_coord_action` says:
+  pan to self (the default) or cycle the format DD → DM → DMS → UTM →
+  MGRS.
+
+Decided with the plan (owner, 2026-11-17):
+
+1. **The geoid grid is committed**, as `app/Resources/egm96-15.grid`: 4.2
+   MB of float32s, written from the engine's own `EGM9615.h`. CI checks
+   that it still matches the pin. App builds then need no ATAK source.
+2. **The self readout goes over the map in G3.6**, not with G3.7's self
+   marker.
+
+Left out: ADDR, which needs a geocoder; AGL (`alt_display_agl`, off by
+default), which needs elevation data; and the north reference for the
+readout's heading (true only until there is a magnetic model).
+
+### G3.6a — coordinates in `MacTAKCot` (2026-11-17, branch `g3/coord-model`)
+
+#### What changed
+
+- **`MacTAKCot/Coordinates`**, ported from 5.5 at the pin:
+  - `UTMPoint` and `MGRSPoint`, from the kernel's classes. The USGS
+    series are copied term by term, because floating point isn't
+    associative and the strings floor to the metre.
+  - `CoordinateFormat`, and `Coordinates.format` and `Coordinates.parse`
+    from `CoordinateFormatUtilities`: the long and short strings, and
+    convert for each format, with 5.5's error messages.
+  - `Geoid`: `MAG_GetGeoidHeight` line for line, over the committed grid.
+  - `Altitude`: MSL or HAE, in feet or metres, with 5.5's strings.
+  - `JavaNumber`: the Java rules the strings depend on.
+    - `DecimalFormat` rounds the double's exact value HALF_UP, so 1.005
+      is 1.00. A negative value that rounds to zero keeps its sign
+      ("-0.00").
+    - `Math.round` takes halves up, so −2.5 is −2, where Swift's
+      `.toNearestOrAwayFromZero` gives −3.
+    - `Double.parseDouble` takes "2d" and "Infinity", but not "inf".
+    - The `(int)` cast never traps.
+- **The coordinate golden test**, `dev/g3/test/coord-golden`. Fixtures:
+  - points: 5.5's own test points, every quadrant, Norway and Svalbard,
+    the band edges and beyond, the poles, the antimeridian, ±0, and
+    rounding edges
+  - typed text: each format, good and bad
+  - altitudes
+  - extra geoid points: the grid's edges, NaN, off the earth.
+
+  Two oracles write the expected files, both at the pin
+  (`make test-coord-golden`, CI's `jvm-tests` job):
+  - `CoordOracle.java` compiles **5.5's own** `CoordinateFormat` and
+    `CoordinateFormatUtilities` (the app's, from `src/`) against the
+    kernel jars. The job's sparse checkout gains that one app folder.
+    Locally, the script reads the files from `src/`'s git objects.
+  - `geoid-oracle.cpp` is built from the engine's `formats/wmm`
+    unchanged. It writes the grid, which must equal the committed file,
+    and the heights at the fixture points.
+
+  `CoordinateTests` (`make test-app`) holds the Swift port to every
+  expected file. Strings must match exactly; positions and heights must
+  agree to 1e-9 (relative above 1).
+
+#### What 5.5 does that the port keeps
+
+- The poles have no UPS: 90°N writes `31X EV 00000 97964`. Reading UTM
+  back at 90°S gives a latitude near −8 × 10³³.
+- Minutes and seconds round up to 60, so 72.4999595°N writes DMS short
+  as `29' 60"`.
+- Typed DD, DM and DMS read only 5.5's own spacing.
+  `N 38.89770° W 77.03650°`, typed with plain spaces, is null. Only the
+  form with left-to-right marks, or plain signed numbers, reads.
+- A bad band or square letter in MGRS reads as a position, not an
+  error: `18IUJ12345678` reads as 86°S.
+- An unknown or out-of-range altitude shows "-- ft MSL", even with
+  metres set.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+- `make test-coord-golden`: 4 expected files from 5.5's formatter, plus
+  the grid and 50 geoid heights from the engine's code, all PASS.
+- `swift test --filter MacTAKCotTests`: 40 tests, including
+  `CoordinateTests`' 9, all PASS on the first run. Every string matched
+  5.5's, the pole and rounding quirks included.
+- A/B: making the port round only digits above 5 (not HALF_UP) failed
+  18 of 5.5's strings. Restored, they pass.

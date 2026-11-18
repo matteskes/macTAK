@@ -54,6 +54,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`dev/g3/NOTES.md` §G3.5c): a Messages-style
   window with every GeoChat room, unread counts in the sidebar, receipts
   on your own one-to-one messages, and a New Group sheet.
+- G3.6a, coordinates (`dev/g3/NOTES.md` §G3.6a):
+  - MGRS, UTM, DD, DM and DMS, written and read as ATAK 5.5 writes and
+    reads them, and altitude in MSL or HAE, in feet or metres.
+  - MSL uses the engine's own EGM96 geoid grid, committed as
+    `app/Resources/egm96-15.grid`.
+  - A golden test with 5.5's own formatter and the engine's geoid code
+    as the oracles (`make test-coord-golden`, CI's `jvm-tests` job),
+    and the Swift port held to the same files (`make test-app`).
 
 ### Changed
 

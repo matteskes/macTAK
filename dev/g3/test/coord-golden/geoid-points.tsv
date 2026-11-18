@@ -1,0 +1,10 @@
+# lat<TAB>lon: geoid heights only (geoid-oracle.cpp), beside points.tsv
+89.9	0
+-89.9	-179.9
+0	359.99
+0	-0.001
+45	-180
+45	180
+10.125	20.375
+-90.0001	0
+nan	0
