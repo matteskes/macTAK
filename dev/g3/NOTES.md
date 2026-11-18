@@ -1823,3 +1823,87 @@ user icon sets.
   `Bitmap` hooks, plus a test-only `Context` and `Resources` that open
   `:shared`'s `res/raw` (`dev/g3/test/oracle-android`). The app never
   calls the providers.
+
+### G3.7b — markers on the map (2026-11-18, branch `g3/map-markers`)
+
+#### What changed
+
+- **`mactak.render.MapMarkers`**: the map's marker layer. It is an
+  in-memory `FeatureSetDatabase2` under its own `FeatureLayer3`, which
+  `WindowApp` adds after the data layers so markers draw on top.
+  - Each marker is one feature, as 5.5's `GLMarkerFeature.toFeature`
+    writes it: a point clamped to the ground, at its altitude (0 when
+    unknown).
+  - The point carries an `IconPointStyle` with the icon URI, tint, size
+    and rotation.
+  - The feature's name is the label.
+
+  `EngineBridge.putMarker`, `removeMarker` and `markersReady` drive it.
+  Markers sent before the map exists are dropped, as `panTo`'s calls
+  are.
+- **`MarkerIcons`** (`MacTAKComms`) picks the icon as
+  `Icon2525cIconAdapter.adapt2525cMarkerIcon` does:
+  - A team member draws its role's icon
+    (`icons/roles/<role>[_human|_nogps].png`) tinted with
+    `teamToColor`'s exact colour. A custom role draws `team.png`.
+  - Anything else, and a team member shown as a symbol, draws its type's
+    2525C symbol (G3.7a) as a `base64://` PNG, or else
+    `unknown-type[-f|-n|-h|-u].png`.
+  - Stale is `CotMarkerRefresher`'s tint: GRAY for a team member, DKGRAY
+    otherwise.
+
+  The contacts list's team dots now use the same exact colours.
+- **The self marker** is `LocationMapComponent.refreshGpsIcon`'s icon:
+  - `ic_self_tintable` tinted 0xff44b2dd under `ic_self_stroke_tintable`
+    in white, flattened, 32 × 43, sent as `base64://`
+    (`mactak.render.SelfIcon`, `EngineBridge.selfIconUri`).
+  - It turns with the track's course, and has no label.
+- **`MapMarkerSync`** (the app) works out the wanted markers once a
+  second: every contact, and the self position. It sends the engine only
+  what changed, and everything again when the map starts. The tick also
+  catches contacts going stale, which publishes nothing.
+- **5.5's icons** are copied from the pin into
+  `dev/g2/render/resources/assets/icons` (136 KB): the role icons, the
+  unknown-type and damaged icons, and the two self drawables.
+  `render/env.sh` copies `resources/` into the classes, so
+  `asset://icons/...` resolves through `ClasspathAssets` as 5.5's URIs
+  are written.
+- **G2's `android.util.Base64`** is real now (trap 16).
+- **`RenderSmoke --marker LAT,LON,ICON[,AARRGGBB]`** (ICON is a URI or
+  `self`). Markers count as content, so the render waits for their icons.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+- `dev/g2/render/test/markers.sh` PASS (CI's render job, `make
+  test-render`):
+  - A cyan team marker draws #00ffff over its point, and the self marker
+    5.5's #44b2dd.
+  - The ground between them stays black.
+  - With no markers, the same checks fail.
+- `MarkerIconsTests`: 5 tests PASS.
+- `make app` PASS. In the app, the placed self position shows 5.5's
+  self marker (owner looked, 2026-11-18).
+
+#### Not yet (5.5 has them)
+
+- **Labels:** 5.5's label manager puts the callsign under the marker.
+  The engine draws a feature's name above it and to the right. A
+  `LabelPointStyle` aligned below drew it over the icon.
+- A custom role's abbreviation drawn on `team.png`.
+- Heading arrows on moving contacts.
+- The `readiness=false` damaged icons, and the jumper icons.
+
+#### Traps
+
+- **16 — android-port's `android.util.Base64` is a stub.** The engine's
+  `base64://` icon loader (`GLBitmapLoader.Base64BitmapLoaderSpi`)
+  decodes with it (`URL_SAFE | NO_WRAP`). Every such icon failed with
+  "failed to handle URI base64://…", and the marker drew as a plain
+  white dot. G2's runtime now has `android/util/Base64.java` on
+  `java.util.Base64`, and the encoder must use the URL-safe alphabet.
+  `markers.sh` fails on any "failed to handle URI" line.
+- **17 — `dev/g2/.gitignore` ignores every `*.png`.** The icons in
+  `dev/g2/render/resources` were never committed: the first CI run of
+  #210 had no resources directory, and `env.sh`'s staleness `find`
+  failed the first render step. The ignore file now makes an exception
+  for `render/resources/**/*.png`.

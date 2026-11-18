@@ -60,6 +60,7 @@ public final class EngineBridge {
     private let configCtor: jmethodID
     private let midStart, midPoll, midExit, midStop, midResize, midVisible, midInput, midPanTo: jmethodID
     private let midSymbolPng, midCanRenderSymbol: jmethodID
+    private let midPutMarker, midRemoveMarker, midMarkersReady, midSelfIconUri: jmethodID
     /// Called when a call across JNI raises; defaults to printing and exit(2).
     public var onFailure: (String) -> Never = { msg in
         fputs("EngineBridge: \(msg)\n", stderr)
@@ -81,6 +82,11 @@ public final class EngineBridge {
         midPanTo = try jni.staticMethod(cls, "panTo", "(DD)V")
         midSymbolPng = try jni.staticMethod(cls, "symbolPng", "(Ljava/lang/String;)[B")
         midCanRenderSymbol = try jni.staticMethod(cls, "canRenderSymbol", "(Ljava/lang/String;)Z")
+        midPutMarker = try jni.staticMethod(cls, "putMarker",
+                                            "(Ljava/lang/String;DDDLjava/lang/String;IIIDLjava/lang/String;)V")
+        midRemoveMarker = try jni.staticMethod(cls, "removeMarker", "(Ljava/lang/String;)V")
+        midMarkersReady = try jni.staticMethod(cls, "markersReady", "()Z")
+        midSelfIconUri = try jni.staticMethod(cls, "selfIconUri", "(II)Ljava/lang/String;")
     }
 
     /// Start the render thread on `layer` (w x h pixels at dpi) and return.
@@ -161,6 +167,46 @@ public final class EngineBridge {
         var a = [jvalue](repeating: jvalue(), count: 2)
         a[0].d = jdouble(lat); a[1].d = jdouble(lon)
         call { try jni.callStaticVoid(cls, midPanTo, a) }
+    }
+
+    /// Add or move a marker (G3.7b): `hae` nil draws it at 0, `rotation`
+    /// nil leaves the icon upright (degrees clockwise from north), `label`
+    /// nil draws none. Dropped until `markersReady`.
+    public func putMarker(uid: String, lat: Double, lon: Double, hae: Double?, iconURI: String,
+                          color: UInt32, width: Int, height: Int, rotation: Double?, label: String?) {
+        call {
+            let jUid = try jni.newString(uid), jIcon = try jni.newString(iconURI)
+            let jLabel = try label.map { try jni.newString($0) }
+            defer { jni.deleteLocalRef(jUid); jni.deleteLocalRef(jIcon); jni.deleteLocalRef(jLabel) }
+            var a = [jvalue](repeating: jvalue(), count: 10)
+            a[0].l = jUid; a[1].d = lat; a[2].d = lon; a[3].d = hae ?? .nan
+            a[4].l = jIcon; a[5].i = jint(bitPattern: color); a[6].i = jint(width); a[7].i = jint(height)
+            a[8].d = rotation ?? .nan; a[9].l = jLabel
+            try jni.callStaticVoid(cls, midPutMarker, a)
+        }
+    }
+
+    public func removeMarker(uid: String) {
+        call {
+            let jUid = try jni.newString(uid)
+            defer { jni.deleteLocalRef(jUid) }
+            var a = [jvalue](repeating: jvalue(), count: 1)
+            a[0].l = jUid
+            try jni.callStaticVoid(cls, midRemoveMarker, a)
+        }
+    }
+
+    /// Whether the map takes markers yet; resend them all once it does.
+    public var markersReady: Bool { call { try jni.callStaticBool(cls, midMarkersReady) } }
+
+    /// The self marker's icon in these colours, as 5.5 builds it (a base64:// URI).
+    public func selfIconURI(fill: UInt32, stroke: UInt32) -> String {
+        call {
+            var a = [jvalue](repeating: jvalue(), count: 2)
+            a[0].i = jint(bitPattern: fill); a[1].i = jint(bitPattern: stroke)
+            guard let uri = try jni.callStaticString(cls, midSelfIconUri, a) else { throw JNIError("no self icon") }
+            return uri
+        }
     }
 
     /// A MIL-STD-2525 point symbol as PNG (a 15-character code is 2525C,

@@ -58,6 +58,25 @@ public final class EngineBridge {
     /** Centre the map on (lat, lon), animated (G3.6b). */
     public static void panTo(double lat, double lon) { WindowApp.panTo(lat, lon); }
 
+    /**
+     * Add or move a marker (G3.7b): {@code hae} NaN draws it at 0,
+     * {@code rotation} NaN leaves the icon upright, {@code label} null draws
+     * none. Dropped until {@link #markersReady()}.
+     */
+    public static void putMarker(String uid, double lat, double lon, double hae,
+                                 String iconUri, int color, int width, int height, double rotation, String label) {
+        WindowApp.putMarker(uid, lat, lon, hae, iconUri, color, width, height, rotation, label);
+    }
+
+    /** The self marker's icon in these colours, as 5.5 builds it ({@code base64://}). */
+    public static String selfIconUri(int fill, int stroke) { return mactak.render.SelfIcon.uri(fill, stroke); }
+
+    /** Remove a marker. */
+    public static void removeMarker(String uid) { WindowApp.removeMarker(uid); }
+
+    /** Whether the map takes markers yet; the host resends them all once it does. */
+    public static boolean markersReady() { return WindowApp.markersReady(); }
+
     /** A MIL-STD-2525 point symbol as PNG, or null (G3.7, {@link Symbols}). */
     public static byte[] symbolPng(String code) { return Symbols.renderPng(code); }
 

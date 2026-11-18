@@ -174,26 +174,13 @@ struct TeamDot: View {
             .overlay(Circle().stroke(.secondary.opacity(0.4), lineWidth: 0.5))
     }
 
-    /// ATAK's team colours.
+    /// ATAK's team colours, exactly as the map's markers use them
+    /// (MarkerIcons.teamColor); no team is grey here.
     static func color(_ team: String?) -> Color {
-        switch team {
-        case "White": .white
-        case "Yellow": .yellow
-        case "Orange": .orange
-        case "Magenta": Color(red: 1, green: 0, blue: 1)
-        case "Red": .red
-        case "Maroon": Color(red: 0.5, green: 0, blue: 0)
-        case "Purple": .purple
-        case "Dark Blue": Color(red: 0, green: 0, blue: 0.55)
-        case "Blue": .blue
-        case "Cyan": .cyan
-        case "Teal": .teal
-        case "Green": .green
-        case "Dark Green": Color(red: 0, green: 0.39, blue: 0)
-        case "Brown": .brown
-        case "Pink": .pink
-        default: .gray
-        }
+        guard let team else { return .gray }
+        let argb = MarkerIcons.teamColor(team)
+        return Color(red: Double((argb >> 16) & 0xFF) / 255, green: Double((argb >> 8) & 0xFF) / 255,
+                     blue: Double(argb & 0xFF) / 255)
     }
 }
 

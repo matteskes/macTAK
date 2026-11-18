@@ -129,6 +129,19 @@ public final class JNI {
         return bytes
     }
 
+    /// A static method returning String: its value, or nil for null. The
+    /// string's local reference is freed here.
+    public func callStaticString(_ cls: jclass, _ mid: jmethodID, _ args: [jvalue] = []) throws -> String? {
+        var a = args
+        let js = a.withUnsafeMutableBufferPointer { f.CallStaticObjectMethodA!(env, cls, mid, $0.baseAddress) }
+        try check("calling a static String method")
+        guard let js else { return nil }
+        defer { deleteLocalRef(js) }
+        guard let chars = f.GetStringUTFChars!(env, js, nil) else { throw JNIError("GetStringUTFChars returned null") }
+        defer { f.ReleaseStringUTFChars!(env, js, chars) }
+        return String(cString: chars)
+    }
+
     /// Frees a local reference. The main thread stays attached for the app's
     /// life, so its local references are never freed for it: a call made
     /// again and again must free the ones it makes.

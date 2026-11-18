@@ -71,6 +71,9 @@ public final class RenderSmoke {
       + "  --layer-db    feature store dir (default: temp)\n"
       + "  --res M       camera resolution, metres/pixel (default: fit layer bounds)\n"
       + "  --at LAT,LON  camera centre (default: layer bounds centre)\n"
+      + "  --marker LAT,LON,ICON[,AARRGGBB]  a map marker (G3.7b, MapMarkers): ICON is an\n"
+      + "                icon URI (asset://icons/roles/team.png) or \"self\" (5.5's self marker);\n"
+      + "                the tint defaults to none; check it with --expect (repeatable)\n"
       + "  --elevation P  elevation: a GeoTIFF DEM file, or a DTED directory (w123/n37.dt1);\n"
       + "                the terrain renderer must draw it (ray casts hit the terrain mesh)\n"
       + "  --tilt DEG    camera tilt from straight down (default 0)\n"
@@ -100,6 +103,7 @@ public final class RenderSmoke {
         double res = Double.NaN;
         double atLat = Double.NaN, atLon = Double.NaN;
         final java.util.List<PixelExpectation> expectations = new java.util.ArrayList<>();
+        final java.util.List<String> markerSpecs = new java.util.ArrayList<>();
         final java.util.List<File> elevations = new java.util.ArrayList<>();
         final java.util.List<ElevationChecks.Height> heights = new java.util.ArrayList<>();
         double tilt = 0d;
@@ -128,6 +132,7 @@ public final class RenderSmoke {
                     }
                     case "--settle": settleMs = Long.parseLong(args[++i]); break;
                     case "--expect": expectations.add(PixelExpectation.parse(args[++i])); break;
+                    case "--marker": markerSpecs.add(args[++i]); break;
                     case "--elevation": elevations.add(new File(args[++i])); break;
                     case "--tilt": tilt = Double.parseDouble(args[++i]); break;
                     case "--expect-height": heights.add(ElevationChecks.Height.parse(args[++i])); break;
@@ -284,6 +289,23 @@ public final class RenderSmoke {
             globe.addLayer(new FeatureLayer3("mactak-layer", store.dataStore()));
             frame = b;   // vector bounds win: that's what the fixture is about
         }
+        // --marker: G3.7b's marker layer, over the data layers as the app adds it
+        if (!markerSpecs.isEmpty()) {
+            final MapMarkers markers = new MapMarkers();
+            globe.addLayer(markers.layer());
+            int n = 0;
+            for (String spec : markerSpecs) {
+                final String[] m = spec.split(",");
+                if (m.length < 3 || m.length > 4) { System.err.println("render-smoke: --marker wants LAT,LON,ICON[,AARRGGBB], got " + spec); System.exit(2); }
+                final boolean self = m[2].equals("self");
+                final String icon = self ? SelfIcon.uri(SelfIcon.DEFAULT_FILL, SelfIcon.DEFAULT_STROKE) : m[2];
+                final int color = m.length == 4 ? (int) Long.parseLong(m[3], 16) : 0xFFFFFFFF;
+                markers.put("marker-" + (n++), Double.parseDouble(m[0]), Double.parseDouble(m[1]), Double.NaN, icon, color,
+                        self ? SelfIcon.WIDTH : MapMarkers.ICON_SIZE, self ? SelfIcon.HEIGHT : MapMarkers.ICON_SIZE, Double.NaN,
+                        "MARKER-" + n);
+            }
+            System.out.printf("render-smoke: %d marker(s)%n", markers.count());
+        }
         if (frame == null && !Double.isNaN(atLat) && !Double.isNaN(res))   // --at and --res frame on their own
             frame = new Envelope(atLon, atLat, 0, atLon, atLat, 0);
         if (frame != null) {
@@ -311,7 +333,8 @@ public final class RenderSmoke {
         // readback is polled as frames run and rendering continues — up to a
         // generous cap — until content pixels have actually appeared.
         // elevation is content too: the terrain renderer loads its tiles asynchronously
-        boolean hasContent = !layers.isEmpty() || !basemaps.isEmpty() || !attached.isEmpty();
+        // and so are markers: their icons load on the engine's loader threads
+        boolean hasContent = !layers.isEmpty() || !basemaps.isEmpty() || !attached.isEmpty() || !markerSpecs.isEmpty();
         long deadline = System.currentTimeMillis() + (hasContent ? settleMs : 0);
         long cap = System.currentTimeMillis() + (hasContent ? Math.max(settleMs * 5, 15000) : 0);
         boolean contentSeen = !hasContent;

@@ -84,6 +84,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Spike #171 found that takkernel's desktop 2525 code builds from
     public sources once android-port stops shadowing the renderer
     (G1.15 corrected).
+- G3.7b, markers on the map (`dev/g3/NOTES.md` §G3.7b):
+  - The map draws every contact and the self position as markers, as
+    ATAK 5.5 draws them:
+    - Team members get their role icon in their team colour. Others get
+      their 2525 symbol, or else 5.5's unknown-type icon.
+    - Stale contacts turn grey.
+    - The self marker is 5.5's blue arrow, turned by your course.
+  - A CI render gate checks that each marker's pixel is its colour,
+    where it should be.
 
 ### Changed
 
