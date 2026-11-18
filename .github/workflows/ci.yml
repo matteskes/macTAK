@@ -681,9 +681,11 @@ jobs:
           ref: 9f6893dd657feacc35ec5de03dad721c2e44170e # keep in sync with local src/ (CONTRIBUTING.md, Setup)
           path: src
           fetch-depth: 1
+          # the app's coordinate formatter: the oracle of make test-coord-golden
           sparse-checkout: |
             takkernel
             commoncommo
+            atak/ATAK/app/src/main/java/com/atakmap/coremap/conversions
           persist-credentials: false
 
       - name: Set up Zulu 21 (arm64)
@@ -725,6 +727,16 @@ jobs:
         # (G3.4, dev/g3/NOTES.md decision 2).
         if: needs.changes.outputs.changed == 'true'
         run: make test-cot-golden
+
+      - name: Coordinate golden test, the kernel's leg (make test-coord-golden)
+        # ATAK 5.5's own CoordinateFormatUtilities over the kernel's
+        # MGRSPoint, UTMPoint and SpanUtilities writes each fixture in
+        # dev/g3/test/coord-golden, and the engine's own WMM geoid code
+        # writes app/Resources/egm96-15.grid and the geoid heights; all
+        # must match the committed files, which the shell job's swift test
+        # holds the Swift port to (G3.6a, dev/g3/NOTES.md).
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-coord-golden
 
       - name: Upload test reports
         if: always() && needs.changes.outputs.changed == 'true'

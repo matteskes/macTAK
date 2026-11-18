@@ -1,0 +1,49 @@
+# lat<TAB>lon: every format written, then read back (CoordOracle.java).
+# 5.5's own test points (CoordinateFormatUtilitiesTest)
+0	0
+72.4999595	42.44949449
+42.443223342	72.556665
+-1.13453556	43.222262
+-55	-55
+# everyday places, each quadrant
+38.8977	-77.0365
+51.5007	-0.1246
+-33.8568	151.2153
+35.6586	139.7454
+-22.9519	-43.2105
+# Norway 32V and Svalbard 31X-37X
+60.39	5.32
+59.9	2.5
+63	3.5
+78.22	15.65
+75	8.9
+75	9
+80	20.99
+83.9	41.9
+# band edges, beyond them (no UPS in 5.5), the poles
+84	10
+84.5	10
+-80	10
+-80.5	10
+90	0
+-90	0
+# the antimeridian and zone edges
+0	180
+0	-180
+10	179.9999999
+-10	-179.9999999
+45	6
+45	5.9999999
+# either side of the equator and the prime meridian, and -0
+0.0000001	10
+-0.0000001	10
+10	-0.0000001
+-0	-0
+# rounding: minutes to 60, seconds to 60, exact halves
+10.99999999	20.99999999
+-10.99999999	-20.99999999
+12.3456789	-98.7654321
+0.5	-0.5
+45.5	-122.25
+1.000005	-1.000005
+2.0000041666	3.9999958333

@@ -12,7 +12,8 @@
 //
 //   CCommoShim    C++: commo's listener classes forwarded to C callbacks,
 //                 behind a plain C API (commo_shim.h)
-//   MacTAKCot     the CoT model: events, details, the self-SA (G3.4); pure
+//   MacTAKCot     the CoT model: events, details, the self-SA (G3.4), chat
+//                 (G3.5), coordinates and the geoid (G3.6); pure
 //                 Swift, so its tests need no commo
 //   MacTAKComms   the CommoClient actor, servers, identity and the mesh
 //

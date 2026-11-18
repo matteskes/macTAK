@@ -1,0 +1,56 @@
+MGRS	4QFJ12345678	21.3094332334,-157.9168674382
+MGRS	04QFJ1234567890	21.4097966719,-157.9160811742
+MGRS	18S UJ 23487 06483	38.8894996182,-77.0351969591
+MGRS	18SUJ2348706483	38.8894996182,-77.0351969591
+MGRS	18SUJ234064	38.8887346502,-77.0361781323
+MGRS	18SUJ	38.8260925378,-77.3039250362
+MGRS	18SUJ1	38.8260925378,-77.3039250362
+MGRS	18S	!exception
+MGRS	1	!exception
+MGRS	XXSUJ12345678	!exception
+MGRS	18IUJ12345678	-86.4053321232,-102.9724321544
+MGRS	18SIO12345678	35.7549682940,-74.8635040788
+MGRS	18SUJ1234x678	!exception
+MGRS	32VKM9876543210	59.8772924044,5.4043262918
+MGRS	18S\u200E UJ\u200E 23487\u200E 06483	38.8894996182,-77.0351969591
+UTM	18S 323394 4307395	38.8976942325,-77.0365032531
+UTM	18S323394mE4307395mN	!null
+UTM	18S 323394mE 4307395mN	!null
+UTM	33T 500000 4649776	41.9999979751,15.0000000000
+UTM	8S 323394 4307395	38.8976942325,-137.0365032531
+UTM	18S	0.0000000000,-79.4887438972
+UTM	18	!exception
+UTM	ZZS 1 2	!null
+UTM	18S abc def	!null
+DD	38.8977, -77.0365	38.8977000000,-77.0365000000
+DD	N 38.89770° W 77.03650°	!null
+DD	N\u200E 38.89770°\u200E \u200E W\u200E 77.03650°	38.8977000000,-77.0365000000
+DD	38.8977 -77.0365	38.8977000000,-77.0365000000
+DD	38.8977;-77.0365	38.8977000000,-77.0365000000
+DD	38.8977:-77.0365	38.8977000000,-77.0365000000
+DD	38.8977	!null
+DD	1 2 3	!null
+DD	91 0	!error Latitude out of range. Enter a valid Latitude.
+DD	0 181	!error Longitude out of range. Enter a valid Longitude.
+DD	91 181	!error Latitude and Longitude out of range. Enter valid fields.
+DD	abc def	!error Invalid input entered for a numerical field.
+DD	S 33.8568° E 151.2153°	!null
+DD	NaN 0	!error Invalid input entered for a numerical field.
+DD	1e1 2d	10.0000000000,2.0000000000
+DM	N 38° 53.8620' W 77° 02.1900'	!error Invalid input entered for a numerical field.
+DM	38:53.862 -77:2.19	38.8977000000,-77.0365000000
+DM	38 53.862 -77 2.19	!error Invalid input entered for a numerical field.
+DM	91:00 0:00	!error Latitude's Degrees out of range. Enter a valid field.
+DM	10:60 0:00	!error Latitude's Minutes out of range. Enter a valid field.
+DM	10:00 0:61	!error Longitude's Minutes out of range. Enter a valid field.
+DM	91:60 181:-1	!error Latitude's Degrees Minutes  and Longitude's Degrees Minutes out of range. Enter valid fields.
+DM	-0:30 -0:30	-0.5000000000,-0.5000000000
+DM	10:x 0:0	!error Invalid input entered for a numerical field.
+DMS	N 38° 53' 51.72" W 77° 02' 11.40"	!error Invalid input entered for a numerical field.
+DMS	38:53:51.72 -77:2:11.4	38.8977000000,-77.0365000000
+DMS	10:60:00 0:00:00	!error Latitude's Minutes out of range. Enter a valid field.
+DMS	10:00:60 0:00:00	!error Latitude's Seconds out of range. Enter a valid field.
+DMS	91:00:00 181:00:00	!error Latitude's Degrees  and Longitude's Degrees out of range. Enter valid fields.
+DMS	-0:00:30 -0:00:30	-0.0083333333,-0.0083333333
+DMS	x:y:z 1:2:3	!error Invalid input entered for a numerical field.
+DMS	10:20 30:40	!error Invalid input entered for a numerical field.
