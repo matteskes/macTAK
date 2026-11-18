@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.6 done — 2026-11-17): servers, identity, mesh, SA, GeoChat and coordinates
+## State (G3.7 done — 2026-11-18): servers, identity, mesh, SA, GeoChat, coordinates and markers
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -75,8 +75,33 @@ G3.6 gave it ATAK's coordinates:
   them; and a self readout over the map that pans to you or cycles the
   format. Two copies checked it all by hand (G3.6b, #207).
 
-Next: G3.7, markers with MIL-STD-2525 symbols, whose renderer waits on
-spike #171 (§Plan revision, gap 8).
+G3.7 put markers on the map, drawn as ATAK 5.5 draws them:
+
+- **The 2525 renderers run in the app's JVM.** Spike #171 found that
+  5.5's own renderers are public, under Apache-2.0: missioncommand's
+  2525C set for markers, and 2525D/E for later. The CoT type → 2525C
+  mapping is Swift. The kernel is the golden test's oracle: 1,200
+  symbols drew pixel-identical to it (G3.7a, #209).
+- **The map draws contacts and the self marker:**
+  - Contacts get 5.5's role icons in their team colour, or their 2525
+    symbol.
+  - Stale contacts turn grey.
+  - The self marker is 5.5's blue arrow, turned by the course.
+
+  A CI render gate checks the markers' pixels (G3.7b, #210).
+- **CoT markers that aren't contacts draw too**, with 5.5's icon for
+  each:
+  - its `icon_filters.xml` icon, its 2525C symbol, or else the
+    unknown-type icon
+  - the damaged icon when not ready, the marker's colour as a tint,
+    and Spot Map dots
+
+  They go stale and are removed on 5.5's timing, and a delete task
+  greys or removes one. A hand check ran a marker for each rule
+  (G3.7c, #214).
+
+Next: G3.8, routes, dropping, editing and deleting points, and the layer
+manager.
 
 ## The plan (approved 2026-11-13)
 
@@ -1713,9 +1738,9 @@ Gap 8 (§Plan revision). Three PRs, then a docs PR:
 
 | PR | Branch | What |
 |---|---|---|
-| **a** | `g3/milsym` | missioncommand's 2525 renderers in the app's JVM; `EngineBridge.symbolPng` / `canRenderSymbol`; the CoT type → 2525C mapping in Swift, golden-tested against the kernel |
-| **b** | `g3/map-markers` | the engine's marker layer; contacts drawn as 5.5 draws them, and the self marker; a render test in CI |
-| **c** | `g3/cot-markers` | received non-contact CoT as markers: `icon_filters.xml`, then 2525, then unknown-type; hand check |
+| **a** (#209) | `g3/milsym` | missioncommand's 2525 renderers in the app's JVM; `EngineBridge.symbolPng` / `canRenderSymbol`; the CoT type → 2525C mapping in Swift, golden-tested against the kernel |
+| **b** (#210) | `g3/map-markers` | the engine's marker layer; contacts drawn as 5.5 draws them, and the self marker; a render test in CI |
+| **c** (#214) | `g3/cot-markers` | received non-contact CoT as markers: `icon_filters.xml`, then 2525, then unknown-type; hand check |
 
 Not in G3.7: placing markers by hand, the CoT type picker
 (`CoTSelector`), marker details and the radial menu, tactical graphics,
