@@ -49,6 +49,12 @@ final class EngineHost: ObservableObject {
         engine?.panTo(lat: lat, lon: lon)
     }
 
+    /// The engine, once the map runs and takes markers (G3.7b); nil before.
+    var markerEngine: EngineBridge? {
+        guard state == .running, let engine, engine.markersReady else { return nil }
+        return engine
+    }
+
     private func startPolling() {
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }

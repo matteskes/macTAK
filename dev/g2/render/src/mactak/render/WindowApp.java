@@ -99,6 +99,8 @@ public final class WindowApp {
     private static double camLat = Double.NaN, camLon = Double.NaN, camRes = Double.NaN;
     /** Set once the view exists; read by the AppKit main thread in {@link #input}. */
     private static volatile InputBridge bridge;
+    /** The map's markers (G3.7b), once the globe exists; null before and after. */
+    private static volatile MapMarkers markers;
     /** The first frame must show the attached content (the gates); false
      *  for the app, whose layers may keep loading after the first frame. */
     private static boolean contentGate = true;
@@ -214,6 +216,24 @@ public final class WindowApp {
     public static void panTo(double lat, double lon) {
         final InputBridge b = bridge;
         if (b != null) b.panTo(lat, lon);
+    }
+
+    /** Add or move a marker (G3.7b, {@link MapMarkers#put}); dropped before the map exists. */
+    public static void putMarker(String uid, double lat, double lon, double hae,
+                                 String iconUri, int color, int width, int height, double rotation, String label) {
+        final MapMarkers m = markers;
+        if (m != null) m.put(uid, lat, lon, hae, iconUri, color, width, height, rotation, label);
+    }
+
+    /** Remove a marker; nothing before the map exists. */
+    public static void removeMarker(String uid) {
+        final MapMarkers m = markers;
+        if (m != null) m.remove(uid);
+    }
+
+    /** Whether markers can be drawn yet: the host resends them all once this turns true. */
+    public static boolean markersReady() {
+        return markers != null;
     }
 
     /** The window's occlusion state; the loop pauses while it is hidden. */
@@ -365,6 +385,10 @@ public final class WindowApp {
                 globe.addLayer(new FeatureLayer3("mactak-layer", store.dataStore()));
                 frame = b;   // vector bounds win: that's what the fixture is about
             }
+            // the markers (G3.7b) last, so they draw over the data layers
+            final MapMarkers m = new MapMarkers();
+            globe.addLayer(m.layer());
+            markers = m;
             if (frame != null) {
                 Envelope b = frame;
                 double clat = Double.isNaN(atLat) ? (b.minY + b.maxY) / 2 : atLat;
@@ -907,6 +931,7 @@ public final class WindowApp {
     /** Release what the render body built, in reverse order — render thread only. */
     private static void teardown() {
         bridge = null;   // no more input once the view goes
+        markers = null;
         if (view != null) {
             view.stop();
             view.release();

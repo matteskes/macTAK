@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// How positions and altitudes show (G3.6b), and the geoid for MSL.
     let units: UnitPreferences
     private let watcher: InterfaceWatcher
+    /// The map's markers: the contacts and the self position (G3.7b).
+    private let markers: MapMarkerSync
 
     override init() {
         let (settings, suite) = Self.settings()
@@ -88,11 +90,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections = ServerConnections(settings: settings, identities: .login, me: me, mesh: mesh,
                                         chatStore: chatStore)
         watcher = InterfaceWatcher { mesh.refresh() }
+        markers = MapMarkerSync(host: host, contacts: connections.contacts, me: me)
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CommsRuntime.configure()
+        markers.start()
         do {
             try connections.start()
             watcher.start()
@@ -116,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// commo shuts down first, so the servers see the client leave.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task {
+            markers.stop()
             watcher.stop()
             await connections.stop()
             host.shutdown()

@@ -397,6 +397,13 @@ jobs:
         # unresolved asset: URI (the point icons; dev/g2/NOTES.md §Asset icons)
         run: bash dev/g2/render/test/asset-icons.sh dev/g2/build/render-layer.png
 
+      - name: Render map markers where they are (dev/g2/render/test/markers.sh)
+        # G3.7b's gate: the marker layer draws a contact (5.5's role icon,
+        # tinted) and the self marker (a base64:// icon) over their points,
+        # in 5.5's colours; with no markers the same pixel checks must fail
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/markers.sh dev/g2/build/render-markers.png
+
       - name: Render an offline MBTiles basemap under the vector layer
         # G2 M2.3: raster pipeline — synthetic graticule → gdalwarp/gdal_translate
         # (Homebrew gdal CLI) → MBTiles → PersistentRasterDataStore →
@@ -483,6 +490,7 @@ jobs:
             dev/g2/angle-dist/PROVENANCE.txt
             dev/g2/build/render-smoke.png
             dev/g2/build/render-layer.png
+            dev/g2/build/render-markers.png
             dev/g2/build/render-basemap.png
             dev/g2/build/render-geotiff.png
             dev/g2/build/render-elevation.png

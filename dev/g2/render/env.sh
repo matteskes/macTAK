@@ -73,12 +73,13 @@ CP="$GDAL_JAVA/gdal.jar:$KERNEL_CP:$G1/transplants/slf4j-simple-1.7.30.jar"
 # Recompile when the class dir is missing, a source, a patch or a jar is
 # newer than it, or the set of sources and patches changed: a deleted patch
 # or source makes nothing newer, and its stale class would stay (G2 trap #70).
-INPUT_SET="$(find "$ENV_SH_DIR/src" "$G1/headless/src" -name '*.java'; find "$G1/patches" -maxdepth 1 -name '*.patch')"
+INPUT_SET="$(find "$ENV_SH_DIR/src" "$G1/headless/src" -name '*.java'; find "$G1/patches" -maxdepth 1 -name '*.patch'; find "$ENV_SH_DIR/resources" -type f)"
 INPUT_SET="$(sort <<<"$INPUT_SET")"
 if [[ ! -d "$OUT" ]] \
    || [[ "$(cat "$OUT/.input-set" 2>/dev/null)" != "$INPUT_SET" ]] \
    || [[ -n "$(find "$ENV_SH_DIR/src" "$G1/headless/src" -name '*.java' -newer "$OUT" -print -quit)" ]] \
    || [[ -n "$(find "$G1/patches" -maxdepth 1 -name '*.patch' -newer "$OUT" -print -quit)" ]] \
+   || [[ -n "$(find "$ENV_SH_DIR/resources" -type f -newer "$OUT" -print -quit)" ]] \
    || [[ -n "$(find "$MACTAK_KERNEL_DIST" "$GDAL_JAVA" -name '*.jar' -newer "$OUT" -print -quit)" ]]; then
   [[ -d "$ENGINE_JAVA/java" ]] \
     || { echo "render/env.sh: no engine Java at $ENGINE_JAVA — the shadows regenerate from src/ (CONTRIBUTING.md, Setup)" >&2; exit 2; }
@@ -101,6 +102,9 @@ if [[ ! -d "$OUT" ]] \
   find "$ENV_SH_DIR/src" "$G1/headless/src" -name '*.java' -print0 | xargs -0 "$JDK/bin/javac" --release 21 -Xlint:all -Werror -encoding UTF-8 \
     -classpath "$OUT:$CP" -d "$OUT" \
     || { rm -rf "$OUT"; exit 1; }
+  # + resources/: classpath files, e.g. assets/icons/roles/*.png, which
+  # asset:// icon URIs resolve to (ClasspathAssets; G3.7b's marker icons)
+  cp -R "$ENV_SH_DIR/resources/." "$OUT/"
   printf '%s\n' "$INPUT_SET" > "$OUT/.input-set"
   touch "$OUT"
 fi
