@@ -2,11 +2,21 @@
 // resolved runtime classpath (the kernel jars, android-port and the Maven
 // dependencies) to -PmacTakRuntimeDir, so the canaries load exactly
 // what Gradle compiled against.
+//
+// It adds missioncommand's MIL-STD-2525 renderers (G3.7), at the versions
+// takkernel's own gradle/versions.gradle pins for :shared's java build:
+// mil-sym-renderer (2525C, the one 5.5's CoT markers use) and mil-sym-java
+// (2525D/E), with their dependencies. The app calls them from its own
+// classes; it ships no :shared (dev/g3/NOTES.md §G3.7).
 allprojects {
     afterEvaluate { project ->
         if (project.path == ':engine' && project.hasProperty('macTakRuntimeDir')) {
+            def milSym = project.configurations.detachedConfiguration(
+                project.dependencies.create("io.github.missioncommand:mil-sym-renderer:${project.milSymRendererJava}"),
+                project.dependencies.create("io.github.missioncommand:mil-sym-java:${project.milSymJava}"))
             project.tasks.register('macTakRuntimeJars', Copy) {
                 from project.configurations.runtimeClasspath
+                from milSym
                 into project.property('macTakRuntimeDir')
             }
         }

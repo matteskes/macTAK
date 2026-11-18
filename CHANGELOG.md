@@ -72,6 +72,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     exactly as ATAK 5.5 reads it.
   - A self readout in the map's lower right, laid out as ATAK's. A click
     pans the map to you, or changes the format.
+- G3.7a, MIL-STD-2525 symbols (`dev/g3/NOTES.md` §G3.7a):
+  - missioncommand's public 2525 renderers ship in the app's JVM:
+    2525C, which ATAK 5.5's markers use, and 2525D/E. They are
+    Apache-2.0, at takkernel's own pinned versions.
+  - A CoT type maps to its 2525C code as ATAK 5.5 maps it, falling back
+    to a parent type that draws.
+  - A golden test holds the mapping and every symbol to the kernel's
+    own, pixel for pixel (`make test-symbol-golden`, CI's `jvm-tests`
+    job).
+  - Spike #171 found that takkernel's desktop 2525 code builds from
+    public sources once android-port stops shadowing the renderer
+    (G1.15 corrected).
 
 ### Changed
 

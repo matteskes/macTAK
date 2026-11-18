@@ -1,3 +1,8 @@
+JavaLineArray-0.1.41.jar
+JavaRenderer-0.1.41.jar
+JavaRendererServer-0.1.41.jar
+JavaRendererUtils-0.1.41.jar
+RendererPluginInterface-0.1.41.jar
 android-port-3.1.0-g55.jar
 annotations-13.0.jar
 antlr-2.7.7.jar
@@ -13,6 +18,7 @@ error_prone_annotations-2.3.4.jar
 eventbus-3.2.0.jar
 failureaccess-1.0.1.jar
 gdal.jar
+geodesy-1.1.3.jar
 gluegen-rt-2.5.0-natives-android-aarch64.jar
 gluegen-rt-2.5.0-natives-linux-aarch64.jar
 gluegen-rt-2.5.0-natives-linux-amd64.jar
@@ -35,12 +41,15 @@ jogl-all-2.5.0.jar
 jogl-all-main-2.5.0.jar
 json-20220924.jar
 jsr305-3.0.2.jar
+jsvg-1.6.1.jar
 kotlin-stdlib-1.6.20.jar
 kotlin-stdlib-common-1.6.20.jar
 kotlin-stdlib-jdk7-1.6.20.jar
 kotlin-stdlib-jdk8-1.6.20.jar
 kxml2-2.3.0.jar
 listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar
+mil-sym-java-2.1.5.jar
+mil-sym-renderer-0.1.41.jar
 okhttp-4.11.0.jar
 okio-jvm-3.2.0.jar
 slf4j-api-1.7.30.jar

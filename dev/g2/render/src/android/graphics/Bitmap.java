@@ -52,6 +52,21 @@ public final class Bitmap {
         this.hasAlpha = this.config != Config.RGB_565;
     }
 
+    /**
+     * takkernel's desktop {@code gov.tak.api.commons.graphics.BitmapMarshal}
+     * wraps a {@code BufferedImage} with this constructor and unwraps it with
+     * {@link #getAwtBufferedImageImplementation()}, both by reflection, as the
+     * TAK artifactory's android-port provides them; the public substitute has
+     * neither, so the marshal returned null (G3.7: the 2525 providers' icons).
+     */
+    private Bitmap(BufferedImage image) {
+        this(image, Config.ARGB_8888);
+    }
+
+    private BufferedImage getAwtBufferedImageImplementation() {
+        return image;
+    }
+
     /** Direct access to the ARGB pixel array (row-major, width*height). */
     int[] pixels() { return ((DataBufferInt) image.getRaster().getDataBuffer()).getData(); }
 

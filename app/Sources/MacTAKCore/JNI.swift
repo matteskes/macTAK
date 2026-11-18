@@ -103,6 +103,39 @@ public final class JNI {
         try check("calling a static method")
     }
 
+    public func callStaticBool(_ cls: jclass, _ mid: jmethodID, _ args: [jvalue] = []) throws -> Bool {
+        var a = args
+        let v = a.withUnsafeMutableBufferPointer { f.CallStaticBooleanMethodA!(env, cls, mid, $0.baseAddress) }
+        try check("calling a static boolean method")
+        return v != 0
+    }
+
+    /// A static method returning byte[]: its bytes, or nil for null. The
+    /// array's local reference is freed here.
+    public func callStaticBytes(_ cls: jclass, _ mid: jmethodID, _ args: [jvalue] = []) throws -> [UInt8]? {
+        var a = args
+        let arr = a.withUnsafeMutableBufferPointer { f.CallStaticObjectMethodA!(env, cls, mid, $0.baseAddress) }
+        try check("calling a static byte[] method")
+        guard let arr else { return nil }
+        defer { deleteLocalRef(arr) }
+        let count = Int(f.GetArrayLength!(env, arr))
+        var bytes = [UInt8](repeating: 0, count: count)
+        bytes.withUnsafeMutableBufferPointer { buf in
+            buf.baseAddress!.withMemoryRebound(to: jbyte.self, capacity: count) {
+                f.GetByteArrayRegion!(env, arr, 0, jint(count), $0)
+            }
+        }
+        try check("reading a byte[]")
+        return bytes
+    }
+
+    /// Frees a local reference. The main thread stays attached for the app's
+    /// life, so its local references are never freed for it: a call made
+    /// again and again must free the ones it makes.
+    public func deleteLocalRef(_ obj: jobject?) {
+        if let obj { f.DeleteLocalRef!(env, obj) }
+    }
+
     // ---- fields of a plain Java data object (MapConfig) ---------------------
 
     public func set(_ obj: jobject, _ cls: jclass, _ name: String, string value: String?) throws {

@@ -1414,7 +1414,12 @@ the TAK artifactory serves; the public build resolves one whose types are
 Android `Bitmap`s, and `MilStd2525dInterop` / `RenderContextWrapper` fail
 to compile. With that package left out, `shared` compiles and runs 297
 tests, 43 failing. Every failure traces to the TAK-artifactory-only
-pieces; none is a defect in code macTAK runs:
+pieces; none is a defect in code macTAK runs.
+
+**Correction (2026-11-18, `../g3/NOTES.md` §G3.7, trap 14):** the 2525
+glue doesn't need an artifactory-only renderer. android-port carries
+Android-typed copies of the public renderer's `armyc2.c5isr` classes that
+shadow it; with missioncommand's jars first, `:shared` compiles whole.
 
 | Tests | Failures | Cause |
 |---|---|---|

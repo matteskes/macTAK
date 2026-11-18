@@ -34,6 +34,8 @@ Per-file provenance for the non-obvious ones:
   license)
 - `kxml2-license.txt` — the kXML 2 project license; the pom's note about
   the public-domain `org.xmlpull.v1` classes is appended below the terms
+- `jsvg-license.txt` — JSVG's own `META-INF/LICENSE` from `jsvg-1.6.1.jar`
+  (`mit.txt` carries the Checker Framework's copyright line)
 
 ## The tools
 
