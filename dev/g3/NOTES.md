@@ -1250,8 +1250,8 @@ Gap 6 (§Plan revision). Three PRs, then a docs PR:
 | PR | Branch | What |
 |---|---|---|
 | **a** (#200) | `g3/chat-model` | the chat and receipt events in `MacTAKCot`; chat fixtures in the golden test |
-| **b** | `g3/chat-service` | rooms, sending, receiving, receipts; history and user groups in SQLite |
-| c | `g3/chat-pane` | the sidebar's Chat section and the Chat window |
+| **b** (#201) | `g3/chat-service` | rooms, sending, receiving, receipts; history and user groups in SQLite |
+| **c** | `g3/chat-pane` | the sidebar's Chat section and the Chat window |
 
 What ATAK 5.5 does (read at the pin, `atak/.../android/chat`):
 
@@ -1410,3 +1410,45 @@ the access, caveat and releasability preferences (`Undefined`).
 | the G3.5 gate legs (`ChatCommsTests`) | over `fake-cot-server.py`: All Chat Rooms, a team, a role and a user group each reach their members, with no receipts; a one-to-one comes back delivered, then read. On the mesh (lo0): All Chat Rooms on the chat group, and a one-to-one over direct TCP |
 | A/B | sending a delivered receipt in every room fails 6 assertions in `ChatServiceTests` and 12 in the server's room leg |
 | `make app` | the bundle builds; `check-bundle.py` and the license gate pass |
+
+### G3.5c — the Chat window (2026-11-17, branch `g3/chat-pane`)
+
+#### What changed
+
+- **The sidebar's Chat section** (`ChatView.swift`) lists All Chat Rooms
+  and the rooms with messages, newest first, with unread counts. A row,
+  or "Open Chat…", opens the Chat window on that room.
+- **The Chat window** is a second `Window` scene (`id: "chat"`), laid out
+  like Messages (decision 2):
+  - Rooms, grouped as All Chat Rooms, Teams, Roles, Groups and Direct.
+    The Groups header's + opens a New Group sheet (a name and contacts),
+    and a group's context menu deletes it.
+  - The conversation: bubbles with the sender in rooms and the time
+    under each. This client's own one-to-one lines show "sent",
+    "delivered", "read" or "pending".
+  - The composer. Return sends, and so does ⌘Return. In another team's
+    or role's room it gives way to a note saying who can write there.
+- **Read receipts follow what is seen.** A room's lines are marked seen
+  only while the Chat window is key and that room is open. In a
+  one-to-one, that is when the read receipt goes out.
+- `ChatSelection` holds the open room. The app shares it between the
+  sidebar and the window.
+
+#### Checked by hand
+
+Not yet. The steps are below, to be run with the owner.
+
+On one Mac, only the copy holding TCP 4242 takes direct mesh sends, and
+every peer sends a one-to-one there (MeshTests). So the check runs
+through `fake-cot-server.py` with the mesh off. Two copies run from
+`build/MacTAK.app` (`--settings-suite mactak-chat-1` and `-2`), each with
+the server 127.0.0.1:8087 over TCP. Copy 2 is set to Red and Medic. The
+legs:
+
+1. All Chat Rooms, both ways.
+2. A one-to-one: delivered, then read once copy 2's window shows it.
+3. Copy 1's Cyan room is writable. Copy 1's Red room is read-only.
+4. A Medic room, with both copies medics.
+5. A group made on copy 1 shows on copy 2. A reply comes back, and
+   deleting the group removes it from both.
+6. The history survives quitting and reopening.
