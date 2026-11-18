@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.4 done — 2026-11-17): servers, identity, mesh and SA
+## State (G3.5 done — 2026-11-17): servers, identity, mesh, SA and GeoChat
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -48,8 +48,23 @@ G3.4 made it a TAK client that reports itself and lists its team:
   this client's own details. Two copies on `en0` checked it all by hand
   (G3.4c, #198).
 
-Next: G3.5, GeoChat: All Chat Rooms, one-to-one, team, role and user
-groups, with delivered, read and pending receipts (§Plan revision).
+G3.5 made it a GeoChat client, as ATAK 5.5 chats:
+
+- **The chat events are Swift** (`MacTAKCot`): messages and receipts
+  are built and read as 5.5 does. Eleven ATAK-shaped chat events joined
+  the kernel's golden test (G3.5a, #200).
+- **The rooms come from the contacts:** All Chat Rooms, a room for each
+  team and role, user-made groups, and one-to-one. Only your own team's
+  and role's rooms take messages. Delivered and read receipts come back
+  in a one-to-one only; pending is read, never sent. The history and
+  user groups persist in SQLite. A chat leg for each room kind runs in
+  CI, through the fake server and on the mesh (G3.5b, #201).
+- **A Chat window** laid out like Messages, with unread counts in the
+  sidebar. Two copies checked every room kind, the receipts, user groups
+  and the history by hand (G3.5c, #202).
+
+Next: G3.6, coordinates: MGRS (the default), DD, DM, DMS and UTM, and
+altitude in MSL or HAE (§Plan revision, gap 7).
 
 ## The plan (approved 2026-11-13)
 
@@ -1251,7 +1266,7 @@ Gap 6 (§Plan revision). Three PRs, then a docs PR:
 |---|---|---|
 | **a** (#200) | `g3/chat-model` | the chat and receipt events in `MacTAKCot`; chat fixtures in the golden test |
 | **b** (#201) | `g3/chat-service` | rooms, sending, receiving, receipts; history and user groups in SQLite |
-| **c** | `g3/chat-pane` | the sidebar's Chat section and the Chat window |
+| **c** (#202) | `g3/chat-pane` | the sidebar's Chat section and the Chat window |
 
 What ATAK 5.5 does (read at the pin, `atak/.../android/chat`):
 
