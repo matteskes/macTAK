@@ -5,3 +5,5 @@ build/
 *.ppm
 *.png
 gdal-java-dist/
+# ...but not the render classpath's resources: 5.5's marker icons (G3.7b)
+!render/resources/**/*.png

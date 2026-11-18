@@ -1902,3 +1902,8 @@ user icon sets.
   white dot. G2's runtime now has `android/util/Base64.java` on
   `java.util.Base64`, and the encoder must use the URL-safe alphabet.
   `markers.sh` fails on any "failed to handle URI" line.
+- **17 — `dev/g2/.gitignore` ignores every `*.png`.** The icons in
+  `dev/g2/render/resources` were never committed: the first CI run of
+  #210 had no resources directory, and `env.sh`'s staleness `find`
+  failed the first render step. The ignore file now makes an exception
+  for `render/resources/**/*.png`.
