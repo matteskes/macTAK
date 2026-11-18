@@ -28,9 +28,19 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.connections)
                 .environmentObject(delegate.mesh)
                 .environmentObject(delegate.me)
+                .environmentObject(delegate.chatSelection)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
+
+        // GeoChat (G3.5c), apart from the map.
+        Window("Chat", id: "chat") {
+            ChatWindow()
+                .environmentObject(delegate.connections)
+                .environmentObject(delegate.chatSelection)
+                .frame(minWidth: 560, minHeight: 360)
+        }
+        .defaultSize(width: 760, height: 520)
     }
 }
 
@@ -45,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The servers, their certificates in the login keychain (G3.2), and
     /// the commo client the mesh shares.
     let connections: ServerConnections
+    /// The room the Chat window shows.
+    let chatSelection = ChatSelection()
     private let watcher: InterfaceWatcher
 
     override init() {
@@ -110,9 +122,7 @@ struct ContentView: View {
                 ServersSection()
                 MeshSection()
                 ContactsSection()
-                Section("Chat") {
-                    Text("Coming in G3.5").foregroundStyle(.secondary)
-                }
+                ChatSection()
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {

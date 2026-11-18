@@ -50,6 +50,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - One-to-one messages get delivered and read receipts, as in ATAK 5.5.
   - History and user groups persist in SQLite, one file per settings
     suite.
+- G3.5c, the Chat window (`dev/g3/NOTES.md` §G3.5c): a Messages-style
+  window with every GeoChat room, unread counts in the sidebar, receipts
+  on your own one-to-one messages, and a New Group sheet.
 
 ### Changed
 
