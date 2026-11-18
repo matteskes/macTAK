@@ -90,7 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections = ServerConnections(settings: settings, identities: .login, me: me, mesh: mesh,
                                         chatStore: chatStore)
         watcher = InterfaceWatcher { mesh.refresh() }
-        markers = MapMarkerSync(host: host, contacts: connections.contacts, me: me)
+        markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
+                                me: me)
         super.init()
     }
 
