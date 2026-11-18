@@ -1434,21 +1434,30 @@ the access, caveat and releasability preferences (`Undefined`).
 - `ChatSelection` holds the open room. The app shares it between the
   sidebar and the window.
 
-#### Checked by hand
-
-Not yet. The steps are below, to be run with the owner.
+#### Checked by hand (owner present, 2026-11-17)
 
 On one Mac, only the copy holding TCP 4242 takes direct mesh sends, and
-every peer sends a one-to-one there (MeshTests). So the check runs
-through `fake-cot-server.py` with the mesh off. Two copies run from
-`build/MacTAK.app` (`--settings-suite mactak-chat-1` and `-2`), each with
-the server 127.0.0.1:8087 over TCP. Copy 2 is set to Red and Medic. The
-legs:
+every peer sends a one-to-one there (MeshTests). So the check ran through
+`fake-cot-server.py` on 127.0.0.1:8087 with the mesh off. Two copies ran
+from `build/MacTAK.app` (`--settings-suite mactak-chat-1` and `-2`). Copy
+2 was set to Red and Medic. Each leg was confirmed in the server's log
+and in both copies' `chat-*.sqlite`:
 
-1. All Chat Rooms, both ways.
-2. A one-to-one: delivered, then read once copy 2's window shows it.
-3. Copy 1's Cyan room is writable. Copy 1's Red room is read-only.
-4. A Medic room, with both copies medics.
-5. A group made on copy 1 shows on copy 2. A reply comes back, and
-   deleting the group removes it from both.
-6. The history survives quitting and reopening.
+1. **All Chat Rooms**, both ways.
+2. **One-to-one**, both ways: delivered, then read once the other
+   copy's Chat window showed it.
+3. **Team rooms:** copy 1's Cyan room was writable. Its Red room showed
+   "Only the Red team can write here" (the owner's report).
+4. **The Medic room**, with both copies medics: a message from copy 2
+   reached copy 1.
+5. **User groups:**
+   - A group made on copy 2 reached copy 1.
+   - Copy 1, a member, deleting it removed only copy 1's own copy, as in
+     5.5: `ContactPresenceDropdown.deleteGroups` notifies only when
+     `isUserCreated()`.
+   - Copy 2, the owner, deleting it sent `deleteChild`, and it left both
+     copies.
+   - A group made on copy 1 reached copy 2, and copy 1's delete removed
+     it from both.
+6. **History:** both copies quit and relaunched with their All Chat Rooms
+   and one-to-one lines.
