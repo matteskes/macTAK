@@ -13,6 +13,9 @@
 // self details, the location. The client reports its self-SA on ATAK's pace.
 // A profile's or package's callsign replaces the callsign, as ATAK applies
 // locationCallsign.
+//
+// GeoChat (G3.5b) runs on the same client when a ChatStore is given: every
+// CoT event goes to the ChatService too, which sends through the client.
 
 import Combine
 import Foundation
@@ -44,6 +47,9 @@ public final class ServerConnections: ObservableObject {
     public let me: SelfReporter
     /// Who this client hears, on any server or the mesh (G3.4c).
     public let contacts: ContactStore
+    /// GeoChat, when the app gave a ChatStore (G3.5b).
+    public let chat: ChatService?
+    private var detailsWatch: AnyCancellable?
     private let settings: SettingsStore
     private let identities: IdentityStore
     private let mesh: MeshNetwork?
@@ -61,12 +67,20 @@ public final class ServerConnections: ObservableObject {
     /// G3.2d's random uid, replaced by the device's (DeviceUID).
     private static let legacyUIDKey = "mactak.uid"
 
-    public init(settings: SettingsStore, identities: IdentityStore, me: SelfReporter, mesh: MeshNetwork? = nil) {
+    public init(settings: SettingsStore, identities: IdentityStore, me: SelfReporter, mesh: MeshNetwork? = nil,
+                chatStore: ChatStore? = nil) {
         self.settings = settings
         self.identities = identities
         self.me = me
         self.mesh = mesh
-        contacts = ContactStore(selfUID: me.details.uid)
+        let contacts = ContactStore(selfUID: me.details.uid)
+        self.contacts = contacts
+        let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
+        self.chat = chat
+        // A new team or role changes which rooms take messages.
+        detailsWatch = me.details.objectWillChange.sink { _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { chat?.refresh() } }
+        }
         settings.set(nil, forKey: Self.legacyUIDKey)
         if let data = settings.data(forKey: Self.serversKey),
            let decoded = try? JSONDecoder().decode([ServerConfig].self, from: data) {
@@ -84,6 +98,7 @@ public final class ServerConnections: ObservableObject {
             for await event in client.events { self?.handle(event) }
         }
         me.attach(client)
+        chat?.attach(client)
         for server in servers where server.enabled { connect(server) }
         mesh?.attach(client)
         expiry = Task { [weak self] in
@@ -97,6 +112,7 @@ public final class ServerConnections: ObservableObject {
     public func stop() async {
         await mesh?.detach()
         me.detach()
+        chat?.detach()
         expiry?.cancel()
         listener?.cancel()
         await client?.shutdown()
@@ -212,6 +228,7 @@ public final class ServerConnections: ObservableObject {
             if let id = server(endpoint) { status[id] = .failed(Self.describe(code)) }
         case let .cot(xml, endpoint):
             contacts.receive(xml, via: server(endpoint).map { .server($0) } ?? .mesh)
+            chat?.receive(xml)
         case let .contactRemoved(uid):
             contacts.remove(uid)
         default:

@@ -42,6 +42,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   delivered and read receipts, built and read as ATAK 5.5 does. Eleven
   ATAK-shaped chat fixtures join the golden test, and the kernel
   round-trips them too.
+- G3.5b, GeoChat's rooms, receipts and history (`dev/g3/NOTES.md`
+  §G3.5b):
+  - Rooms come from the contacts: All Chat Rooms, team and role rooms,
+    user-made groups, and one-to-one. Only your own team's and role's
+    rooms take messages.
+  - One-to-one messages get delivered and read receipts, as in ATAK 5.5.
+  - History and user groups persist in SQLite, one file per settings
+    suite.
 
 ### Changed
 

@@ -163,6 +163,7 @@ final class ChatTests: XCTestCase {
         XCTAssertNil(c.conversationId, "found by callsign in the contacts")
         XCTAssertNil(c.senderUid, "found by callsign in the contacts")
         XCTAssertEqual(c.uidSenderSection, "VIPER")
+        XCTAssertEqual(c.fallbackConversationId, ChatRoom.allChatRooms, "the uid's room, All Streaming renamed")
         XCTAssertEqual(c.chatroom, ChatRoom.allChatRooms, "All Streaming reads as All Chat Rooms")
         XCTAssertEqual(c.destinations, [ChatRoom.allChatRooms])
         XCTAssertEqual(c.messageId, "0011")

@@ -4,9 +4,9 @@
 // and layers.
 //
 // `--settings-suite NAME` keeps this copy's settings (self details,
-// servers, mesh) in the defaults suite NAME instead of the app's own, and
-// suffixes its device uid with "-NAME", so a second copy on one Mac is a
-// second client.
+// servers, mesh) in the defaults suite NAME instead of the app's own, its
+// chat history in chat-NAME.sqlite, and suffixes its device uid with
+// "-NAME", so a second copy on one Mac is a second client.
 
 import AppKit
 import MacTAKComms
@@ -53,7 +53,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.mesh = mesh
         let details = SelfDetails(settings: settings, uid: DeviceUID.resolve(suite: suite))
         me = SelfReporter(settings: settings, details: details, locator: LocationService())
-        connections = ServerConnections(settings: settings, identities: .login, me: me, mesh: mesh)
+        // Chat history and user groups, one file per settings suite (G3.5b).
+        let chatStore: ChatStore?
+        do {
+            chatStore = try ChatStore.appStore(suite: suite)
+        } catch {
+            NSLog("macTAK: no chat history: \(error)")
+            chatStore = nil
+        }
+        connections = ServerConnections(settings: settings, identities: .login, me: me, mesh: mesh,
+                                        chatStore: chatStore)
         watcher = InterfaceWatcher { mesh.refresh() }
         super.init()
     }
