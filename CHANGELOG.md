@@ -93,7 +93,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     - The self marker is 5.5's blue arrow, turned by your course.
   - A CI render gate checks that each marker's pixel is its colour,
     where it should be.
-- G3.7c, CoT markers on the map (`dev/g3/NOTES.md` §G3.7c):
+- G3.7c, CoT markers on the map, which completes G3.7, markers with
+  2525 symbols (`dev/g3/NOTES.md` §G3.7c):
   - Markers other TAK users drop or send (CoT atoms that aren't contacts)
     now draw on the map with 5.5's icon for them:
     - a 2525C symbol, or 5.5's own icon for types its filter table
