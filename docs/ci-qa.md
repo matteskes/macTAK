@@ -81,7 +81,10 @@ How the plan above actually materialized once G1 closed:
   ANGLE staging + the EGL/ES3 triangle smoke, the engine+glue build
   with ANGLE in the GLES slot, then the render smokes — bare pbuffer,
   GeoJSON fixture, MBTiles basemap — with the PNGs uploaded as
-  artifacts (`render-angle-macos-arm64`).
+  artifacts (`render-angle-macos-arm64`). Since 2026-11-19 (#220) its
+  ANGLE is the source build from the `angle-source` job (`xcode-27`,
+  cached on the pin, the patches and the Xcode version), not the
+  pinned Electron release.
 - **Window gates:** M3.0's `smoke-window` compiles in CI but its live
   run stays manual (it opens a window; CI has no GUI session). M3.1's
   window exercise needs no GUI session, so CI runs it itself —

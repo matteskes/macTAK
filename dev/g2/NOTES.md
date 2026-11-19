@@ -2328,12 +2328,25 @@ presented handler to every window-surface drawable in
 A bundle's ANGLE lacks it, so there the report says "on-screen:
 unavailable" and the exit run fails.
 
-`make angle` still stages Electron 43 by default, and CI still downloads
-43.7.7 for its render jobs. CI verifies the source build instead
-(2026-11-19, closing #139): `dev/g2/check-angle-patches.sh` (`make
+`make angle` still stages Electron 43 by default. CI first verified the
+source build (2026-11-19, closing #139): `dev/g2/check-angle-patches.sh` (`make
 check-angle-patches`, in the lint job) reads the pin from
 `build-angle.sh`, fetches that one commit shallow and blobless with a
 sparse checkout of only the files the patches touch, and runs `git apply
 --check` on each patch in name order, in about 10 s. A patch that no
-longer applies fails it by name. Building the pair in CI, cached, and
-rendering on it is G5 ([issue #220](https://github.com/matteskes/macTAK/issues/220)).
+longer applies fails it by name.
+
+Then CI built it and rendered on it (2026-11-19, [issue #220](https://github.com/matteskes/macTAK/issues/220),
+pulled forward from G5). A trial on a hosted `xcode-27` runner (3 CPUs,
+7 GB) ran the whole of `build-angle.sh` uncached in 724 s, with the
+checkout at 13 GB of the runner's 42 GB free and the Metal Toolchain
+already on the image. CI's `angle-source` job runs it there, cached on
+`build-angle.sh`, `fetch-angle.sh`, the patches and the Xcode version: a
+hit restores the 7 MB staged pair, a miss builds it. It checks the pin
+and the presented-time hook either way, and hands the pair to
+`render-angle` as an artifact. `render-angle` stays on `macos-26`: the
+pair's minimum macOS of 27 is a link-time check, not a load-time one,
+and the job already loads our own GDAL, built the same way, on macOS
+26.7. Only the build needs the macOS 27 SDK. CI's pair isn't
+byte-identical to the dev Mac's (Xcode 27.1 there, 27.2 here, and ad-hoc
+signatures); a reproducible build is for G5's signed bundle.

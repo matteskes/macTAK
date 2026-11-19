@@ -45,7 +45,7 @@ the audit plan are dispositioned below.
 |---|---|---|
 | Homebrew runtime formulas | 22 | abseil (96 dylibs), protobuf (3), openssl@3 (2), geos (2), libkml (3), webp (2), and 16 singles: assimp, freexl, gettext, glib, jpeg-turbo, librttopo, libtiff, libxml2, mdbtools, minizip, openjpeg, pcre2, sqlite, uriparser, xz, zstd |
 | macTAK's own builds | 5 | GDAL 3.13.3, PROJ 9.9.0, SpatiaLite 5.1.0 (deps.lock pins), GDAL's Java bindings, the takkernel engine natives |
-| Staged third-party | 2 | ANGLE (libEGL/libGLESv2 from Electron 43.8.3), commoncommo (upstream, GPL-3.0) |
+| Staged third-party | 2 | ANGLE (libEGL/libGLESv2 from Electron 43.8.3 at the audit; built from source at `chromium/8078` since 2026-11-19, #139/#220), commoncommo (upstream, GPL-3.0) |
 | Static in commo | 3 | curl 8.23.0, ngtcp2 1.26.0, libmicrohttpd 1.0.10 |
 | Build-only | 1 | OpenJDK 8 JNI headers (`dev/g1/jdk-include`; never ships) |
 | Engine jars | 21 | 19 Maven groups (45 jars) + takkernel jars + android-port (both built from `src/`, GPL-3.0) |
