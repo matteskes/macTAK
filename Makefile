@@ -1,4 +1,4 @@
-.PHONY: help hooks deps check-deps check-runtime test-app-bundle kernel-jars build build-angle angle angle-from-source gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-cot-golden test-coord-golden test-symbol-golden test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
+.PHONY: help hooks deps check-deps check-runtime test-app-bundle kernel-jars build build-angle angle angle-from-source check-angle-patches gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-cot-golden test-coord-golden test-symbol-golden test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -16,6 +16,7 @@ help:
 	@echo "  build          - kernel jars + native + commo (build-kernel-jars.sh, build-native.sh, build-commo.sh)"
 	@echo "  angle          - stage ANGLE (EGL/GLES on Metal) into dev/g2/angle-dist (dev/g2/fetch-angle.sh)"
 	@echo "  angle-from-source - build ANGLE from a pinned upstream commit and stage it into dev/g2/angle-dist (dev/g2/build-angle.sh; ~14 GB under dev/g2/build/angle)"
+	@echo "  check-angle-patches - check dev/g2/angle-patches/ still apply at the pinned ANGLE commit (seconds; CI's lint job runs it)"
 	@echo "  build-angle    - kernel jars + native with ANGLE in the GLES slot (MACTAK_GLES=angle) + commo"
 	@echo "  gdal-java      - G2.4b: build the GDAL SWIG Java bindings (org.gdal) against macTAK's own libgdal (dev/deps) into dev/g2/gdal-java-dist + smoke (dev/g2/fetch-gdal-java.sh)"
 	@echo "  test-gdal-projection - G2.4 b.2: the engine's GdalLibrary.init + GdalDatasetProjection2 on GDAL 3 with the axis-order patch (needs build-angle + gdal-java)"
@@ -68,6 +69,9 @@ angle:
 # this, rebuild with `MACTAK_GLES=angle bash dev/g1/build-native.sh`.
 angle-from-source:
 	bash dev/g2/build-angle.sh && bash dev/g2/smoke/run.sh
+
+check-angle-patches:
+	bash dev/g2/check-angle-patches.sh
 
 build-angle: angle kernel-jars
 	MACTAK_GLES=angle bash dev/g1/build-native.sh && bash dev/g1/build-commo.sh
