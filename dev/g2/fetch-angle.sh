@@ -12,7 +12,8 @@
 #      (BSD-3) with the Metal backend enabled; this is a spike-grade source,
 #      the port builds ANGLE from source at G5 (see NOTES.md).
 #   3. the official Electron release zip (darwin-arm64, sha256-pinned below)
-#      downloaded into dev/g2/build/ — hermetic path for CI runners.
+#      downloaded into dev/g2/build/ — the hermetic path CI used until it
+#      built ANGLE from source (#220: ci.yml's angle-source job).
 #      MACTAK_ANGLE_SOURCE=release forces it even when an app is installed.
 #
 # What gets done to the copies:

@@ -212,14 +212,75 @@ jobs:
             dev/g1/native-dist/takengine-jni-kernel.xml
           if-no-files-found: error
 
+  angle-source:
+    name: ANGLE from source (macOS arm64)
+    # #220: the ANGLE pair the dev Mac runs, built in CI. build-angle.sh
+    # builds the pinned commit with dev/g2/angle-patches/ for a macOS 27
+    # target, which needs the macOS 27 SDK, so this job runs on xcode-27 (the
+    # preview image). The pair loads on macOS 26 as our own GDAL does (a
+    # dylib's minimum OS is a link-time check), so render-angle stays on
+    # macos-26 and takes it as an artifact. Cached on the script (the pin and
+    # gn args live there), the patches and the Xcode version: a hit restores
+    # the ~7 MB pair; a miss builds it, ~12 min and ~14 GB of checkout
+    # (measured 2026-11-19 on xcode-27, 3 CPUs).
+    needs: changes
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - name: Check out macTAK
+        if: needs.changes.outputs.changed == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Xcode version (part of the cache key)
+        id: xcode
+        if: needs.changes.outputs.changed == 'true'
+        run: echo "version=$(xcodebuild -version | tr '\n' ' ' | tr -cs 'A-Za-z0-9.' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the staged pair (dev/g2/angle-dist)
+        id: cache
+        if: needs.changes.outputs.changed == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: dev/g2/angle-dist
+          key: angle-src-${{ steps.xcode.outputs.version }}-${{ hashFiles('dev/g2/build-angle.sh', 'dev/g2/fetch-angle.sh', 'dev/g2/angle-patches/**') }}
+
+      - name: Build ANGLE from source (dev/g2/build-angle.sh; cache miss only)
+        if: needs.changes.outputs.changed == 'true' && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          bash dev/g2/build-angle.sh
+
+      - name: The pair is the source build, with the patches
+        # a restored cache is checked like a fresh build: the pin in its
+        # provenance and the presented-time hook in its exports
+        if: needs.changes.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          cat dev/g2/angle-dist/PROVENANCE.txt
+          rev="$(sed -nE 's/^ANGLE_REV="\$\{MACTAK_ANGLE_REV:-([0-9a-f]{40})\}"$/\1/p' dev/g2/build-angle.sh)"
+          grep -qx "angle_rev: $rev" dev/g2/angle-dist/PROVENANCE.txt
+          exports="$(nm -gU dev/g2/angle-dist/libGLESv2.dylib)"
+          grep -q ' T _MacTAK_TakePresentedTimes$' <<<"$exports"
+
+      - name: Hand the pair to render-angle
+        if: needs.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: angle-source-macos-arm64
+          path: dev/g2/angle-dist/
+          retention-days: 7
+          if-no-files-found: error
+
   render-angle:
     name: render on ANGLE/Metal (macOS arm64)
     # G2: the engine's native renderer through ANGLE (EGL 1.5 / ES 3.0 on
-    # Metal) into an EGL pbuffer, driven from the JVM. ANGLE comes from the
-    # pinned Electron release (dev/g2/fetch-angle.sh, sha256-checked); the
+    # Metal) into an EGL pbuffer, driven from the JVM. ANGLE is the source
+    # build from the angle-source job (#220), the pair the dev Mac runs; the
     # engine is rebuilt with MACTAK_GLES=angle in the GLES slot. The stub
     # job above stays the engine gate; this proves the renderer contract.
-    needs: changes
+    needs: [changes, angle-source]
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -285,11 +346,19 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: make check-gen-gles-shim
 
-      - name: Stage ANGLE (pinned Electron release) + EGL/ES3 triangle smoke
+      - name: Take the source-built ANGLE pair (angle-source job)
         if: needs.changes.outputs.changed == 'true'
-        env:
-          MACTAK_ANGLE_SOURCE: release
-        run: bash dev/g2/fetch-angle.sh && bash dev/g2/smoke/run.sh
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: angle-source-macos-arm64
+          path: dev/g2/angle-dist
+
+      - name: EGL/ES3 triangle smoke on the pair (built for macOS 27, loaded on 26)
+        if: needs.changes.outputs.changed == 'true'
+        run: |
+          chmod +x dev/g2/angle-dist/*.dylib   # artifacts drop the mode bits
+          grep -E '^(angle_rev|angle_patch|min_macos):' dev/g2/angle-dist/PROVENANCE.txt
+          bash dev/g2/smoke/run.sh
 
       - name: Window-surface smoke — compile-only gate (the run is manual, it opens a window)
         # G2 M3.0: NSWindow → CAMetalLayer → eglCreateWindowSurface is the
