@@ -22,19 +22,24 @@
 #
 # PASS: the live gate (every present succeeded, no GL error, content, and
 # the terrain mesh under three rays at the end), every gesture kind reached
-# the camera, and ZERO DROPPED FRAMES (no present interval over 1.5
-# refreshes of the run's own cadence).
-# Reported, not gated: fps and interval percentiles, render CPU, GPU time
-# per frame (GL timer queries), the
+# the camera, and NO ON-SCREEN MISS (no two shown drawables more than 1.5
+# refreshes apart, from each drawable's presentedTime). Trap #77: a late
+# present (the render thread's present-to-present interval past 1.5
+# refreshes) can still make the next vsync, so it is reported, not gated.
+# Reported, not gated: fps and interval percentiles, late presents, render
+# CPU, GPU time per frame (GL timer queries), the
 # longest GC pause, peak resident memory, cold start (launch to the first
 # presented frame, and to the first frame with content).
 #
 # Artifacts in dev/g2/build/: exit-run.txt (the summary), exit-run.log,
-# exit-run-frames.csv, exit-run-gc.log, exit-run.png and exit-run-live.png.
+# exit-run-frames.csv, exit-run-frames-onscreen.csv, exit-run-gc.log,
+# exit-run.png and exit-run-live.png.
 #
 # Opens a real window for about 40 s in all: a dev-Mac manual gate, not CI.
-# Needs what dev/g2/shell/run.sh needs, gdal, and the network for step 1
-# (once; the clips are cached).
+# Needs what dev/g2/shell/run.sh needs, gdal, the network for step 1 (once;
+# the clips are cached), and the source-built ANGLE (`make angle-from-source`,
+# then `MACTAK_GLES=angle bash dev/g1/build-native.sh`): only its
+# presented-time hook gives the on-screen times.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/dev/g2/shell/test
 ROOT="$(cd "$HERE/../../../.." && pwd)"
@@ -84,7 +89,7 @@ SHELL_ARGS=(--basemap "$NAIP" --layer "$LANDMARKS" --elevation "$DEM" "${CAMERA[
 log "3. warm-up run, with GL debug output (timings discarded)"
 set +e
 MACTAK_GL_DEBUG=1 bash "$ROOT/dev/g2/shell/run.sh" "${SHELL_ARGS[@]}" > "$WORK/warm-up.log" 2>&1
-log "   exit $?; $(sed -nE 's/^window-app: live: ([0-9]+ frames;.*dropped[^;]*);.*/\1/p' "$WORK/warm-up.log")"
+log "   exit $?; $(sed -nE 's/^window-app: live: on-screen: (.*)$/\1/p' "$WORK/warm-up.log")"
 set -e
 # GL_DEBUG_TYPE_ERROR_KHR (0x824c): every GL error, named by ANGLE
 if grep -q 'GL_KHR_debug\] .* type=0x824c ' "$WORK/warm-up.log"; then
@@ -106,7 +111,8 @@ set -e
 
 field() { sed -nE "$1" "$RUN_LOG" | tail -1; }
 frames_line="$(field 's/^window-app: live: ([0-9]+ frames;.*)$/\1/p')"
-dropped="$(field 's/^window-app: live: .*dropped \(>[0-9.]+ ms\) ([0-9]+);.*/\1/p')"
+onscreen_line="$(field 's/^window-app: live: on-screen: (.*)$/\1/p')"
+misses="$(field 's/^window-app: live: on-screen: .*misses \(>[0-9.]+ ms\) ([0-9]+)$/\1/p')"
 gc_max="$(sed -nE 's/.*Pause .* ([0-9.]+)ms$/\1/p' "$GC_LOG" 2>/dev/null | sort -g | tail -1)"
 gc_n="$(grep -cE 'Pause .* [0-9.]+ms$' "$GC_LOG" 2>/dev/null || true)"
 # ZGC's other way to stall a thread: an allocation waiting for a collection
@@ -118,13 +124,18 @@ gc_stalls="$(awk '/Allocation Stalls:/ { for (i = NF - 3; i <= NF; i++) s += $i 
   echo "data: NAIP 2024 window $(gdalinfo -checksum "$DATA/naip-window.tif" | sed -nE 's/^ *Checksum=([0-9]+)$/\1/p' | tr '\n' ' ')/ 3DEP window $(gdalinfo -checksum "$DATA/3dep-window.tif" | sed -nE 's/^ *Checksum=([0-9]+)$/\1/p')"
   grep -E '^window-app: (cold start|camera|basemap|elevation|[0-9]+ feature)|^mactak-shell: (CAMetalLayer|peak resident)' "$RUN_LOG" || true
   echo "live: $frames_line"
-  grep -E '^window-app: live: (GPU ms|dropped frame|terrain|[0-9]+ presented)|^window-app: gestures:|^window-app: live frame .*GL error' "$RUN_LOG" || true
+  echo "on-screen: $onscreen_line"
+  grep -E '^window-app: live: (GPU ms|on-screen miss|late present|terrain|[0-9]+ presented)|^window-app: gestures:|^window-app: live frame .*GL error' "$RUN_LOG" || true
   echo "GC: ${gc_n:-0} pauses, longest ${gc_max:-?} ms, allocation stalls ${gc_stalls} (generational ZGC)"
   echo "shell exit $rc"
 } > "$BUILD/exit-run.txt"
 sed 's/^/    /' "$BUILD/exit-run.txt"
 
 [[ "$rc" -eq 0 ]] || { tail -40 "$RUN_LOG" | sed 's/^/    | /' >&2; fail "the shell exited $rc (live or gesture gate)"; }
-[[ -n "$dropped" ]] || fail "no frame-time line in the run log"
-[[ "$dropped" -eq 0 ]] || fail "$dropped dropped frame(s) (present interval > 1.5 refreshes of the run's cadence)"
-log "PASS: full stack, 10 s tour, zero dropped frames ($BUILD/exit-run.txt)"
+[[ -n "$frames_line" ]] || fail "no frame-time line in the run log"
+[[ "$onscreen_line" != unavailable* ]] \
+  || fail "no on-screen times: the gate needs the source-built ANGLE (make angle-from-source, then MACTAK_GLES=angle bash dev/g1/build-native.sh)"
+[[ -n "$misses" ]] \
+  || fail "no on-screen intervals (${onscreen_line:-no on-screen line}): was the window on a visible screen?"
+[[ "$misses" -eq 0 ]] || fail "$misses on-screen miss(es) (shown drawables > 1.5 refreshes apart)"
+log "PASS: full stack, 10 s tour, no on-screen miss ($BUILD/exit-run.txt)"

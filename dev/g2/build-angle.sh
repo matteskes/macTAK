@@ -12,7 +12,8 @@
 #   MACTAK_ANGLE_REV=<sha> ...            # another pinned commit
 #
 # The checkout, depot_tools and the build tree live under dev/g2/build/angle/
-# (ignored). Staging goes through fetch-angle.sh with MACTAK_ANGLE_SRC, so the
+# (ignored). dev/g2/angle-patches/*.patch are applied on top of the pin
+# (presented-times.patch: the exit run's on-screen timing, trap #77). Staging goes through fetch-angle.sh with MACTAK_ANGLE_SRC, so the
 # pair gets the same arm64 / @rpath / signing / export checks as a bundle's.
 set -euo pipefail
 
@@ -31,6 +32,7 @@ MACOS_FLOOR="27.0"
 WORK="$HERE/build/angle"
 SRC="$WORK/angle"
 OUT="$SRC/out/mactak-release"
+PATCHES="$HERE/angle-patches"
 
 log() { printf '[build-angle] %s\n' "$*"; }
 
@@ -63,13 +65,25 @@ fetch_angle() {
   have="$(git -C "$SRC" rev-parse HEAD)"
   if [[ "$have" != "$ANGLE_REV" ]]; then
     git -C "$SRC" fetch --quiet origin "refs/heads/$ANGLE_BRANCH"
-    git -C "$SRC" checkout --quiet --detach "$ANGLE_REV"
   fi
+  # --force drops the previous run's patches, so apply_patches starts clean
+  git -C "$SRC" checkout --quiet --force --detach "$ANGLE_REV"
   # bootstrap.py writes the standalone .gclient; gclient pulls the toolchain
   # (Chromium's clang, gn) and third_party deps pinned by ANGLE's DEPS.
   [[ -f "$SRC/.gclient" ]] || (cd "$SRC" && python3 scripts/bootstrap.py)
   log "gclient sync at $ANGLE_REV"
   (cd "$SRC" && gclient sync --no-history --shallow --delete_unversioned_trees)
+}
+
+apply_patches() {
+  # macTAK's changes to ANGLE, one per file in dev/g2/angle-patches/ (made
+  # with `git diff` in the checkout), applied in name order
+  local p
+  for p in "$PATCHES"/*.patch; do
+    [[ -e "$p" ]] || continue
+    log "patch $(basename "$p")"
+    git -C "$SRC" apply --whitespace=nowarn "$p"
+  done
 }
 
 configure() {
@@ -107,6 +121,10 @@ stage() {
   {
     echo "angle_branch: $ANGLE_BRANCH"
     echo "angle_rev: $ANGLE_REV"
+    local p
+    for p in "$PATCHES"/*.patch; do
+      [[ -e "$p" ]] && echo "angle_patch: $(basename "$p") $(shasum -a 256 "$p" | cut -d' ' -f1)"
+    done
     echo "gn_args: $(tr '\n' ' ' < "$OUT/args.gn")"
     echo "min_macos: $(otool -l "$HERE/angle-dist/libGLESv2.dylib" | awk '/LC_BUILD_VERSION/ { f = 1 } f && $1 == "minos" && !done { print $2; done = 1 }')"
   } >> "$HERE/angle-dist/PROVENANCE.txt"
@@ -117,6 +135,7 @@ require_metal_toolchain
 mkdir -p "$WORK"
 fetch_depot_tools
 fetch_angle
+apply_patches
 configure
 build
 stage

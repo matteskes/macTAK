@@ -1,5 +1,18 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
+## State (G2 closed — 2026-11-19): the exit gate now times the screen, and passes 21 of 21
+
+Trap #77's dropped frame never reached the screen. A Metal System Trace
+of a failing run showed every one of our drawables shown exactly one
+refresh after the last, through a 25.8 ms gap between the render
+thread's presents. The exit run now gates on on-screen misses, read from
+each drawable's `presentedTime` through a patch to the source-built ANGLE
+(`dev/g2/angle-patches/`, `make angle-from-source`); present-to-present
+intervals are reported as late presents. On the new gate the exit run
+passed 21 of 21 at the display's native resolution, with every on-screen
+interval 16.67 ms. Details: trap #77 under "The exit run", and "The 60 fps
+gate". The owner closed G2 on this result (2026-11-19).
+
 ## State (exit run — 2026-11-12): the full stack runs at 60 fps; G2 stays open on one dropped frame in 5–10% of runs
 
 `make exit-run` (`shell/test/exit-run.sh`) runs the full stack (real NAIP
@@ -1544,13 +1557,21 @@ GeoTIFFs), so no 200–460 MB source file is downloaded.
 
 Dev Mac, manual, like `make test-shell`: a scripted 10 s pan, zoom and
 rotate (the injected events below) on a Retina window at the shell's
-default size, full stack. **Pass: zero dropped frames** (a present
-interval over 1.5 refreshes of the run's own cadence — the median
-present interval, so 25 ms at 60 Hz and 12.5 ms at 120) **and no failed
-presents.** Restated 2026-11-16 from "over 25 ms": the gate's intent was
-always 1.5 × the refresh, but the constant was frozen at the 60 Hz
-reading until issue #125's second reproducer, a panel reporting 60.00 Hz
-while pacing 120 fps, was judged at half the intent (trap #77).
+default size, full stack. **Pass: no on-screen miss** (two shown
+drawables more than 1.5 refreshes apart, from each drawable's
+`presentedTime`; the refresh is the median on-screen interval, so 25 ms
+at 60 Hz and 12.5 ms at 120) **and no failed presents.** Restated
+2026-11-19 from "zero dropped frames", which timed the render thread's
+present-to-present intervals: trap #77's Metal System Trace showed a
+25.8 ms present gap that still made the next vsync, every drawable
+shown one refresh after the last. Those intervals are still reported, as
+late presents. The on-screen times come from an ANGLE patch
+(`dev/g2/angle-patches/presented-times.patch`), so the exit run needs
+the source-built ANGLE (`make angle-from-source`). Restated before that,
+2026-11-16, from "over 25 ms": the gate's intent was always 1.5 × the
+refresh, but the constant was frozen at the 60 Hz reading until the
+second reproducer on issue #125, a panel reporting 60.00 Hz while pacing
+120 fps, was judged at half the intent (trap #77).
 p95 and the other interval figures are reported, not gated: presents are
 quantized to the display, so a perfect 60 Hz run reads p95 ≈ 17–17.8 ms
 (trap #61; restated 2026-11-12 from "p95 ≤ 16.7 ms", which such a run
@@ -2151,6 +2172,22 @@ frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
   ANGLE's command submission is ruled out: a drawable comes back from
   the system a refresh late. A Metal System Trace of the turn (drawable
   lifetimes, the window server's frames) is the next step.
+  The trace showed that the screen never missed (2026-11-19, [issue
+  #125's comment](https://github.com/matteskes/macTAK/issues/125#issuecomment-7019469072)).
+  Traced runs repeated until one failed the gate, 25.82 ms at 4.374 s. In
+  that run the window server swapped on every vsync, and all 498 of our
+  drawables' `presentedTime`s were exactly 16.67 ms apart, with
+  consecutive drawable ids through the gap. The frame before the late
+  one was submitted early in its refresh and the late one near the end
+  of its own, so they were 25.8 ms apart and still shown one refresh
+  apart. The gate timed the render thread, not the screen. It now gates
+  on on-screen misses, from `presentedTime` through an ANGLE patch
+  (section "The 60 fps gate"). On it the exit run passed 21 of 21 (the
+  first run and a 20-run batch, display at native resolution): 13,920
+  frames shown with no miss and every on-screen interval 16.67 ms, while
+  the render thread's worst present gap was still 19–21 ms in the turn.
+  The scaled mode's own misses (the bare Metal window's, above) remain a
+  separate effect of that display mode.
 
 ## Audit finding 7's rest — the stand-ins match Android (2026-11-14, branch `g2/audit-finding-7-stand-ins`, issues 131–133)
 
@@ -2279,7 +2316,17 @@ On the pair, `make test-render`, `test-render-resize`, `test-render-window`
 and `test-shell` pass, and the engine's canaries are 4/4. The renderer
 string reads `OpenGL ES 3.0 (ANGLE 2.1.28985 git hash: 0b547a1161fb)`. The
 exit run holds 60.1 fps, p95 about 17.3 ms and GPU p95 about 1 ms, and
-fails 1 of 21 on trap #77 (above).
+fails 1 of 21 on trap #77 (above) on the old present-to-present gate.
+
+`dev/g2/angle-patches/` holds macTAK's changes to ANGLE, applied on top of
+the pin in name order (`git apply`, after a forced checkout of the pinned
+commit, so a rerun starts clean); `PROVENANCE.txt` lists each with its
+sha256. The first, `presented-times.patch` (2026-11-19, trap #77), adds a
+presented handler to every window-surface drawable in
+`WindowSurfaceMtl::swapImpl` and exports `MacTAK_TakePresentedTimes`, which
+`NativeEgl.takePresentedTimes` reads for the exit run's on-screen gate.
+A bundle's ANGLE lacks it, so there the report says "on-screen:
+unavailable" and the exit run fails.
 
 `make angle` still stages Electron 43 by default, and CI still downloads
 43.7.7: #139's last item, CI building or verifying the source pair, is
