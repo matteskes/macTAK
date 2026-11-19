@@ -59,4 +59,13 @@ final class NativeEgl {
 
     /** Arrived results as (frame, ns) pairs into {@code out}; returns the pair count. ns -1: voided. */
     static native int gpuTimerPoll(long[] out);
+
+    /**
+     * G2 exit run (trap #77): when each presented drawable reached the screen.
+     * Moves the recorded presentedTimes (seconds, CACurrentMediaTime's clock,
+     * the same mach clock as {@link System#nanoTime}; 0 = never shown) into
+     * {@code out}, oldest first. Returns how many, or -1 when the loaded ANGLE
+     * has no hook (only the source build has it: dev/g2/angle-patches).
+     */
+    static native int takePresentedTimes(double[] out);
 }

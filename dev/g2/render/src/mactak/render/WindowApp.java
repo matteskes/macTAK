@@ -532,6 +532,8 @@ public final class WindowApp {
     /** Pan amplitude as a fraction of the surface width. */
     private static final double PAN_SWING = 0.25;
     private static final long PAUSE_POLL_MS = 16;
+    /** After the script, a wait for the last presents' on-screen times (3 refreshes at 60 Hz). */
+    private static final long ON_SCREEN_SETTLE_MS = 50;
     private static final java.lang.management.ThreadMXBean CPU =
             java.lang.management.ManagementFactory.getThreadMXBean();
 
@@ -618,6 +620,7 @@ public final class WindowApp {
             times.add(lastPresent == 0 ? -1 : presentedAt - lastPresent, renderNs,
                     swapStart - renderWallStart, presentedAt - swapStart);
             times.pollGpu();
+            times.pollPresented();
             lastPresent = presentedAt;
             clampFrameRate(presentedAt);
 
@@ -625,6 +628,9 @@ public final class WindowApp {
                 scriptDone = true;
                 NativeEgl.finish();   // the last frames' GPU times
                 times.pollGpu();
+                // the last presents reach the screen a refresh or two later
+                try { Thread.sleep(ON_SCREEN_SETTLE_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                times.pollPresented();
                 times.report(TAG + ": live", frameLog);
                 int verdict = liveGate(outPath, hasLayers, hasBasemaps, glErrors, presented,
                         swapFails, resizes, expectResizes);
@@ -769,27 +775,26 @@ public final class WindowApp {
     }
 
     /**
-     * Frame times of the live loop: the interval between presents (what a
-     * viewer sees; the display paces it) and the render thread's CPU time in
-     * the queued work (gestures), {@code view.render()} and the GL error
-     * drain (what the engine costs on
-     * the CPU; GPU time and the wait for a drawable are not in it).
-     * {@link #report} prints mean/p50/p95/max and the dropped frames
-     * (intervals past {@link #DROPPED_REFRESHES} refreshes of the run's
-     * own cadence) and, given a path, writes CSV.
+     * Frame times of the live loop: the interval between the render thread's
+     * presents, the render thread's CPU time in the queued work (gestures),
+     * {@code view.render()} and the GL error drain (what the engine costs on
+     * the CPU; GPU time and the wait for a drawable are not in it), and when
+     * each presented drawable reached the screen (what a viewer sees).
+     * {@link #report} prints mean/p50/p95/max, the late presents and the
+     * on-screen misses (intervals past {@link #MISS_REFRESHES} refreshes of
+     * the run's own cadence) and, given a path, writes CSV.
      */
     private static final class FrameTimes {
         /**
-         * A dropped frame: an interval past this many refreshes of the run's
-         * own cadence, which {@link #report} reads as the median present
-         * interval — presents quantize to the display, so the median is one
-         * refresh at whatever rate it actually paces (G2's exit gate, NOTES
-         * §The 60 fps gate; 25 ms at 60 Hz, 12.5 ms at 120). The gate said
-         * 1.5 refreshes from the start but was frozen at 25 ms, the 60 Hz
-         * reading, until issue #125's second reproducer paced 120 fps and
-         * the frozen gate judged its frames at half the intent (trap #77).
+         * An on-screen miss: two shown drawables more than this many
+         * refreshes apart, the refresh read as the median on-screen interval
+         * (G2's exit gate, NOTES §The 60 fps gate; 25 ms at 60 Hz, 12.5 ms at
+         * 120). The same threshold over present-to-present intervals marks a
+         * late present, reported but not gated: trap #77's Metal System Trace
+         * showed a 25.8 ms present gap that still made the next vsync, every
+         * drawable shown one refresh after the last.
          */
-        static final double DROPPED_REFRESHES = 1.5;
+        static final double MISS_REFRESHES = 1.5;
         private long[] interval = new long[1024];
         private long[] work = new long[1024];
         private long[] at = new long[1024];
@@ -805,8 +810,21 @@ public final class WindowApp {
         /** GPU time per frame, -1 until (or unless) its timer query arrives. */
         private long[] gpu = filled(1024);
         private final long[] gpuPairs = new long[64];
+        /**
+         * When each shown drawable reached the screen, ns after
+         * {@link #origin} (presentedTime and System.nanoTime share the mach
+         * clock); drawables that were never shown are only counted.
+         */
+        private long[] shownAt = new long[1024];
+        private int shown, neverShown;
+        private boolean onScreenTimed = true;
+        private final double[] presentedBuf = new double[256];
         private final long origin = System.nanoTime();
         private int n;
+
+        FrameTimes() {
+            discardPresented();
+        }
 
         /** Frames recorded so far. */
         int count() { return n; }
@@ -827,6 +845,36 @@ public final class WindowApp {
                 }
                 if (k < gpuPairs.length / 2) return;
             }
+        }
+
+        /**
+         * Collect the on-screen times that have arrived (ANGLE's presented
+         * handlers fire after the display shows each drawable).
+         */
+        void pollPresented() {
+            int k;
+            do {
+                k = NativeEgl.takePresentedTimes(presentedBuf);
+                if (k < 0) { onScreenTimed = false; return; }
+                for (int i = 0; i < k; i++) {
+                    if (presentedBuf[i] == 0) { neverShown++; continue; }
+                    final long t = Math.round(presentedBuf[i] * 1e9) - origin;
+                    // shown before the live phase: a loading frame, whose
+                    // handler fired late; its gap to the first live frame is
+                    // the load, not a miss
+                    if (t < 0) continue;
+                    if (shown == shownAt.length) shownAt = java.util.Arrays.copyOf(shownAt, shown * 2);
+                    shownAt[shown++] = t;
+                }
+            } while (k == presentedBuf.length);
+        }
+
+        /** Drop the on-screen times recorded before the live phase (the hook keeps them since launch). */
+        private void discardPresented() {
+            int k;
+            do {
+                k = NativeEgl.takePresentedTimes(presentedBuf);
+            } while (k == presentedBuf.length);
         }
 
         /** @param intervalNs -1 for the first frame after a start or pause */
@@ -856,27 +904,28 @@ public final class WindowApp {
             if (iv.length == 0) {
                 System.out.println(tag + ": no frame intervals recorded");
             } else {
-                // The gate follows the run's own cadence: the median present
-                // interval is one refresh, at whatever rate the display paces.
-                final long droppedNs = Math.round(pct(iv, 50) * DROPPED_REFRESHES);
-                final long dropped = java.util.Arrays.stream(iv).filter(v -> v > droppedNs).count();
+                // The run's own cadence: the median present interval is one
+                // refresh, at whatever rate the display paces.
+                final long lateNs = Math.round(pct(iv, 50) * MISS_REFRESHES);
+                final long late = java.util.Arrays.stream(iv).filter(v -> v > lateNs).count();
                 System.out.printf("%s: %d frames; interval ms mean %.2f p50 %.2f p95 %.2f max %.2f (%.1f fps); "
-                        + "dropped (>%.1f ms) %d; render CPU ms p50 %.2f p95 %.2f max %.2f%n",
+                        + "late presents (>%.1f ms) %d; render CPU ms p50 %.2f p95 %.2f max %.2f%n",
                         tag, n, mean(iv) / 1e6, pct(iv, 50) / 1e6, pct(iv, 95) / 1e6, iv[iv.length - 1] / 1e6,
-                        1e9 / mean(iv), droppedNs / 1e6, dropped, pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
+                        1e9 / mean(iv), lateNs / 1e6, late, pct(wk, 50) / 1e6, pct(wk, 95) / 1e6, wk[wk.length - 1] / 1e6);
                 final long[] gp = java.util.Arrays.stream(gpu, 0, n).filter(v -> v >= 0).sorted().toArray();
                 if (gp.length > 0)
                     System.out.printf("%s: GPU ms p50 %.2f p95 %.2f max %.2f (%d of %d frames timed)%n",
                             tag, pct(gp, 50) / 1e6, pct(gp, 95) / 1e6, gp[gp.length - 1] / 1e6, gp.length, n);
                 // each one, to set against the gesture script and the GC log
                 for (int i = 0; i < n; i++)
-                    if (interval[i] > droppedNs)
-                        System.out.printf("%s: dropped frame %d at %.3f s: interval %.2f ms, render CPU %.2f ms, GPU %s; "
+                    if (interval[i] > lateNs)
+                        System.out.printf("%s: late present %d at %.3f s: interval %.2f ms, render CPU %.2f ms, GPU %s; "
                                         + "wall: render %.2f ms, present %.2f ms%n",
                                 tag, i, at[i] / 1e9, interval[i] / 1e6, work[i] / 1e6,
                                 gpu[i] < 0 ? "untimed" : String.format("%.2f ms", gpu[i] / 1e6),
                                 renderWall[i] / 1e6, swapWall[i] / 1e6);
             }
+            reportOnScreen(tag);
             if (csvPath != null) {
                 try (java.io.PrintWriter out = new java.io.PrintWriter(new FileOutputStream(csvPath))) {
                     // present_wall_ms is the eglSwapBuffers enqueue alone; the
@@ -890,6 +939,55 @@ public final class WindowApp {
                                 renderWall[i] / 1e6, swapWall[i] / 1e6);
                 }
                 System.out.println(tag + ": frame log " + csvPath);
+                if (onScreenTimed) writeOnScreenCsv(csvPath.replaceFirst("(\\.csv)?$", "-onscreen.csv"));
+            }
+        }
+
+        /**
+         * The gated line: on-screen intervals and the misses past
+         * {@link #MISS_REFRESHES} refreshes (the median on-screen interval),
+         * each with the present it follows, or "unavailable" when the ANGLE
+         * in use has no presented-time hook.
+         */
+        private void reportOnScreen(String tag) {
+            if (!onScreenTimed) {
+                System.out.println(tag + ": on-screen: unavailable (this ANGLE has no presented-time hook; "
+                        + "dev/g2/build-angle.sh builds one that does)");
+                return;
+            }
+            final long[] iv = new long[Math.max(0, shown - 1)];
+            for (int i = 1; i < shown; i++) iv[i - 1] = shownAt[i] - shownAt[i - 1];
+            if (iv.length == 0) {
+                System.out.printf("%s: on-screen: %d shown, %d never shown; no intervals%n", tag, shown, neverShown);
+                return;
+            }
+            final long[] sorted = iv.clone();
+            java.util.Arrays.sort(sorted);
+            final long missNs = Math.round(pct(sorted, 50) * MISS_REFRESHES);
+            final long misses = java.util.Arrays.stream(iv).filter(v -> v > missNs).count();
+            System.out.printf("%s: on-screen: %d shown, %d never shown; interval ms p50 %.2f p95 %.2f max %.2f; "
+                            + "misses (>%.1f ms) %d%n",
+                    tag, shown, neverShown, pct(sorted, 50) / 1e6, pct(sorted, 95) / 1e6,
+                    sorted[sorted.length - 1] / 1e6, missNs / 1e6, misses);
+            for (int i = 0; i < iv.length; i++)
+                if (iv[i] > missNs)
+                    System.out.printf("%s: on-screen miss at %.3f s: interval %.2f ms (shown after present %d)%n",
+                            tag, shownAt[i + 1] / 1e9, iv[i] / 1e6, presentBefore(shownAt[i + 1]));
+        }
+
+        /** The last frame presented before {@code t} ns (frame-log index), or -1. */
+        private int presentBefore(long t) {
+            int f = -1;
+            for (int i = 0; i < n && at[i] <= t; i++) f = i;
+            return f;
+        }
+
+        private void writeOnScreenCsv(String path) throws IOException {
+            try (java.io.PrintWriter out = new java.io.PrintWriter(new FileOutputStream(path))) {
+                out.println("shown,t_s,interval_ms");
+                for (int i = 0; i < shown; i++)
+                    out.printf("%d,%.4f,%s%n", i, shownAt[i] / 1e9,
+                            i == 0 ? "" : String.format("%.3f", (shownAt[i] - shownAt[i - 1]) / 1e6));
             }
         }
 

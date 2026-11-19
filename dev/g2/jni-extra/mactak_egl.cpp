@@ -552,6 +552,29 @@ JNIEXPORT jint JNICALL Java_mactak_render_NativeEgl_gpuTimerPoll(JNIEnv *env, jc
     return n;
 }
 
+// G2 exit run (trap #77): when each presented drawable reached the screen,
+// from the source-built ANGLE's MacTAK_TakePresentedTimes
+// (dev/g2/angle-patches/presented-times.patch). Moves the recorded
+// presentedTimes (seconds, CACurrentMediaTime's clock; 0 = never shown) into
+// out, oldest first; returns how many, or -1 when the loaded libGLESv2 has no
+// such hook (a bundle's ANGLE).
+JNIEXPORT jint JNICALL Java_mactak_render_NativeEgl_takePresentedTimes(JNIEnv *env, jclass, jdoubleArray out)
+{
+    using Take = int (*)(double *, int);
+    static Take take = nullptr;
+    static bool looked = false;
+    if (!looked && g.glesLib) {
+        take = reinterpret_cast<Take>(dlsym(g.glesLib, "MacTAK_TakePresentedTimes"));
+        looked = true;
+    }
+    if (!take) return -1;
+    if (!out) return 0;
+    jdouble *buf = env->GetDoubleArrayElements(out, nullptr);
+    const int n = take(buf, env->GetArrayLength(out));
+    env->ReleaseDoubleArrayElements(out, buf, 0);
+    return n;
+}
+
 JNIEXPORT void JNICALL Java_mactak_render_NativeEgl_destroy(JNIEnv *, jclass)
 {
     teardown();

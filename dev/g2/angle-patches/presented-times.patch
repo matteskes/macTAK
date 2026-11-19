@@ -1,0 +1,59 @@
+diff --git a/src/libANGLE/renderer/metal/SurfaceMtl.mm b/src/libANGLE/renderer/metal/SurfaceMtl.mm
+index 6e80d9bbd6..42c9319418 100644
+--- a/src/libANGLE/renderer/metal/SurfaceMtl.mm
++++ b/src/libANGLE/renderer/metal/SurfaceMtl.mm
+@@ -20,6 +20,44 @@
+ #include "libANGLE/renderer/metal/mtl_utils.h"
+ #include "mtl_command_buffer.h"
+ 
++#include <algorithm>
++#include <cstring>
++#include <mutex>
++
++// macTAK (trap #77): when each window-surface drawable reached the screen.
++// ANGLE owns the drawables, so the host can't attach a presented handler; this
++// keeps every drawable's presentedTime (0 = never shown) until the host takes it.
++namespace
++{
++std::mutex gPresentedMutex;
++constexpr size_t kPresentedCapacity = 4096;
++double gPresented[kPresentedCapacity];
++size_t gPresentedCount = 0;
++
++void RecordPresented(double presentedTime)
++{
++    std::lock_guard<std::mutex> lock(gPresentedMutex);
++    if (gPresentedCount < kPresentedCapacity)
++    {
++        gPresented[gPresentedCount++] = presentedTime;
++    }
++}
++}  // namespace
++
++// Moves up to max recorded presentedTimes (seconds, CACurrentMediaTime's
++// clock; 0 for a drawable that was never shown), oldest first, into out.
++// Returns how many it moved.
++extern "C" __attribute__((visibility("default"))) int MacTAK_TakePresentedTimes(double *out,
++                                                                                 int max)
++{
++    std::lock_guard<std::mutex> lock(gPresentedMutex);
++    const size_t n = std::min(gPresentedCount, static_cast<size_t>(std::max(max, 0)));
++    std::memcpy(out, gPresented, n * sizeof(double));
++    std::memmove(gPresented, gPresented + n, (gPresentedCount - n) * sizeof(double));
++    gPresentedCount -= n;
++    return static_cast<int>(n);
++}
++
+ // Compiler can turn on programmatical frame capture in release build by defining
+ // ANGLE_METAL_FRAME_CAPTURE flag.
+ #if defined(NDEBUG) && !defined(ANGLE_METAL_FRAME_CAPTURE)
+@@ -678,6 +716,9 @@ angle::Result WindowSurfaceMtl::swapImpl(const gl::Context *context)
+             ANGLE_TRY(resolveColorTextureIfNeeded(context));
+         }
+ 
++        [mCurrentDrawable addPresentedHandler:^(id<MTLDrawable> drawable) {
++          RecordPresented(drawable.presentedTime);
++        }];
+         contextMtl->present(context, mCurrentDrawable);
+ 
+         StopFrameCapture();
