@@ -216,7 +216,9 @@ by path, gets `@loader_path` in its rpath, and `native-dist/` receives
   Provenance (app, Chrome/Electron version, sha256) is recorded per stage.
   The port builds ANGLE from source (gn/ninja, pinned commit) at G5 ([issue #139](https://github.com/matteskes/macTAK/issues/139)) — a
   `make angle` consumer never notices. `MACTAK_ANGLE_SRC=dir` already takes
-  a self-built pair.
+  a self-built pair. Electron 44+ no longer ships the standalone pair, so
+  43.x is the last bundle; `make angle-from-source` builds it instead
+  (section "ANGLE from source", 2026-11-19).
 - **EGL lives in the JNI glue, not the engine.** Upstream's engine C++ never
   touches EGL (0 references outside Android); context creation is the host's
   job. `mactak_egl.cpp` is that host piece, so `libtakengine` stays identical
@@ -2136,6 +2138,19 @@ frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
   command submission. The next candidates are a newer ANGLE (through
   `MACTAK_ANGLE_SRC`), an ANGLE built from source (#139), and a Metal
   System Trace of the turn.
+  ANGLE built from source doesn't fix it (2026-11-19, [issue #125's
+  comment](https://github.com/matteskes/macTAK/issues/125#issuecomment-7018715114);
+  section "ANGLE from source" below). On `chromium/8078` the exit run
+  failed 1 of 21, against 6 of 30 on Electron 43's `chromium/7871`
+  (Fisher p = 0.22). The one failure had the same shape, at 4.40 s in the
+  turn. With symbols, the samples put the whole wait in one place: the
+  frame's first `glClear` → `WindowSurfaceMtl::obtainNextDrawable` →
+  `-[CAMetalLayer nextDrawable]`, blocked on the layer's drawable
+  semaphore. ANGLE never waits on the GPU (`waitUntilScheduled` and
+  `waitUntilCompleted` are almost absent), and the swap is one commit. So
+  ANGLE's command submission is ruled out: a drawable comes back from
+  the system a refresh late. A Metal System Trace of the turn (drawable
+  lifetimes, the window server's frames) is the next step.
 
 ## Audit finding 7's rest — the stand-ins match Android (2026-11-14, branch `g2/audit-finding-7-stand-ins`, issues 131–133)
 
@@ -2218,3 +2233,54 @@ A/B on the dev Mac:
 With the fixes, `make test-render` (with no `IllegalArgumentException` in
 its log, so the engine's real GL calls stay in bounds), `make test-shell`
 and `make check-gen-gles-shim` pass.
+
+## ANGLE from source (2026-11-19, branch `g5/angle-from-source`, issue #139)
+
+Electron 44 and 45's official macOS releases link ANGLE into `Electron
+Framework` and no longer ship `libEGL.dylib`/`libGLESv2.dylib`; the
+framework exports no EGL or GL symbols either. 43.x is the last line
+`fetch-angle.sh` can take, and its branch, `chromium/7871`, is out of
+Google's support. Discord's 44.10.2 still has the pair, but its Electron is
+a custom build we couldn't pin. So the build from source moved ahead of G5.
+
+`dev/g2/build-angle.sh` (`make angle-from-source`) clones depot_tools and
+ANGLE under `dev/g2/build/angle/`, syncs the pinned commit, builds
+`libEGL` and `libGLESv2` with gn/ninja, and stages them through
+`fetch-angle.sh` with `MACTAK_ANGLE_SRC`, so the pair gets the same arm64,
+`@rpath`, signing and export checks as a bundle's. `PROVENANCE.txt` adds the
+branch, the commit, the gn args and the minimum macOS.
+
+| | |
+|---|---|
+| Pin | `chromium/8078` @ `0b547a1161fb` (Chrome 156, Extended Stable; the ANGLE Electron 45 links in) |
+| Backends | Metal only: no Vulkan, desktop GL, SwiftShader, null or WebGPU; no tests |
+| Target | arm64, `mac_deployment_target = "27.0"` (the app's floor, G3 trap 3) |
+| Symbols | `symbol_level = 1`: 19,236 symbols in `libGLESv2`, against Electron's 2,035 |
+| Disk | about 14 GB under `dev/g2/build/angle/` (checkout, toolchain and build tree) |
+
+Two things the first run needed:
+
+- **Xcode's Metal Toolchain.** ANGLE compiles its internal shaders with
+  `xcrun metal`, which Xcode 26+ downloads separately
+  (`xcodebuild -downloadComponent MetalToolchain`, about 840 MB). The
+  script checks for it first.
+- **`treat_warnings_as_errors = false`.** Chrome targets macOS 12, so
+  upstream never sees what the macOS 27 floor deprecates, and `-Werror`
+  stops the build at `MTLGPUFamilyMac2`. The build logs 69 deprecation
+  warnings, all first deprecated in macOS 27: `MTLStoreActionOptionNone`
+  (34), `MTLStorageModeManaged` and `synchronizeResource:` (15), the
+  `Depth24Unorm_Stencil8`/`X24_Stencil8` formats (9), `MTLGPUFamilyMac2`
+  (3), `isHeadless`, `removable` and `storeActionOptions`. They still work;
+  they're the first things to check when a macOS release removes them.
+
+depot_tools' usage metrics are off (`DEPOT_TOOLS_METRICS=0`).
+
+On the pair, `make test-render`, `test-render-resize`, `test-render-window`
+and `test-shell` pass, and the engine's canaries are 4/4. The renderer
+string reads `OpenGL ES 3.0 (ANGLE 2.1.28985 git hash: 0b547a1161fb)`. The
+exit run holds 60.1 fps, p95 about 17.3 ms and GPU p95 about 1 ms, and
+fails 1 of 21 on trap #77 (above).
+
+`make angle` still stages Electron 43 by default, and CI still downloads
+43.7.7: #139's last item, CI building or verifying the source pair, is
+open.
