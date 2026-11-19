@@ -106,8 +106,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - They go grey when stale and are removed 5 minutes later. A delete
     from the sender greys or removes them.
 
+- ANGLE built from source at a pinned commit (#139): `make
+  angle-from-source` (`dev/g2/build-angle.sh`) builds `chromium/8078`
+  (Chrome 156, Extended Stable), Metal only, for macOS 27, with symbols,
+  and applies macTAK's patches in `dev/g2/angle-patches/`. Electron 44+
+  no longer ships the standalone pair, so Electron 43 is the last bundle.
+- `dev/g2/smoke/metal-baseline.sh`, a bare `CAMetalLayer` window that
+  counts on-screen misses, to tell the display's own from ours (trap #77).
+
 ### Changed
 
+- G2 is closed (2026-11-19). The exit run's gate now counts on-screen
+  misses, two shown frames more than 1.5 refreshes apart, from each
+  drawable's `presentedTime` through an ANGLE patch. It used to count
+  the render thread's present-to-present gaps, and trap #77's Metal
+  System Trace showed such a gap (25.8 ms) still shown on time. On the
+  new gate the exit run passes 21 of 21. It needs the source-built ANGLE
+  (`dev/g2/NOTES.md` §The 60 fps gate, trap #77).
 - The device uid is now `MACTAK-<hardware UUID>`, kept outside the
   settings (G3.4b). Each install's uid changes once, from G3.2d's random
   one.

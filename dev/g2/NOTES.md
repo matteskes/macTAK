@@ -1,6 +1,6 @@
 # dev/g2 — G2: map renders in a native macOS window (ANGLE on Metal)
 
-## State (trap #77 — 2026-11-19): the exit gate now times the screen, and passes 21 of 21
+## State (G2 closed — 2026-11-19): the exit gate now times the screen, and passes 21 of 21
 
 Trap #77's dropped frame never reached the screen. A Metal System Trace
 of a failing run showed every one of our drawables shown exactly one
@@ -11,7 +11,7 @@ each drawable's `presentedTime` through a patch to the source-built ANGLE
 intervals are reported as late presents. On the new gate the exit run
 passed 21 of 21 at the display's native resolution, with every on-screen
 interval 16.67 ms. Details: trap #77 under "The exit run", and "The 60 fps
-gate". Whether this closes G2 is the owner's call.
+gate". The owner closed G2 on this result (2026-11-19).
 
 ## State (exit run — 2026-11-12): the full stack runs at 60 fps; G2 stays open on one dropped frame in 5–10% of runs
 
