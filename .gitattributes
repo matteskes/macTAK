@@ -1,0 +1,9 @@
+# Generated JNI headers (javah output from upstream classes; JDK's own)
+dev/g1/jni-include/*.h linguist-generated
+dev/g1/jdk-include/*.h linguist-generated
+
+# Regenerated GLES bindings (dev/g2/gen-gles-shim.py output)
+dev/g2/render/src/**/GLES20.java linguist-generated
+dev/g2/render/src/**/GLES30.java linguist-generated
+dev/g2/jni-extra/mactak_gles.c linguist-generated
+dev/g2/jni-extra/mactak_gles_stub.c linguist-generated
