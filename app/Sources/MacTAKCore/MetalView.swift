@@ -131,21 +131,45 @@ public final class MetalView: NSView {
 
     public override func mouseUp(with e: NSEvent) { lastDrag = nil }
 
-    /// Trackpad (precise deltas): pan, the content following the fingers.
-    /// Mouse wheel (line deltas): zoom about the pointer, positive = in.
+    /// Trackpad or Magic Mouse surface: pan, the content following the
+    /// fingers. Mouse wheel: zoom about the pointer, positive = in.
     public override func scrollWheel(with e: NSEvent) {
         let p = pixels(e)
-        if e.hasPreciseScrollingDeltas {
+        switch ScrollSource(phase: e.phase, momentumPhase: e.momentumPhase) {
+        case .surface:
             let s = backingScale
             send(.scroll, p, dx: e.scrollingDeltaX * s, dy: e.scrollingDeltaY * s)
-        } else if e.scrollingDeltaY != 0 {
-            send(.wheel, p, amount: Double(e.scrollingDeltaY))
+        case .wheel:
+            let lines = ScrollSource.wheelLines(e.scrollingDeltaY, precise: e.hasPreciseScrollingDeltas)
+            if lines != 0 { send(.wheel, p, amount: lines) }
         }
     }
 
     public override func magnify(with e: NSEvent) { send(.magnify, pixels(e), amount: Double(e.magnification)) }
 
     public override func rotate(with e: NSEvent) { send(.rotate, pixels(e), amount: Double(e.rotation)) }
+}
+
+/// Where a scroll event came from (#211). A trackpad or Magic Mouse scroll
+/// carries a gesture phase (or a momentum phase after the fingers lift); a
+/// wheel's are empty. Precise deltas cannot tell them apart: a wheel with
+/// smooth scrolling (Logi Options+ on an MX Master 3) sends them too.
+public enum ScrollSource: Equatable {
+    case surface, wheel
+
+    public init(phase: NSEvent.Phase, momentumPhase: NSEvent.Phase) {
+        self = phase.isEmpty && momentumPhase.isEmpty ? .wheel : .surface
+    }
+
+    /// Points per wheel line: macOS's default pixels-per-line for scroll
+    /// events (CGEventSource.pixelsPerLine).
+    static let pointsPerLine = 10.0
+
+    /// A wheel event's delta in lines (notches), the unit InputBridge's
+    /// WHEEL takes. A smooth-scrolled wheel's precise delta is in points.
+    public static func wheelLines(_ deltaY: CGFloat, precise: Bool) -> Double {
+        precise ? Double(deltaY) / pointsPerLine : Double(deltaY)
+    }
 }
 
 extension MetalView {

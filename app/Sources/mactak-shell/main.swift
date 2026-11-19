@@ -234,7 +234,7 @@ final class GestureScript {
     /// M3.4's script: one of each gesture kind, about 6 s.
     private func planGestures(_ c: NSPoint) {
         drag(from: c, by: NSPoint(x: 160, y: 0), at: 1.0, flags: [])            // pan east
-        for n in 0..<30 { steps.append((2.0 + Double(n) / 60, { self.scroll(c, dx: 0, dy: -6, units: .pixel) })) }
+        for n in 0..<30 { steps.append((2.0 + Double(n) / 60, { self.scroll(c, dx: 0, dy: -6, units: .pixel, phase: Self.phase(n, of: 30)) })) }
         for n in 0..<3 { steps.append((3.0 + Double(n) / 10, { self.scroll(NSPoint(x: c.x + 60, y: c.y + 40), dx: 0, dy: 1, units: .line) })) }
         drag(from: c, by: NSPoint(x: 0, y: 100), at: 3.6, flags: .option)       // tilt
         drag(from: c, by: NSPoint(x: 100, y: 0), at: 4.5, flags: .option)       // turn
@@ -255,7 +255,7 @@ final class GestureScript {
         drag(from: c, by: NSPoint(x: -160, y: 120), at: 2.2, flags: [], steps: 45)                             // pan north-west
         drag(from: c, by: NSPoint(x: 0, y: 140), at: 3.2, flags: .option, steps: 45)                           // tilt 35 deg
         drag(from: c, by: NSPoint(x: 200, y: 0), at: 4.2, flags: .option, steps: 60)                           // turn 50 deg
-        for n in 0..<30 { steps.append((5.4 + Double(n) / 30, { self.scroll(c, dx: 2, dy: 2, units: .pixel) })) }   // trackpad pan
+        for n in 0..<30 { steps.append((5.4 + Double(n) / 30, { self.scroll(c, dx: 2, dy: 2, units: .pixel, phase: Self.phase(n, of: 30)) })) }   // trackpad pan
         for n in 0..<3 { steps.append((6.6 + Double(n) / 8, { self.scroll(off, dx: 0, dy: -1, units: .line) })) }  // zoom out
         drag(from: c, by: NSPoint(x: -100, y: 0), at: 7.2, flags: .option, steps: 45)                          // turn back 25 deg
         drag(from: c, by: NSPoint(x: 0, y: -60), at: 8.1, flags: .option, steps: 30)                           // tilt back 15 deg
@@ -295,9 +295,18 @@ final class GestureScript {
         NSApp.postEvent(e, atStart: false)
     }
 
-    private func scroll(_ p: NSPoint, dx: Int32, dy: Int32, units: CGScrollEventUnit) {
+    /// A trackpad scroll's gesture phase (CGScrollPhase) for step n of a
+    /// count-step pan: began, changed, ended. MetalView pans only scrolls
+    /// that carry a phase (#211); a wheel's have none.
+    private static func phase(_ n: Int, of count: Int) -> Int64 {
+        n == 0 ? 1 : n == count - 1 ? 4 : 2
+    }
+
+    /// A scroll event: phase 0 (none) is a mouse wheel, any other a trackpad.
+    private func scroll(_ p: NSPoint, dx: Int32, dy: Int32, units: CGScrollEventUnit, phase: Int64 = 0) {
         guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: units, wheelCount: 2,
                                wheel1: dy, wheel2: dx, wheel3: 0) else { return }
+        cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
         let onScreen = window.convertPoint(toScreen: p)
         let top = NSScreen.screens.first?.frame.height ?? 0        // CG's global space is top-left
         cg.location = CGPoint(x: onScreen.x, y: top - onScreen.y)
