@@ -2329,5 +2329,11 @@ A bundle's ANGLE lacks it, so there the report says "on-screen:
 unavailable" and the exit run fails.
 
 `make angle` still stages Electron 43 by default, and CI still downloads
-43.7.7: #139's last item, CI building or verifying the source pair, is
-open.
+43.7.7 for its render jobs. CI verifies the source build instead
+(2026-11-19, closing #139): `dev/g2/check-angle-patches.sh` (`make
+check-angle-patches`, in the lint job) reads the pin from
+`build-angle.sh`, fetches that one commit shallow and blobless with a
+sparse checkout of only the files the patches touch, and runs `git apply
+--check` on each patch in name order, in about 10 s. A patch that no
+longer applies fails it by name. Building the pair in CI, cached, and
+rendering on it is G5 ([issue #220](https://github.com/matteskes/macTAK/issues/220)).

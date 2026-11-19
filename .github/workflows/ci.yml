@@ -846,6 +846,15 @@ jobs:
           for s in "${scripts[@]}"; do bash -n "$s"; done
           echo "lint OK: ${#scripts[@]} script(s)"
 
+      - name: ANGLE patches apply at the pin (dev/g2/check-angle-patches.sh)
+        # The dev Mac builds ANGLE from source with dev/g2/angle-patches/
+        # (#139); CI renders on a bundle's ANGLE, so without this a patch
+        # that stopped applying would surface only at the next local build.
+        # A shallow, sparse fetch of the pinned commit: seconds, not GBs.
+        # Building the pair in CI is G5 (#220).
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/check-angle-patches.sh
+
       - name: No exec past an EXIT trap (dev/check-trap-exec.sh)
         # exec replaces the shell, so an EXIT trap armed before it never
         # fires and its cleanup is skipped on every run.
