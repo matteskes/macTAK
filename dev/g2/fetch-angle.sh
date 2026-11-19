@@ -5,7 +5,8 @@
 #
 # Source, in order:
 #   1. $MACTAK_ANGLE_SRC — a directory holding libEGL.dylib + libGLESv2.dylib
-#      (e.g. your own ANGLE build: out/Release)
+#      (e.g. your own ANGLE build; dev/g2/build-angle.sh builds one from a
+#      pinned commit and stages it through here)
 #   2. an installed Electron app's bundled ANGLE (VS Code by default; any
 #      Electron app works — see ELECTRON_APPS). Electron ships upstream ANGLE
 #      (BSD-3) with the Metal backend enabled; this is a spike-grade source,
