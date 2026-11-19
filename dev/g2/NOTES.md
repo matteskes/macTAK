@@ -2115,6 +2115,27 @@ frames and 2–3 dropped per run, with render-thread CPU spikes to 25 ms
   said in WindowApp's CSV writer). Whether macOS drove that panel at 120
   while reporting 60 is open in the issue; his Metal System Trace of the
   ~4.2 s turn would say.
+  The stall is tied to the turn (2026-11-18, issue #125's comments
+  [baseline](https://github.com/matteskes/macTAK/issues/125#issuecomment-7000284510),
+  [correction](https://github.com/matteskes/macTAK/issues/125#issuecomment-7000770654),
+  [framebuffer churn](https://github.com/matteskes/macTAK/issues/125#issuecomment-7001265502)).
+  `dev/g2/smoke/metal-baseline.sh` runs a bare `CAMetalLayer` window that
+  only clears and presents, and counts the refreshes that come late on
+  screen. With the dev Mac's external display in its scaled mode
+  ("2560×1440" on a 5K backing), the bare window misses a refresh on its
+  own about once every 4–5 minutes, and often in its first 0.15 s of
+  presenting. In the display's native mode it missed none in 600 s, but
+  the exit run still failed 5 of 20, and every run's worst frame fell at
+  4.07–4.95 s, the start of the ⌥-drag turn. So the scaled-mode misses
+  are a separate effect, and the turn sets off the gate failure. Stack
+  samples showed the surface renderer creating mip-size offscreen
+  framebuffers during the turn (`GLMegaTexture`'s pool reuses only
+  full-size tiles). A per-frame counter ruled that out: frames with the
+  heaviest churn were never slow, and the one dropped frame in 10 runs
+  created none. Still open: the GPU, the display pipeline, or ANGLE's
+  command submission. The next candidates are a newer ANGLE (through
+  `MACTAK_ANGLE_SRC`), an ANGLE built from source (#139), and a Metal
+  System Trace of the turn.
 
 ## Audit finding 7's rest — the stand-ins match Android (2026-11-14, branch `g2/audit-finding-7-stand-ins`, issues 131–133)
 
