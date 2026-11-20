@@ -100,7 +100,8 @@ G3.7 put markers on the map, drawn as ATAK 5.5 draws them:
   greys or removes one. A hand check ran a marker for each rule
   (G3.7c, #214).
 
-Next: G3.8, routes, dropping, editing and deleting points, and the layer
+Next: G3.8, range and bearing (§G3.8, plan approved 2026-11-20); then
+G3.9, routes, dropping, editing and deleting points, and the layer
 manager.
 
 ## The plan (approved 2026-11-13)
@@ -142,7 +143,8 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
 | G3.5 | **GeoChat** (6): All Chat Rooms, one-to-one, team and role rooms, user groups, delivered, read and pending receipts | a chat leg per room kind, with receipts |
 | G3.6 | **coordinates** (7): MGRS (the default), DD, DM, DMS, UTM; altitude in MSL (the default) or HAE | conversion tests against the engine's |
 | G3.7 | **markers on the map with 2525 symbols** (8), the self marker; the renderer comes from the #171 spike | markers' pixels where expected (CI) |
-| G3.8 | routes, dropping, editing and deleting points, the layer manager | a route render; a dropped point reaches the other client |
+| G3.8 | **range and bearing** (added 2026-11-20): the numbers and units golden-tested against 5.5, lines on the map, the R&B tool, `u-rb-a` | the kernel's R&B golden test; a line's pixels; one client's R&B line on the other's map |
+| G3.9 | routes, dropping, editing and deleting points, the layer manager | a route render; a dropped point reaches the other client |
 | Exit | `make g3-exit`: two app instances, TLS, FTS and OTS | each sees the other's contact, marker (on screen) and chat |
 
 The numbers in bold refer to the sanity check's gaps (§Plan revision, below).
@@ -2157,3 +2159,62 @@ user icon sets.
   patch 42's unmap and delete in `draw()`. The lock order is the
   worker's, `monitor_` then the discard mutex. In the app the engine
   clears GL errors, so this was a silently bad frame.
+
+## G3.8 — range and bearing (plan approved 2026-11-20)
+
+Asked for by the owner after ADDR (2026-11-20). Not in the 2026-11-13
+plan. It goes **before routes and points** (which become G3.9): the R&B
+line tool needs what routes need, drawing lines on the map and turning a
+click into a position or a marker, and it is smaller, so that groundwork
+lands with a small feature on top.
+
+### What 5.5 does (read at the pin)
+
+- **The numbers** are the kernel's, in the app's JVM already:
+  - range: `GeoCalculations.distance`, Vincenty on WGS84
+    (`atakmap::util::distance::calculateRange`); slant range and the
+    depression angle when both ends have an altitude
+  - bearing: `GeoCalculations.bearing`, true north
+  - magnetic: `GeomagneticField` on the engine's NOAA library with the
+    kernel's `wmm_cof`, **WMMHR-2025** (`ATAKUtilities.convertFromTrueToMagnetic`)
+  - grid: `GeoCalculations.computeGridConvergence` (UTM grid north)
+  - text: `AngleUtilities.format` (degrees or mils) and
+    `SpanUtilities.formatType` (ft/mi, m/km, NM, switching at
+    `rng_feet_display_pref` 5280 ft and `rng_meters_display_pref`
+    2000 m).
+- **The preferences** (Units): `rab_brg_units_pref` (degrees),
+  `rab_rng_units_pref` (metric), `rab_north_ref_pref` (**magnetic**),
+  `rab_dist_slant_range` (clamped to the ground).
+- **From me, on an item's details** (`RangeAndBearingTableHandler`): range
+  in all three unit systems, bearing magnetic and true in degrees and
+  mils, and the cardinal direction.
+- **The R&B line** (`RangeAndBearingMapItem`, `RangeAndBearingTool`): two
+  ends, each a marker it follows or a fixed point; a label
+  `→ 245°M   1.2 mi   3°↓` (direction arrow, bearing with its north,
+  range, the depression angle with slant range on); `u-rb-a` CoT with
+  `range`, `bearing`, `inclination`, `rangeUID`, `anchorUID`,
+  `rangeUnits`, `bearingUnits` and `northRef` details.
+
+### The PRs
+
+| PR | Branch | What | Gate |
+|---|---|---|---|
+| **a** | `g3/rab-math` | the numbers and text in Swift: Vincenty range and bearing, slant range and angle, grid convergence, `AngleUtilities`/`SpanUtilities`, magnetic from the engine's NOAA library and `wmm_cof` built into the app; the Units preferences under 5.5's keys; range and bearing from me in a contact's details | golden tests against the kernel's own Java (`make test-rab-golden` in CI's `jvm-tests`, as `test-coord-golden`); the label against 5.5's `updateLabel` by reading |
+| **b** | `g3/map-lines` | the engine side: lines (a line-string feature with a stroke and a label) beside the markers in `MapMarkers`; a click as a ground position (`InputBridge.groundAt`) or a marker (hit test); `EngineBridge` calls for both | a line's pixels where expected (CI render job, as the markers' gate); the click → position round trip in a test |
+| **c** | `g3/rab-tool` | the R&B tool: pick two ends (markers or places), the line and its label drawn and kept current as a marker moves; delete; the Units choices apply | hand check (owner); the label strings from **a**'s tests |
+| **d** | `g3/rab-cot` | sharing: a line sent as `u-rb-a` and others' lines drawn (`RangeAndBearingImporter`), stale and delete as markers | two clients: one's line on the other's map (CI comms leg); the event's details field by field against `toCot` |
+
+Then a docs PR, as after each milestone.
+
+Not in G3.8: range circles (`RangeCircle`), the bullseye, Bloodhound and
+its ETA, the dynamic R&B tool (from me to the cursor), measuring along a
+path. Each can follow on **b**'s groundwork.
+
+### Decided with the plan (owner, 2026-11-20)
+
+1. G3.8 is range and bearing; routes and points move to G3.9.
+2. Magnetic north uses the engine's NOAA library and 5.5's `wmm_cof`
+   (WMMHR-2025) built into the app package, not a Swift port: one model,
+   the one 5.5 ships, and the golden test checks the same code.
+3. The details show range and bearing from where the self-SA says this
+   client is (CoreLocation or placed), as 5.5 uses the self marker.
