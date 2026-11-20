@@ -25,7 +25,9 @@ final class RangeBearingLinesTests: XCTestCase {
         XCTAssertEqual(rab.startPoint, here, "a place shows the red start point")
         XCTAssertEqual(rab.prompt, "Click the point to measure to.")
         let line = rab.click(.item("contact-1"))
-        XCTAssertEqual(line, RangeBearingLine(id: "id-1", title: "R&B 1", start: .point(here), end: .item("contact-1")))
+        XCTAssertEqual(line.map { [$0.id, $0.title] }, ["id-1", "R&B 1"])
+        XCTAssertEqual(line?.start, .point(here))
+        XCTAssertEqual(line?.end, .item("contact-1"))
         XCTAssertEqual(rab.tool, .off)
         XCTAssertNil(rab.prompt)
         XCTAssertEqual(rab.lines.count, 1)
@@ -105,6 +107,111 @@ final class RangeBearingLinesTests: XCTestCase {
         rab.add(start: .point(here), end: .point(there))
         rab.add(start: .point(here), end: .point(there))
         rab.removeAll()
+        XCTAssertTrue(rab.lines.isEmpty)
+    }
+}
+
+// G3.8d: lines heard over CoT.
+@MainActor
+final class RangeBearingReceiveTests: XCTestCase {
+    private let now = Date()
+    private let here = CotPoint(lat: 37.795, lon: -122.445)
+    private let there = CotPoint(lat: 37.80, lon: -122.44)
+
+    private func xml(uid: String = "remote-1", title: String = "R&B 7", startUID: String? = nil,
+                     endUID: String? = nil, color: Int32 = RangeBearingEvent.red) -> String {
+        RangeBearingEvent.make(uid: uid, title: title, start: here, end: there, startUID: startUID, endUID: endUID,
+                               style: .atak, color: color, creator: nil, now: now).xml()
+    }
+
+    func testAHeardLineIsAdded() {
+        let rab = RangeBearingLines()
+        XCTAssertTrue(rab.receive(xml(endUID: "m1")) { $0 == "m1" })
+        let line = rab["remote-1"]
+        XCTAssertEqual(line?.title, "R&B 7")
+        XCTAssertEqual(line?.end, .item("m1"))
+        XCTAssertEqual(line?.received, true)
+    }
+
+    func testAnUnknownMarkerBecomesAPlace() {
+        let rab = RangeBearingLines()
+        rab.receive(xml(startUID: "gone", endUID: "gone-too")) { _ in false }
+        guard case .point(let s) = rab["remote-1"]?.start, case .point(let e) = rab["remote-1"]?.end else {
+            return XCTFail("both ends are places")
+        }
+        XCTAssertEqual(s.lat, here.lat, accuracy: 1e-7)
+        XCTAssertLessThan(Geodesy.distance(lat1: e.lat, lon1: e.lon, lat2: there.lat, lon2: there.lon), 0.01)
+    }
+
+    func testAnUpdateReplacesIt() {
+        let rab = RangeBearingLines()
+        rab.receive(xml()) { _ in false }
+        rab.receive(xml(title: "renamed", color: -16_711_936)) { _ in false }
+        XCTAssertEqual(rab.lines.count, 1)
+        XCTAssertEqual(rab["remote-1"]?.title, "renamed")
+        XCTAssertEqual(rab["remote-1"]?.color, -16_711_936)
+    }
+
+    /// RangeAndBearingImporter on an existing line: an end the event names
+    /// no marker for stays tied to its marker; a fixed end moves.
+    func testAnUpdateKeepsATiedEndAndMovesAFixedOne() {
+        let rab = RangeBearingLines()
+        let mine = rab.add(start: .item("self"), end: .point(CotPoint(lat: 1, lon: 1)))
+        XCTAssertTrue(rab.receive(xml(uid: mine.id)) { _ in false })
+        XCTAssertEqual(rab[mine.id]?.start, .item("self"))
+        guard case .point(let e) = rab[mine.id]?.end else { return XCTFail("the end is a place") }
+        XCTAssertLessThan(Geodesy.distance(lat1: e.lat, lon1: e.lon, lat2: there.lat, lon2: there.lon), 0.01)
+        XCTAssertEqual(rab[mine.id]?.received, false, "still a line made here")
+        XCTAssertFalse(rab.receive(xml(uid: mine.id)) { _ in false }, "the same again changes nothing")
+    }
+
+    private func delete(_ uid: String, force: Bool) -> String {
+        var d = CotDetail("detail")
+        var link = CotDetail("link")
+        link["uid"] = uid; link["relation"] = "none"; link["type"] = "none"
+        d.add(link)
+        if force { d.add(CotDetail("__forcedelete")) }
+        return CotEvent(uid: "del", type: CotMarkerStore.deleteType, time: now, stale: now, how: "h-g-i-g-o",
+                        point: here, detail: d).xml()
+    }
+
+    /// CotDeleteImporter: only a force delete removes a line, any line.
+    func testOnlyAForceDeleteRemovesALine() {
+        let rab = RangeBearingLines()
+        rab.receive(xml()) { _ in false }
+        let mine = rab.add(start: .point(here), end: .point(there))
+        XCTAssertFalse(rab.receive(delete("remote-1", force: false)) { _ in false })
+        XCTAssertNotNil(rab["remote-1"], "a plain delete only greys markers")
+        XCTAssertTrue(rab.receive(delete("remote-1", force: true)) { _ in false })
+        XCTAssertNil(rab["remote-1"])
+        XCTAssertTrue(rab.receive(delete(mine.id, force: true)) { _ in false })
+        XCTAssertNil(rab[mine.id], "a line made here goes too")
+    }
+
+    func testColourWeightAndCreatorComeWithIt() {
+        let rab = RangeBearingLines()
+        let creator = RangeBearingEvent.Creator(uid: "ANDROID-1", type: "a-f-G-U-C", callsign: "VIPER",
+                                                time: Date(timeIntervalSince1970: 1_794_999_000))
+        let event = RangeBearingEvent.make(uid: "remote-2", title: "R&B 9", start: here, end: there, startUID: nil,
+                                           endUID: nil, style: .atak, color: -16_776_961, weight: 5,
+                                           creator: creator, now: now)
+        rab.receive(event.xml()) { _ in false }
+        XCTAssertEqual(rab["remote-2"]?.color, -16_776_961)
+        XCTAssertEqual(rab["remote-2"]?.weight, 5)
+        XCTAssertEqual(rab["remote-2"]?.creator, creator, "kept, to send on")
+    }
+
+    func testALineMadeHereHasThisClientAsCreator() {
+        let rab = RangeBearingLines()
+        let me = RangeBearingEvent.Creator(uid: "MACTAK-1", type: "a-f-G-U-C", callsign: "ME", time: now)
+        rab.author = { me }
+        XCTAssertEqual(rab.add(start: .point(here), end: .point(there)).creator, me)
+    }
+
+    func testOtherEventsAreIgnored() {
+        let rab = RangeBearingLines()
+        let sa = CotEvent(uid: "c", type: "a-f-G-U-C", time: now, stale: now, how: "m-g", point: here).xml()
+        XCTAssertFalse(rab.receive(sa) { _ in false })
         XCTAssertTrue(rab.lines.isEmpty)
     }
 }

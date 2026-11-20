@@ -79,8 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let units: UnitPreferences
     /// Address lookup for ADDR: Apple's, and imported Nominatim servers.
     let geocoders: GeocoderRegistry
-    /// Range and bearing lines and their tool (G3.8c).
-    let rangeBearing = RangeBearingLines()
+    /// Range and bearing lines and their tool (G3.8c), shared over CoT (G3.8d).
+    var rangeBearing: RangeBearingLines { connections.rangeBearing }
     private var rangeBearingChanges: AnyCancellable?
     private let watcher: InterfaceWatcher
     /// The map's markers: the contacts and the self position (G3.7b).
@@ -107,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                         chatStore: chatStore)
         watcher = InterfaceWatcher { mesh.refresh() }
         markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
-                                me: me, rangeBearing: rangeBearing, units: units)
+                                me: me, rangeBearing: connections.rangeBearing, units: units)
         super.init()
         let rangeBearing = rangeBearing, markers = markers
         host.onMapClick = { pick in rangeBearing.click(pick) }

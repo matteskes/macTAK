@@ -19,6 +19,7 @@
 
 import Combine
 import Foundation
+import MacTAKCot
 
 /// Where the server list and the client's identity persist.
 public protocol SettingsStore: AnyObject {
@@ -51,6 +52,8 @@ public final class ServerConnections: ObservableObject {
     public let markers: CotMarkerStore
     /// GeoChat, when the app gave a ChatStore (G3.5b).
     public let chat: ChatService?
+    /// Range and bearing lines, made here or heard (G3.8c/d).
+    public let rangeBearing = RangeBearingLines()
     private var detailsWatch: AnyCancellable?
     private let settings: SettingsStore
     private let identities: IdentityStore
@@ -78,6 +81,12 @@ public final class ServerConnections: ObservableObject {
         let contacts = ContactStore(selfUID: me.details.uid)
         self.contacts = contacts
         markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
+        // setAuthorInformation: production_time is a CoordinatedTime, milliseconds
+        rangeBearing.author = {
+            let ms = (Date().timeIntervalSince1970 * 1000).rounded(.down) / 1000
+            return RangeBearingEvent.Creator(uid: me.details.uid, type: me.details.unitType,
+                                             callsign: me.details.callsign, time: Date(timeIntervalSince1970: ms))
+        }
         let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
         self.chat = chat
         // A new team or role changes which rooms take messages.
@@ -258,11 +267,52 @@ public final class ServerConnections: ObservableObject {
             contacts.receive(xml, via: server(endpoint).map { .server($0) } ?? .mesh)
             markers.receive(xml)
             chat?.receive(xml)
+            rangeBearing.receive(xml) { [contacts, markers, uid] in
+                markers[$0] != nil || contacts[$0] != nil || $0 == uid
+            }
         case let .contactRemoved(uid):
             contacts.remove(uid)
         default:
             break
         }
+    }
+
+    /// Send the line `id` as 5.5's Send does (u-rb-a, RangeBearingEvent):
+    /// to the contacts in `contacts`, or to everyone (a broadcast) when it
+    /// is nil. An end tied to a CoT marker is named by its uid; one tied to
+    /// a contact or this client isn't, as 5.5 doesn't. The line's creator
+    /// goes with it, a received line's included.
+    /// Throws when commo isn't running, the line is gone, or an end's
+    /// marker has no place here.
+    public func share(line id: String, to contacts: [String]? = nil, style: RangeBearing.Style,
+                      at now: Date = Date()) throws {
+        guard let client else { throw ShareError.notRunning }
+        guard let line = rangeBearing[id] else { throw ShareError.noLine }
+        guard let start = place(line.start), let end = place(line.end) else { throw ShareError.noPlace }
+        let event = RangeBearingEvent.make(uid: line.id, title: line.title, start: start, end: end,
+                                           startUID: namedUID(line.start), endUID: namedUID(line.end), style: style,
+                                           color: line.color, weight: line.weight, creator: line.creator, now: now)
+        let xml = event.xml()
+        Task {
+            if let contacts { try? await client.send(xml, to: contacts) } else { try? await client.broadcast(xml, via: .any) }
+        }
+    }
+
+    public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace }
+
+    /// Where an end is now: its place, or its marker's, contact's or this client's.
+    private func place(_ end: RangeBearingEnd) -> CotPoint? {
+        switch end {
+        case .point(let p): return p
+        case .item(let id):
+            return markers[id]?.point ?? contacts[id]?.point ?? (id == uid ? me.location?.point : nil)
+        }
+    }
+
+    /// 5.5's isEndpointSerializable: only a CoT marker's uid is written.
+    private func namedUID(_ end: RangeBearingEnd) -> String? {
+        if case .item(let id) = end, markers[id] != nil { return id }
+        return nil
     }
 
     private func setCallsign(_ callsign: String) {

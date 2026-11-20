@@ -1,0 +1,13 @@
+# lat	lon	hae	azimuth	distance	inclination	(NaN: no height or no inclination)
+# G3.8d's fixtures: a received R&B line's far end from its anchor, bearing
+# and range (RangeAndBearingImporter's pointAtDistance), from the engine.
+37.7749	-122.4194	10	75.87369914010227	13458.23935238407	NaN
+37.7749	-122.4194	10	75.87369914010227	13458.23935238407	0.17
+37.7749	-122.4194	NaN	245	1931	3.5
+37.7749	-122.4194	10	0	0	NaN
+37.795	-122.445	0	90	500	-2
+51.5	-0.1	25	180	250000	NaN
+-33.86	151.21	5	300	1	45
+0	179.999	0	90	1000	NaN
+78.2	15.6	100	359.9	40000	NaN
+-54.8	-68.3	0	135	12000000	NaN

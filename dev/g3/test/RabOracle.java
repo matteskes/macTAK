@@ -39,6 +39,7 @@ public final class RabOracle {
         magnetic(in.resolve("magnetic.tsv"), out.resolve("magnetic.tsv"));
         angles(in.resolve("angles.tsv"), out.resolve("angles.tsv"));
         ranges(in.resolve("ranges.tsv"), out.resolve("ranges.tsv"));
+        destinations(in.resolve("destinations.tsv"), out.resolve("destinations.tsv"));
     }
 
     private static List<String[]> rows(Path p) throws IOException {
@@ -72,6 +73,26 @@ public final class RabOracle {
                 w.println(GeoCalculations.distance(a, b) + "\t" + GeoCalculations.bearing(a, b) + "\t"
                         + GeoCalculations.slantDistance(a, b) + "\t"
                         + GeoCalculations.computeGridConvergence(a, b));
+            }
+        }
+    }
+
+    /**
+     * G3.8d: where a received R&B line's far end is when its marker isn't
+     * here (RangeAndBearingImporter): pointAtDistance from the anchor, with
+     * the inclination when the event has one. The height is printed as the
+     * kernel returns it (NaN when the start has none).
+     */
+    private static void destinations(Path in, Path out) throws IOException {
+        try (PrintWriter w = writer(out, "lat\tlon\thae")) {
+            for (String[] r : rows(in)) {
+                final GeoPoint a = new GeoPoint(d(r[0]), d(r[1]), d(r[2]), IGeoPoint.AltitudeReference.HAE,
+                        GeoPoint.UNKNOWN, GeoPoint.UNKNOWN);
+                final double inclination = d(r[5]);
+                final IGeoPoint p = Double.isNaN(inclination)
+                        ? GeoCalculations.pointAtDistance(a, d(r[3]), d(r[4]))
+                        : GeoCalculations.pointAtDistance(a, d(r[3]), d(r[4]), inclination);
+                w.println(p.getLatitude() + "\t" + p.getLongitude() + "\t" + p.getAltitude());
             }
         }
     }

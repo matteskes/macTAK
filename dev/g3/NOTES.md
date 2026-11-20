@@ -2522,3 +2522,82 @@ path. Each can follow on **b**'s groundwork.
 
 All seven passed (owner, 2026-11-20), after scrolling the Units pane to
 reach Range & Bearing; the pane's height is fixed since.
+
+### G3.8d — sharing lines as CoT (2026-11-20, branch `g3/rab-cot`)
+
+#### What changed
+
+- **`RangeBearingEvent`** (MacTAKCot) writes a line as 5.5's
+  `RangeAndBearingMapItem.toCot` does, field by field:
+  - the event: the line's uid, `u-rb-a`, how `h-e`, stale a day on, the
+    start as its point
+  - `range`, `bearing` (true), `inclination`, then `rangeUID` and
+    `anchorUID` only for an end tied to a CoT marker
+    (`isEndpointSerializable`: not a fixed place, the self marker or a
+    contact), then `rangeUnits`, `bearingUnits`, `northRef` as the Units
+    preferences' numbers
+  - what the detail handlers add for a line: `contact callsign` (the
+    title), `strokeColor`, `strokeWeight`, `strokeStyle` solid, `color`
+    (toCot sets it for `ColorDetailHandler`), and `creator` (the line's
+    author: `setAuthorInformation` at the tool's second click, or a
+    received line's own).
+  It reads one as `RangeAndBearingImporter` and the detail handlers do:
+  the anchor is the event's point unless `anchorUID` is a marker here;
+  the far end is `rangeUID`'s marker, else `range` along `bearing` from
+  the anchor; `strokeColor` then `strokeWeight` win over the importer's
+  colour (`StrokeFillDetailHandler` runs last); `creator` is kept.
+- **`Geodesy.pointAtDistance`**: the engine's `pointAtRange` (Vincenty's
+  direct formula), with the inclination's flat-earth height, for that far
+  end. `make test-rab-golden` has a new leg, `destinations.tsv`: the
+  kernel's `GeoCalculations.pointAtDistance` for 10 starts, which the
+  Swift port matched on the first run.
+- **`RangeBearingLines`** now lives in `ServerConnections`, which hands
+  it every CoT event. A `u-rb-a` event adds the line or updates the one
+  with its uid, whoever made it: an end the event names a marker for is
+  tied to it; otherwise an end tied to a marker stays tied and a fixed
+  end moves to the event's place. A delete task with `__forcedelete`
+  removes the line it names, made here or not.
+- **Send…** in a line's context menu, 5.5's Send: pick contacts, or
+  Broadcast to everyone (`ServerConnections.share`). It says why when it
+  can't (nothing connected, or a marker with no place here). Each line
+  draws in its own colour and weight.
+
+#### What 5.5 does that this keeps
+
+- **A line's inclination is 0.0 when a height is unknown**: 5.5's
+  `_depAngle` starts at 0 and is only set with a slant range.
+- **The far end's height is flat-earth**: start + tan(inclination) ×
+  range, which over 13 km sits 17 m above the true end. The engine's own
+  note says so.
+- **Without an inclination the far end has no height**: the kernel's
+  Java `pointAtDistance(src, azimuth, distance)` returns none.
+- **A marker a received line names but this client hasn't heard** leaves
+  that end at the event's place. 5.5's importer returns DEFERRED, but
+  only loading saved state (`StateSaverPublisher`) retries it; a live
+  event isn't.
+- **A plain delete task leaves lines alone**: without `__forcedelete`,
+  `CotDeleteImporter` only makes a marker stale.
+- **A missing title takes the next "R&B n"**, on an update too.
+- **An echo of a line made here is imported like any event**, and keeps
+  its ends tied by the update rule above.
+
+#### Not as 5.5
+
+- **An update doesn't move another client's marker.** When an existing
+  line's end is tied to a marker and the event names none, 5.5's
+  importer moves that marker to the event's place (`setPoint`); here
+  the end stays tied and the marker stays where its own events put it.
+- **`strokeStyle` is read but lines draw solid**: 5.5 sends solid; a
+  dashed or dotted line from another client draws solid here.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `RangeBearingCommsTests` (2, new) | two `ServerConnections` on `fake-cot-server.py`: A's line to a CoT marker both have arrives tied to B's marker; a line between two places arrives with its far end within a centimetre of A's; sharing with nothing running, no line or no place says so; the creator arrives with the line. The first send right after connecting went nowhere once in six runs (commo reports an interface up before it can send on it, G1); the test resends until the line arrives, and passed 8 of 8 |
+| `RangeBearingEventTests` (5, new) | the event field by field; no heights is inclination 0.0, no uids, no creator; read back with its creator; the importer's defaults; `strokeColor` and `strokeWeight` win |
+| `RangeBearingReceiveTests` (8, new) | added; a marker not here becomes a place; an update replaces; an update keeps a tied end and moves a fixed one; only a force delete removes a line, one made here too; colour, weight and creator come with it; a line made here has this client as creator; other events ignored |
+| `make test-rab-golden` | passes, with the new `destinations.tsv` leg |
+| `make test-app` | 165 tests pass |
+| `make app` | builds; bundle and license checks pass |
+| `make lint` | passes |

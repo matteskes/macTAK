@@ -47,13 +47,15 @@ final class MapMarkerSync {
     struct Line: Equatable {
         var start, end: CotPoint
         var label: String?
+        var color: UInt32
+        var width: Float
     }
 
     /// The R&B tool's start point: 5.5's shape_marker, red, not clickable.
     static let rabStartUID = "mactak-rab-start"
-    /// 5.5's R&B line: rab_color_pref "red", stroke weight 3.
+    /// 5.5's R&B start point: rab_color_pref "red" (each line draws in its
+    /// own colour and weight: 5.5's red and 3, or what a received one says).
     static let rabColor: UInt32 = 0xFFFF_0000
-    static let rabWidth: Float = 3
     private var symbols: CotSymbols?
     private var symbolIcons: [String: String?] = [:]
     private var selfIcon: String?
@@ -113,12 +115,13 @@ final class MapMarkerSync {
         var labels: [String: String] = [:]
         for (line, start, end) in rangeBearing.ends(markers: places) {
             let label = RangeBearing(from: start, to: end).label(style, magnetic: units.magnetic, at: now)
-            want["mactak-rab-" + line.id] = Line(start: start, end: end, label: label)
+            want["mactak-rab-" + line.id] = Line(start: start, end: end, label: label,
+                                                 color: UInt32(bitPattern: line.color), width: Float(line.weight))
             labels[line.id] = label
         }
         for (uid, l) in want where sentLines[uid] != l {
             engine.putLine(uid: uid, points: [(l.start.lat, l.start.lon), (l.end.lat, l.end.lon)],
-                           color: Self.rabColor, width: Self.rabWidth, arrow: true, label: l.label)
+                           color: l.color, width: l.width, arrow: true, label: l.label)
         }
         for uid in sentLines.keys where want[uid] == nil { engine.removeMarker(uid: uid) }
         sentLines = want
