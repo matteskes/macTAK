@@ -23,6 +23,7 @@ final class UnitPreferencesTests: XCTestCase {
         XCTAssertEqual(units.altitudeUnits, .feet)
         XCTAssertEqual(units.speedUnits, .milesPerHour)
         XCTAssertEqual(units.selfCoordAction, .panTo)
+        XCTAssertEqual(units.selfCoordDisplay, .bottomRight)
     }
 
     func testChoicesPersistUnderATAKKeys() {
@@ -58,6 +59,18 @@ final class UnitPreferencesTests: XCTestCase {
         XCTAssertEqual(units.coordinateFormat, .utm)
         XCTAssertEqual(units.altitudeReference, .msl)
         XCTAssertEqual(units.altitudeUnits, .feet)
+    }
+
+    func testSelfReadoutDisplayUnderATAKsKey() {
+        let settings = MemorySettings()
+        UnitPreferences(settings: settings, geoid: nil).selfCoordDisplay = .none
+        XCTAssertEqual(settings.string(forKey: "self_coord_info_display"), "none")
+        XCTAssertEqual(UnitPreferences(settings: settings, geoid: nil).selfCoordDisplay, .none)
+
+        for stored in ["bottom_right", "bottom_bar", "nonsense"] {
+            settings.set(stored, forKey: "self_coord_info_display")
+            XCTAssertEqual(UnitPreferences(settings: settings, geoid: nil).selfCoordDisplay, .bottomRight, stored)
+        }
     }
 
     func testAltitudeBothWays() throws {
