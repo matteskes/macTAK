@@ -7,6 +7,9 @@
 //   speed_unit_pref     "0" MPH (default), "1" km/h, "2" knots, "3" m/s
 //   self_coord_action   what a tap on the self readout does: panto
 //                       (default), cyclecoordinate or nothing
+//   self_coord_info_display  whether the self readout shows: bottom_right
+//                       (default) or none (5.5's bottom_bar reads as
+//                       bottom_right: the app has no bottom bar)
 //
 // The geoid turns HAE into MSL. It comes from the app bundle; without it
 // (a broken bundle) MSL shows unknown rather than an HAE passed off as MSL.
@@ -31,6 +34,9 @@ public final class UnitPreferences: ObservableObject {
     @Published public var selfCoordAction: SelfCoordAction {
         didSet { settings.set(selfCoordAction.rawValue, forKey: Key.selfCoordAction) }
     }
+    @Published public var selfCoordDisplay: SelfCoordDisplay {
+        didSet { settings.set(selfCoordDisplay.rawValue, forKey: Key.selfCoordDisplay) }
+    }
 
     public let geoid: Geoid?
     private let settings: SettingsStore
@@ -42,10 +48,20 @@ public final class UnitPreferences: ObservableObject {
         case nothing = "nothing"
     }
 
+    /// 5.5's self_coord_display_values, less bottom_bar.
+    public enum SelfCoordDisplay: String, CaseIterable, Sendable {
+        case bottomRight = "bottom_right"
+        case none = "none"
+
+        /// Anything but none shows the readout, as the box: the app has
+        /// no bottom bar.
+        init(stored: String?) { self = stored == Self.none.rawValue ? .none : .bottomRight }
+    }
+
     enum Key {
         static let coordinateFormat = "coord_display_pref", altitudeReference = "alt_display_pref"
         static let altitudeUnits = "alt_unit_pref", selfCoordAction = "self_coord_action"
-        static let speedUnits = "speed_unit_pref"
+        static let speedUnits = "speed_unit_pref", selfCoordDisplay = "self_coord_info_display"
     }
 
     public init(settings: SettingsStore, geoid: Geoid?) {
@@ -60,6 +76,7 @@ public final class UnitPreferences: ObservableObject {
             ?? .milesPerHour
         selfCoordAction = settings.string(forKey: Key.selfCoordAction).flatMap(SelfCoordAction.init(rawValue:))
             ?? .panTo
+        selfCoordDisplay = SelfCoordDisplay(stored: settings.string(forKey: Key.selfCoordDisplay))
     }
 
     /// The app's geoid: egm96-15.grid in the bundle's Resources.

@@ -149,7 +149,7 @@ struct ContentView: View {
             ZStack(alignment: .bottom) {
                 MapView(host: host)
                 status
-                if host.state == .running {
+                if host.state == .running && units.selfCoordDisplay != .none {
                     SelfReadoutView(me: me, details: me.details, units: units, host: host)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }

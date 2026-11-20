@@ -4,7 +4,8 @@
 // altitude and heading, the speed and accuracy, in cyan. A click does what
 // the Units settings say: pan to me (5.5's default), change the format
 // (DD → DM → DMS → UTM → MGRS), or nothing. With no location at all, only
-// NO GPS shows, as in 5.5.
+// NO GPS shows, as in 5.5. Settings › Units can hide it (5.5's
+// self_coord_info_display).
 
 import MacTAKComms
 import SwiftUI
@@ -27,6 +28,7 @@ struct SelfReadoutView: View {
                     pair(r.speed, r.accuracy)
                 }
                 .foregroundStyle(.cyan)
+                .fixedSize()        // one box sized to its text: pair's Spacer would stretch it across the map
                 .contentShape(Rectangle())
                 .onTapGesture { tapped(location.point) }
                 .help(help)

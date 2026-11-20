@@ -11,6 +11,14 @@ struct UnitsSettings: View {
     /// The formats the app offers: 5.5's, less ADDR (no geocoder yet).
     static let formats: [CoordinateFormat] = [.mgrs, .dd, .dm, .dms, .utm]
 
+    /// 5.5's Self Coordinate Information, as on or off: the app has only
+    /// the bottom-right box. My Details in the sidebar has the same
+    /// information either way.
+    private var showSelfReadout: Binding<Bool> {
+        Binding(get: { units.selfCoordDisplay != .none },
+                set: { units.selfCoordDisplay = $0 ? .bottomRight : .none })
+    }
+
     var body: some View {
         Form {
             Picker("Coordinate format", selection: $units.coordinateFormat) {
@@ -40,6 +48,7 @@ struct UnitsSettings: View {
                 Text("Knots").tag(SpeedUnits.knots)
                 Text("Meters per second").tag(SpeedUnits.metersPerSecond)
             }
+            Toggle("Show my coordinates on the map", isOn: showSelfReadout)
             Picker("Tapping my coordinates", selection: $units.selfCoordAction) {
                 Text("Pans to me").tag(UnitPreferences.SelfCoordAction.panTo)
                 Text("Changes the coordinate format").tag(UnitPreferences.SelfCoordAction.cycleCoordinate)
