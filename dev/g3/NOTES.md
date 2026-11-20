@@ -2489,6 +2489,9 @@ path. Each can follow on **b**'s groundwork.
   header's trash deletes them all.
 - `dev/g3/test/send-markers.py --north M` sends its markers M metres
   further north, to move them.
+- Settings › Units asks for 780 points of height: a grouped form has
+  none of its own, and the window opened cut off above Range & Bearing
+  (found in the hand check).
 
 #### Not done (5.5 has them)
 
@@ -2516,3 +2519,6 @@ path. Each can follow on **b**'s groundwork.
 6. Delete a line from its context menu; delete the rest with the trash.
 7. `send-markers.py --delete g37c-friend --force` with a line tied to
    it: the line stays, its end where the marker was.
+
+All seven passed (owner, 2026-11-20), after scrolling the Units pane to
+reach Range & Bearing; the pane's height is fixed since.
