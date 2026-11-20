@@ -2357,9 +2357,13 @@ path. Each can follow on **b**'s groundwork.
 - **`UnitPreferences`** keeps 5.5's six R&B keys (magnetic north,
   degrees, m/km, ground range, 5280 ft, 2000 m by default).
   Settings › Units has a Range & Bearing section with an example label.
-- **A contact's popover** shows the range in all three unit systems and
-  the bearing magnetic and true in degrees and mils, with the compass
-  point, from where the self-SA says this client is.
+- **A contact's popover** shows the range in all three unit systems
+  (the chosen one first) and the bearing magnetic and true in degrees
+  and mils, with the compass point, from where the self-SA says this
+  client is. Checked by hand (owner, 2026-11-20) with a test contact
+  sent over loopback: the first layout drew the mils line over the
+  bearing (an empty Grid label has no height), so each line has its
+  own label.
 - **The golden test**, `make test-rab-golden`, runs in CI's
   `native-engine` job:
   - `RabOracle.java` runs 5.5's `GeoCalculations`, `magneticDeclination`

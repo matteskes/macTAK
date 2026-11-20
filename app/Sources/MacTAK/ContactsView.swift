@@ -123,11 +123,20 @@ private struct ContactDetails: View {
             if let address = contact.address { row("Address", "\(address.text) (\(address.geocoder))") }
             if contact.point != .zero, let here = me.location?.point {
                 // 5.5's range and bearing from me (RangeAndBearingTableHandler)
+                // Each line has its own label: an empty one has no height in
+                // a Grid, and its row drew over the one above.
                 let t = RangeBearing(from: here, to: contact.point)
                     .table(magnetic: units.magnetic, thresholds: units.rangeThresholds)
-                row("Range", "\(t.metersKilometers) · \(t.feetMiles) · \(t.nauticalMiles)")
-                row("Bearing", [t.magneticDegrees, t.trueDegrees, t.cardinal].compactMap { $0 }.joined(separator: " · "))
-                row("", [t.magneticMils, t.trueMils].compactMap { $0 }.joined(separator: " · "))
+                let (preferred, others) = switch units.rangeUnits {
+                case .metersKilometers: (t.metersKilometers, [t.feetMiles, t.nauticalMiles])
+                case .feetMiles: (t.feetMiles, [t.metersKilometers, t.nauticalMiles])
+                case .nauticalMiles: (t.nauticalMiles, [t.metersKilometers, t.feetMiles])
+                }
+                row("Range", preferred)
+                row("Also", others.joined(separator: "   "))
+                row("Bearing", [t.magneticDegrees, t.trueDegrees].compactMap { $0 }.joined(separator: "   ")
+                    + "   (\(t.cardinal))")
+                row("In mils", [t.magneticMils, t.trueMils].compactMap { $0 }.joined(separator: "   "))
             }
             row("Source", source)
             if let track = contact.track, track.speed > 0 {
