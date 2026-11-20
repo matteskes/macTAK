@@ -65,6 +65,62 @@ public enum Geodesy {
     private static let wgs84F = 1.0 - wgs84B / wgs84A
     private static let wgs84A2B21 = (wgs84A * wgs84A) / (wgs84B * wgs84B) - 1.0
 
+    /// The point `distance` metres along the ground from (lat, lon) at
+    /// `azimuth` degrees from true north: the engine's
+    /// GeoPoint2_pointAtDistance, not quick, which is util/Distance.cpp
+    /// pointAtRange (Vincenty's direct formula, that file's constants).
+    /// With no inclination (NaN) the kernel's Java returns no height, so
+    /// neither does this; with one (degrees) the start's height rises by
+    /// tan(inclination) × distance, flat-earth as the engine's own note
+    /// says. `hae` NaN is unknown and stays so.
+    public static func pointAtDistance(lat: Double, lon: Double, hae: Double, azimuth: Double, distance: Double,
+                                       inclination: Double = .nan) -> (lat: Double, lon: Double, hae: Double) {
+        let phi1 = radians * lat
+        let tanU1 = (1.0 - wgs84F) * tan(phi1)
+        let U1 = atan(tanU1)
+        let lambda1 = radians * lon
+        let alpha1 = radians * azimuth
+        let s = distance
+        let cosU1 = cos(U1), sinU1 = sin(U1)
+        let cosAlpha1 = cos(alpha1), sinAlpha1 = sin(alpha1)
+        let sigma1 = atan2(tanU1, cosAlpha1)
+        let sinAlpha = cosU1 * sinAlpha1
+        let sin2Alpha = sinAlpha * sinAlpha
+        let cos2Alpha = 1.0 - sin2Alpha
+        let u2 = cos2Alpha * wgs84A2B21
+        let A = 1.0 + u2 / 16384.0 * (4096.0 + u2 * (-768.0 + u2 * (320.0 - 175.0 * u2)))
+        let B = u2 / 1024.0 * (256.0 + u2 * (-128.0 + u2 * (74.0 - 47.0 * u2)))
+        var sigma = s / (wgs84B * A)
+        var deltaSigma = 0.0, lastDeltaSigma = 0.0
+        var sinSigma = 0.0, cosSigma = 0.0, cos2sigmaM = 0.0, cos2sigmaMSquared = 0.0
+        repeat {
+            lastDeltaSigma = deltaSigma
+            sinSigma = sin(sigma)
+            cosSigma = cos(sigma)
+            cos2sigmaM = cos(2 * sigma1 + sigma)
+            cos2sigmaMSquared = cos2sigmaM * cos2sigmaM
+            deltaSigma = B * sinSigma
+                * (cos2sigmaM
+                    + B / 4.0
+                    * (cosSigma * (-1.0 + 2.0 * cos2sigmaMSquared)
+                        - (B / 6.0 * cos2sigmaM * (-3.0 + 4.0 * sinSigma * sinSigma)
+                            * (-3.0 + 4.0 * cos2sigmaMSquared))))
+            sigma = s / (wgs84B * A) + deltaSigma
+        } while abs(deltaSigma - lastDeltaSigma) > 1e-12
+        let phi2 = atan2(sinU1 * cosSigma + cosU1 * sinSigma * cosAlpha1,
+                         (1.0 - wgs84F) * (sin2Alpha + pow(sinU1 * sinSigma - cosU1 * cosSigma * cosAlpha1, 2.0))
+                            .squareRoot())
+        let lambda = atan2(sinSigma * sinAlpha1, cosU1 * cosSigma - sinU1 * sinSigma * cosAlpha1)
+        let C = wgs84F / 16.0 * cos2Alpha * (4.0 + wgs84F * (4.0 - 3.0 * cos2Alpha))
+        let L = lambda - (1.0 - C) * wgs84F * sinAlpha
+            * (sigma + C * sinSigma * (cos2sigmaM + C * cosSigma * (-1.0 + 2.0 * cos2sigmaMSquared)))
+        var height = inclination.isNaN ? .nan : hae
+        if !inclination.isNaN && inclination != 0 && !height.isNaN {
+            height += tan(inclination * Double.pi / 180.0) * distance
+        }
+        return (phi2 / radians, (L + lambda1) / radians, height)
+    }
+
     static func calculateRange(lat1 lat1Deg: Double, lon1 lon1Deg: Double,
                                lat2 lat2Deg: Double, lon2 lon2Deg: Double) -> Double {
         let lat1 = lat1Deg * radians, lat2 = lat2Deg * radians

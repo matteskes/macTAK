@@ -2522,3 +2522,72 @@ path. Each can follow on **b**'s groundwork.
 
 All seven passed (owner, 2026-11-20), after scrolling the Units pane to
 reach Range & Bearing; the pane's height is fixed since.
+
+### G3.8d — sharing lines as CoT (2026-11-20, branch `g3/rab-cot`)
+
+#### What changed
+
+- **`RangeBearingEvent`** (MacTAKCot) writes a line as 5.5's
+  `RangeAndBearingMapItem.toCot` does, field by field:
+  - the event: the line's uid, `u-rb-a`, how `h-e`, stale a day on, the
+    start as its point
+  - `range`, `bearing` (true), `inclination`, then `rangeUID` and
+    `anchorUID` only for an end tied to a CoT marker
+    (`isEndpointSerializable`: not a fixed place, the self marker or a
+    contact), then `rangeUnits`, `bearingUnits`, `northRef` as the Units
+    preferences' numbers
+  - what the detail handlers add for a line: `contact callsign` (the
+    title), `strokeColor`, `strokeWeight` 3.0, `strokeStyle` solid,
+    `color` (toCot sets it for `ColorDetailHandler`), and `creator`
+    (`setAuthorInformation` in the tool: this client's uid, unit type and
+    callsign, and when the line was made).
+  It reads one as `RangeAndBearingImporter` does: the anchor is the
+  event's point unless `anchorUID` is a marker here; the far end is
+  `rangeUID`'s marker, else `range` along `bearing` from the anchor.
+- **`Geodesy.pointAtDistance`**: the engine's `pointAtRange` (Vincenty's
+  direct formula), with the inclination's flat-earth height, for that far
+  end. `make test-rab-golden` has a new leg, `destinations.tsv`: the
+  kernel's `GeoCalculations.pointAtDistance` for 10 starts, which the
+  Swift port matched on the first run.
+- **`RangeBearingLines`** now lives in `ServerConnections`, which hands
+  it every CoT event: a `u-rb-a` adds or replaces a line (marked
+  received, in its own colour), a delete task naming one removes it.
+- **Send to All** in a line's context menu broadcasts it
+  (`ServerConnections.share`); it says why when it can't (nothing
+  connected, or a marker with no place here).
+
+#### What 5.5 does that this keeps
+
+- **A line's inclination is 0.0 when a height is unknown**: 5.5's
+  `_depAngle` starts at 0 and is only set with a slant range.
+- **The far end's height is flat-earth**: start + tan(inclination) ×
+  range, which over 13 km sits 17 m above the true end. The engine's own
+  note says so.
+- **Without an inclination the far end has no height**: the kernel's
+  Java `pointAtDistance(src, azimuth, distance)` returns none.
+
+#### Not as 5.5
+
+- **A marker a received line names but this client hasn't heard**: 5.5
+  defers the import and retries; here that end is fixed where the event
+  puts it.
+- **A delete task removes a line at once**, with or without
+  `__forcedelete`: lines don't go stale-grey as markers do. A received
+  line otherwise stays until deleted, as 5.5's shapes do.
+- **A line made here is never replaced by one heard under its uid**: the
+  mesh can echo it back.
+- **Send goes to everyone**: 5.5's Send also offers contacts one by one.
+- A received line sent on carries no `creator`: 5.5 keeps the
+  original's; this doesn't store it.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `RangeBearingCommsTests` (2, new) | two `ServerConnections` on `fake-cot-server.py`: A's line to a CoT marker both have arrives tied to B's marker; a line between two places arrives with its far end within a centimetre of A's; sharing with nothing running, no line or no place says so. The first send right after connecting went nowhere once in six runs (commo reports an interface up before it can send on it, G1); the test resends until the line arrives, and passed 8 of 8 |
+| `RangeBearingEventTests` (4, new) | the event field by field; no heights is inclination 0.0, no uids, no creator; read back; the importer's defaults |
+| `RangeBearingReceiveTests` (6, new) | added, a marker not here becomes a place, an update replaces, an echo of a line made here is ignored, a delete removes, other events ignored |
+| `make test-rab-golden` | passes, with the new `destinations.tsv` leg |
+| `make test-app` | 163 tests pass |
+| `make app` | builds; bundle and license checks pass |
+| `make lint` | passes |

@@ -52,6 +52,23 @@ final class RangeBearingTests: XCTestCase {
         XCTAssertEqual(mismatches, [])
     }
 
+    /// G3.8d: a received line's far end, as RangeAndBearingImporter finds it.
+    func testPointAtDistanceIsTheEngines() throws {
+        let starts = try rows("destinations.tsv"), expected = try rows("expected/destinations.tsv")
+        XCTAssertEqual(starts.count, expected.count)
+        var mismatches: [String] = []
+        for (r, e) in zip(starts, expected) {
+            let v = r.map(number), want = e.map(number)
+            let got = Geodesy.pointAtDistance(lat: v[0], lon: v[1], hae: v[2], azimuth: v[3], distance: v[4],
+                                              inclination: v[5])
+            for (name, g, w) in [("lat", got.lat, want[0]), ("lon", got.lon, want[1]), ("hae", got.hae, want[2])]
+            where !close(g, w) {
+                mismatches.append("\(r.joined(separator: " ")) \(name): \(g) want \(w)")
+            }
+        }
+        XCTAssertEqual(mismatches, [])
+    }
+
     func testMagneticNorthIsTheEngines() throws {
         let model = try MagneticModel(contentsOf: Self.wmmCof)
         let utc = TimeZone(identifier: "UTC")!

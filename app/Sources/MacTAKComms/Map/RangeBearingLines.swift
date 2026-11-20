@@ -11,6 +11,13 @@
 // - when a marker an end is tied to goes away, the line stays and that end
 //   stays where the marker last was (removePoint).
 //
+// Shared lines (G3.8d): a line can be sent as CoT (u-rb-a,
+// RangeBearingEvent) and others' lines arrive the same way: an end is the
+// marker the event names when this client has it, else a fixed place (5.5
+// defers and retries such an import; here the place stands). A delete task
+// naming a line removes it. A line this client made is never replaced by
+// one heard under its uid (the mesh can echo it back).
+//
 // The map side (drawing, the label from the Units preferences) is the app's
 // MapMarkerSync; this file holds what the lines are.
 
@@ -30,6 +37,18 @@ public struct RangeBearingLine: Identifiable, Equatable, Sendable {
     public var title: String
     public var start: RangeBearingEnd
     public var end: RangeBearingEnd
+    /// ARGB as an int, as CoT carries it (5.5's default red).
+    public var color: Int32 = RangeBearingEvent.red
+    /// Heard from another client, not made here.
+    public var received = false
+    /// When it was made here (CoT's <creator time>).
+    public var created = Date()
+
+    public init(id: String, title: String, start: RangeBearingEnd, end: RangeBearingEnd,
+                color: Int32 = RangeBearingEvent.red, received: Bool = false, created: Date = Date()) {
+        self.id = id; self.title = title; self.start = start; self.end = end
+        self.color = color; self.received = received; self.created = created
+    }
 }
 
 /// What a click on the map hit, for the tool.
@@ -105,10 +124,40 @@ public final class RangeBearingLines: ObservableObject {
     // ---- the lines ----------------------------------------------------------
 
     @discardableResult
-    public func add(start: RangeBearingEnd, end: RangeBearingEnd) -> RangeBearingLine {
-        let line = RangeBearingLine(id: newID(), title: nextTitle(), start: start, end: end)
+    public func add(start: RangeBearingEnd, end: RangeBearingEnd, at now: Date = Date()) -> RangeBearingLine {
+        let line = RangeBearingLine(id: newID(), title: nextTitle(), start: start, end: end, created: now)
         lines.append(line)
         return line
+    }
+
+    public subscript(id: String) -> RangeBearingLine? { lines.first { $0.id == id } }
+
+    /// Takes in a CoT event commo received: a u-rb-a line is added or
+    /// replaced, a delete task naming a line removes it; anything else is
+    /// ignored. `isMarker` says whether a uid is a marker this client has.
+    /// Returns whether the lines changed.
+    @discardableResult
+    public func receive(_ xml: String, isMarker: (String) -> Bool) -> Bool {
+        guard let event = try? CotEvent.parse(xml) else { return false }
+        if event.type == CotMarkerStore.deleteType {
+            guard let uid = event.detail("link")?["uid"], self[uid] != nil else { return false }
+            remove(id: uid)
+            return true
+        }
+        guard let r = RangeBearingEvent.parse(event) else { return false }
+        if let mine = self[r.uid], !mine.received { return false }
+        let start: RangeBearingEnd = r.anchorUID.map { isMarker($0) } == true ? .item(r.anchorUID!) : .point(r.anchor)
+        let end: RangeBearingEnd = r.rangeUID.map { isMarker($0) } == true ? .item(r.rangeUID!) : .point(r.farEnd)
+        if let i = lines.firstIndex(where: { $0.id == r.uid }) {
+            lines[i].title = r.title ?? lines[i].title
+            lines[i].start = start
+            lines[i].end = end
+            lines[i].color = r.color
+        } else {
+            lines.append(RangeBearingLine(id: r.uid, title: r.title ?? nextTitle(), start: start, end: end,
+                                          color: r.color, received: true))
+        }
+        return true
     }
 
     public func remove(id: String) {

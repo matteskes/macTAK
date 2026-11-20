@@ -4,7 +4,8 @@
 // - while it runs, 5.5's prompt shows at the top of the map with Cancel
 //   (Esc)
 // - the sidebar's Range & Bearing section lists the lines with their labels;
-//   a line's context menu deletes it, the header deletes them all.
+//   a line's context menu sends it to everyone (G3.8d) or deletes it, the
+//   header deletes them all. A line heard from another client says so.
 //
 // The tool and the lines are RangeBearingLines (MacTAKComms), which the
 // tests drive; MapMarkerSync draws them.
@@ -47,6 +48,9 @@ struct RangeBearingPrompt: View {
 
 struct RangeBearingSection: View {
     @ObservedObject var lines: RangeBearingLines
+    @EnvironmentObject private var connections: ServerConnections
+    @EnvironmentObject private var units: UnitPreferences
+    @State private var sendFailure: String?
 
     var body: some View {
         Section {
@@ -55,12 +59,13 @@ struct RangeBearingSection: View {
             }
             ForEach(lines.lines) { line in
                 VStack(alignment: .leading) {
-                    Text(line.title)
+                    Text(line.received ? "\(line.title) (received)" : line.title)
                     if let label = lines.labels[line.id] {
                         Text(label).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                 }
                 .contextMenu {
+                    Button("Send to All") { send(line) }
                     Button("Delete", role: .destructive) { lines.remove(id: line.id) }
                 }
             }
@@ -74,6 +79,24 @@ struct RangeBearingSection: View {
                         .help("Delete all range & bearing lines")
                 }
             }
+        }
+        .alert("Can't send the line", isPresented: Binding(get: { sendFailure != nil },
+                                                           set: { if !$0 { sendFailure = nil } })) {
+            Button("OK") { sendFailure = nil }
+        } message: {
+            Text(sendFailure ?? "")
+        }
+    }
+
+    private func send(_ line: RangeBearingLine) {
+        do {
+            try connections.share(line: line.id, style: units.rangeBearingStyle)
+        } catch ServerConnections.ShareError.notRunning {
+            sendFailure = "Nothing is connected: start the mesh or a server."
+        } catch ServerConnections.ShareError.noPlace {
+            sendFailure = "One of its markers has no position here."
+        } catch {
+            sendFailure = "\(error)"
         }
     }
 }
