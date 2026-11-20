@@ -14,6 +14,7 @@ struct ContactsSection: View {
     @EnvironmentObject private var connections: ServerConnections
     @EnvironmentObject private var me: SelfReporter
     @EnvironmentObject private var units: UnitPreferences
+    @EnvironmentObject private var geocoders: GeocoderRegistry
     @State private var editing = false
 
     var body: some View {
@@ -23,7 +24,7 @@ struct ContactsSection: View {
         } header: {
             Text("Contacts")
         }
-        .sheet(isPresented: $editing) { MyDetailsSheet(details: me.details, me: me, units: units) }
+        .sheet(isPresented: $editing) { MyDetailsSheet(details: me.details, me: me, units: units, geocoders: geocoders) }
     }
 }
 
@@ -116,6 +117,7 @@ private struct ContactDetails: View {
             row("Role", role)
             row("Position", contact.point == .zero ? "unknown" : units.position(contact.point))
             if contact.point != .zero { row("Altitude", units.altitude(contact.point)) }
+            if let address = contact.address { row("Address", "\(address.text) (\(address.geocoder))") }
             row("Source", source)
             if let track = contact.track, track.speed > 0 {
                 row("Moving", String(format: "%.1f m/s, %.0f°", track.speed, track.course))

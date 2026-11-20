@@ -8,8 +8,8 @@
 // kernel's leg of the golden test runs 5.5's own Java over the same
 // fixtures (dev/g3/test/coord-golden, make test-coord-golden).
 //
-// ADDR (an address) is in the list, as in 5.5, but writes and reads DD
-// until macTAK has a geocoder; the app doesn't offer it.
+// ADDR (an address) writes and reads DD, as 5.5's formatter does: an
+// address is looked up, not formatted (G3.6c: My Details, Geocoding).
 
 import Foundation
 
