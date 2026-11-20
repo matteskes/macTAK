@@ -152,27 +152,60 @@ final class RangeBearingReceiveTests: XCTestCase {
         XCTAssertEqual(rab["remote-1"]?.color, -16_711_936)
     }
 
-    func testOwnLinesAreNotReplacedByAnEcho() {
+    /// RangeAndBearingImporter on an existing line: an end the event names
+    /// no marker for stays tied to its marker; a fixed end moves.
+    func testAnUpdateKeepsATiedEndAndMovesAFixedOne() {
         let rab = RangeBearingLines()
-        let mine = rab.add(start: .item("self"), end: .point(there))
-        XCTAssertFalse(rab.receive(xml(uid: mine.id)) { _ in false })
+        let mine = rab.add(start: .item("self"), end: .point(CotPoint(lat: 1, lon: 1)))
+        XCTAssertTrue(rab.receive(xml(uid: mine.id)) { _ in false })
         XCTAssertEqual(rab[mine.id]?.start, .item("self"))
-        XCTAssertEqual(rab[mine.id]?.received, false)
+        guard case .point(let e) = rab[mine.id]?.end else { return XCTFail("the end is a place") }
+        XCTAssertLessThan(Geodesy.distance(lat1: e.lat, lon1: e.lon, lat2: there.lat, lon2: there.lon), 0.01)
+        XCTAssertEqual(rab[mine.id]?.received, false, "still a line made here")
+        XCTAssertFalse(rab.receive(xml(uid: mine.id)) { _ in false }, "the same again changes nothing")
     }
 
-    func testADeleteRemovesIt() {
+    private func delete(_ uid: String, force: Bool) -> String {
+        var d = CotDetail("detail")
+        var link = CotDetail("link")
+        link["uid"] = uid; link["relation"] = "none"; link["type"] = "none"
+        d.add(link)
+        if force { d.add(CotDetail("__forcedelete")) }
+        return CotEvent(uid: "del", type: CotMarkerStore.deleteType, time: now, stale: now, how: "h-g-i-g-o",
+                        point: here, detail: d).xml()
+    }
+
+    /// CotDeleteImporter: only a force delete removes a line, any line.
+    func testOnlyAForceDeleteRemovesALine() {
         let rab = RangeBearingLines()
         rab.receive(xml()) { _ in false }
-        let delete = CotEvent(uid: "del", type: CotMarkerStore.deleteType, time: now, stale: now, how: "h-g-i-g-o",
-                              point: here, detail: {
-                                  var d = CotDetail("detail")
-                                  var link = CotDetail("link")
-                                  link["uid"] = "remote-1"; link["relation"] = "none"; link["type"] = "none"
-                                  d.add(link)
-                                  return d
-                              }())
-        XCTAssertTrue(rab.receive(delete.xml()) { _ in false })
+        let mine = rab.add(start: .point(here), end: .point(there))
+        XCTAssertFalse(rab.receive(delete("remote-1", force: false)) { _ in false })
+        XCTAssertNotNil(rab["remote-1"], "a plain delete only greys markers")
+        XCTAssertTrue(rab.receive(delete("remote-1", force: true)) { _ in false })
         XCTAssertNil(rab["remote-1"])
+        XCTAssertTrue(rab.receive(delete(mine.id, force: true)) { _ in false })
+        XCTAssertNil(rab[mine.id], "a line made here goes too")
+    }
+
+    func testColourWeightAndCreatorComeWithIt() {
+        let rab = RangeBearingLines()
+        let creator = RangeBearingEvent.Creator(uid: "ANDROID-1", type: "a-f-G-U-C", callsign: "VIPER",
+                                                time: Date(timeIntervalSince1970: 1_794_999_000))
+        let event = RangeBearingEvent.make(uid: "remote-2", title: "R&B 9", start: here, end: there, startUID: nil,
+                                           endUID: nil, style: .atak, color: -16_776_961, weight: 5,
+                                           creator: creator, now: now)
+        rab.receive(event.xml()) { _ in false }
+        XCTAssertEqual(rab["remote-2"]?.color, -16_776_961)
+        XCTAssertEqual(rab["remote-2"]?.weight, 5)
+        XCTAssertEqual(rab["remote-2"]?.creator, creator, "kept, to send on")
+    }
+
+    func testALineMadeHereHasThisClientAsCreator() {
+        let rab = RangeBearingLines()
+        let me = RangeBearingEvent.Creator(uid: "MACTAK-1", type: "a-f-G-U-C", callsign: "ME", time: now)
+        rab.author = { me }
+        XCTAssertEqual(rab.add(start: .point(here), end: .point(there)).creator, me)
     }
 
     func testOtherEventsAreIgnored() {

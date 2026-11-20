@@ -76,6 +76,10 @@ final class RangeBearingEventTests: XCTestCase {
         XCTAssertEqual(r.anchorUID, "anchor-1")
         XCTAssertNil(r.rangeUID)
         XCTAssertEqual(r.color, -16_776_961)
+        XCTAssertEqual(r.weight, 3)
+        XCTAssertEqual(r.creator?.uid, "ANDROID-1")
+        XCTAssertEqual(r.creator?.callsign, "VIPER")
+        XCTAssertEqual(r.creator?.time, creator.time)
         let far = r.farEnd
         XCTAssertLessThan(Geodesy.distance(lat1: far.lat, lon1: far.lon, lat2: end.lat, lon2: end.lon), 0.01)
         // the engine's flat-earth height: start + tan(inclination) × range,
@@ -93,6 +97,25 @@ final class RangeBearingEventTests: XCTestCase {
         XCTAssertEqual(r.bearing, -1)
         XCTAssertTrue(r.inclination.isNaN)
         XCTAssertEqual(r.color, RangeBearingEvent.red)
+        XCTAssertNil(r.weight)
+        XCTAssertNil(r.creator)
         XCTAssertNil(RangeBearingEvent.parse(CotEvent(uid: "x", type: "a-f-G", time: now, stale: now, how: "h-e")))
+    }
+
+    /// StrokeFillDetailHandler runs after the importer: strokeColor wins
+    /// (white when it doesn't parse), and strokeWeight 6.0 when it doesn't.
+    func testStrokeDetailsWin() throws {
+        var d = CotDetail("detail")
+        for (name, v) in [("color", "-65536"), ("strokeColor", "-16711936"), ("strokeWeight", "wide")] {
+            var c = CotDetail(name); c["value"] = v; d.add(c)
+        }
+        let e = CotEvent(uid: "x", type: "u-rb-a", time: now, stale: now, how: "h-e", point: start, detail: d)
+        let r = try XCTUnwrap(RangeBearingEvent.parse(e))
+        XCTAssertEqual(r.color, -16_711_936)
+        XCTAssertEqual(r.weight, 6.0)
+        var bad = CotDetail("strokeColor"); bad["value"] = "green"
+        var d2 = CotDetail("detail"); d2.add(bad)
+        let e2 = CotEvent(uid: "x", type: "u-rb-a", time: now, stale: now, how: "h-e", point: start, detail: d2)
+        XCTAssertEqual(RangeBearingEvent.parse(e2)?.color, -1, "white")
     }
 }

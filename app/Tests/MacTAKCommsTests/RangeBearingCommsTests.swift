@@ -71,6 +71,9 @@ final class RangeBearingCommsTests: XCTestCase {
         XCTAssertEqual(start.lon, here.lon, accuracy: 1e-7)
         XCTAssertEqual(got.color, RangeBearingEvent.red)
         XCTAssertTrue(got.received)
+        let made = try XCTUnwrap(a.rangeBearing[tied.id]?.creator), heard = try XCTUnwrap(got.creator)
+        XCTAssertEqual([heard.uid, heard.type, heard.callsign], [a.uid, made.type, made.callsign], "A made it")
+        XCTAssertEqual(heard.time.timeIntervalSince1970, made.time.timeIntervalSince1970, accuracy: 0.001)
 
         // between two places: B puts the far end range along bearing
         let free = a.rangeBearing.add(start: .point(here), end: .point(there))

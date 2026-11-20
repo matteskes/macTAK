@@ -10,9 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - G3.8d, sharing range and bearing lines (`dev/g3/NOTES.md` §G3.8d):
-  Send to All sends a line as ATAK 5.5's `u-rb-a` CoT, and lines others
-  send are drawn, tied to the markers they name when this Mac has them.
-  A delete removes a received line.
+  Send… sends a line as ATAK 5.5's `u-rb-a` CoT to chosen contacts or
+  everyone, and lines others send are drawn in their colour, tied to the
+  markers they name when this Mac has them, as 5.5 imports them. A force
+  delete removes a line.
 
 - G3.8c, the range and bearing tool (`dev/g3/NOTES.md` §G3.8c): the R&B
   Line button measures from one click to another, a marker or a place,

@@ -27,7 +27,8 @@
 // this client has; the far end is <rangeUID>'s marker, else the point
 // <range> along <bearing> from the anchor (pointAtDistance), with the
 // inclination's height when there is one. A missing title is the caller's
-// "R&B n"; a missing colour is red.
+// "R&B n". The colour and weight are what the detail handlers leave (see
+// Received), and <creator> is kept to send on.
 
 import Foundation
 
@@ -52,7 +53,8 @@ public enum RangeBearingEvent {
     /// `startUID` and `endUID` name an end's marker when 5.5 would.
     public static func make(uid: String, title: String, start: CotPoint, end: CotPoint,
                             startUID: String?, endUID: String?, style: RangeBearing.Style,
-                            color: Int32 = red, creator: Creator?, now: Date) -> CotEvent {
+                            color: Int32 = red, weight: Double = strokeWeight, creator: Creator?,
+                            now: Date) -> CotEvent {
         let rab = RangeBearing(from: start, to: end)
         var detail = CotDetail("detail")
         func value(_ name: String, _ v: String) {
@@ -73,7 +75,7 @@ public enum RangeBearingEvent {
         contact["callsign"] = title
         detail.add(contact)
         value("strokeColor", String(color))
-        value("strokeWeight", Cot.number(strokeWeight))
+        value("strokeWeight", Cot.number(weight))
         value("strokeStyle", "solid")
         value("color", String(color))
         if let creator {
@@ -100,7 +102,15 @@ public enum RangeBearingEvent {
         public var bearing: Double
         /// NaN when the event has none.
         public var inclination: Double
+        /// What the line's colour ends up as in 5.5: <strokeColor value>
+        /// (StrokeFillDetailHandler, applied last; white when it doesn't
+        /// parse), else <color value> (the importer; red when missing or
+        /// unparseable).
         public var color: Int32
+        /// <strokeWeight value>, 6.0 when it doesn't parse; nil when absent.
+        public var weight: Double?
+        /// <creator>, as CreatorDetailHandler keeps it; nil when absent.
+        public var creator: Creator?
 
         /// The far end when `rangeUID` isn't a marker here: `range` along
         /// `bearing` from the anchor, as the importer computes it.
@@ -122,6 +132,15 @@ public enum RangeBearingEvent {
             value(name).flatMap { Double($0.trimmingCharacters(in: .whitespaces)) } ?? fallback
         }
         let callsign = event.detail("contact")?["callsign"]
+        let white: Int32 = -1
+        var color = value("color").flatMap { Int32($0) } ?? red
+        if let stroke = event.detail("strokeColor") { color = stroke["value"].flatMap { Int32($0) } ?? white }
+        let weight = event.detail("strokeWeight").map { $0["value"].flatMap { Double($0) } ?? 6.0 }
+        var creator: Creator?
+        if let c = event.detail("creator"), let uid = c["uid"], !uid.isEmpty {
+            creator = Creator(uid: uid, type: c["type"] ?? "", callsign: c["callsign"] ?? "",
+                              time: c["time"].flatMap(Cot.parseTime) ?? event.time)
+        }
         return Received(uid: event.uid,
                         title: callsign?.isEmpty == false ? callsign : nil,
                         anchor: event.point,
@@ -130,6 +149,6 @@ public enum RangeBearingEvent {
                         range: number("range", -1),
                         bearing: number("bearing", -1),
                         inclination: number("inclination", .nan),
-                        color: value("color").flatMap { Int32($0) } ?? red)
+                        color: color, weight: weight, creator: creator)
     }
 }

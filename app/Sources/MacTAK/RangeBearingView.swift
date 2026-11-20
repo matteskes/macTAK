@@ -4,8 +4,9 @@
 // - while it runs, 5.5's prompt shows at the top of the map with Cancel
 //   (Esc)
 // - the sidebar's Range & Bearing section lists the lines with their labels;
-//   a line's context menu sends it to everyone (G3.8d) or deletes it, the
-//   header deletes them all. A line heard from another client says so.
+//   a line's context menu sends it (G3.8d: to chosen contacts or everyone,
+//   as 5.5's Send) or deletes it, the header deletes them all. A line heard
+//   from another client says so.
 //
 // The tool and the lines are RangeBearingLines (MacTAKComms), which the
 // tests drive; MapMarkerSync draws them.
@@ -51,6 +52,7 @@ struct RangeBearingSection: View {
     @EnvironmentObject private var connections: ServerConnections
     @EnvironmentObject private var units: UnitPreferences
     @State private var sendFailure: String?
+    @State private var sending: RangeBearingLine?
 
     var body: some View {
         Section {
@@ -65,7 +67,7 @@ struct RangeBearingSection: View {
                     }
                 }
                 .contextMenu {
-                    Button("Send to All") { send(line) }
+                    Button("Send…") { sending = line }
                     Button("Delete", role: .destructive) { lines.remove(id: line.id) }
                 }
             }
@@ -80,6 +82,16 @@ struct RangeBearingSection: View {
                 }
             }
         }
+        .sheet(item: $sending) { line in
+            SendLineSheet(line: line, contacts: connections.contacts) { choice in
+                sending = nil
+                switch choice {
+                case .everyone: send(line, to: nil)
+                case .contacts(let uids): send(line, to: uids)
+                case .cancel: break
+                }
+            }
+        }
         .alert("Can't send the line", isPresented: Binding(get: { sendFailure != nil },
                                                            set: { if !$0 { sendFailure = nil } })) {
             Button("OK") { sendFailure = nil }
@@ -88,9 +100,10 @@ struct RangeBearingSection: View {
         }
     }
 
-    private func send(_ line: RangeBearingLine) {
+    /// `to` nil is everyone.
+    private func send(_ line: RangeBearingLine, to: [String]?) {
         do {
-            try connections.share(line: line.id, style: units.rangeBearingStyle)
+            try connections.share(line: line.id, to: to, style: units.rangeBearingStyle)
         } catch ServerConnections.ShareError.notRunning {
             sendFailure = "Nothing is connected: start the mesh or a server."
         } catch ServerConnections.ShareError.noPlace {
@@ -98,5 +111,41 @@ struct RangeBearingSection: View {
         } catch {
             sendFailure = "\(error)"
         }
+    }
+}
+
+/// 5.5's Send for a map item: pick contacts, or broadcast to everyone.
+private struct SendLineSheet: View {
+    enum Choice { case everyone, contacts([String]), cancel }
+
+    let line: RangeBearingLine
+    @ObservedObject var contacts: ContactStore
+    let done: (Choice) -> Void
+    @State private var chosen: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Send \(line.title)").font(.headline)
+            if contacts.contacts.isEmpty {
+                Text("No contacts heard yet: Broadcast sends it to everyone connected.")
+                    .foregroundStyle(.secondary)
+            } else {
+                List(contacts.contacts, selection: $chosen) { c in
+                    Text(c.callsign).tag(c.uid)
+                }
+                .frame(minHeight: 160)
+            }
+            HStack {
+                Button("Cancel", role: .cancel) { done(.cancel) }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Broadcast") { done(.everyone) }
+                Button("Send") { done(.contacts(Array(chosen))) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(chosen.isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 360)
     }
 }
