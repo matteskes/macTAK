@@ -101,6 +101,9 @@ public final class WindowApp {
     private static volatile InputBridge bridge;
     /** The map's markers (G3.7b), once the globe exists; null before and after. */
     private static volatile MapMarkers markers;
+    /** The camera as the last frame drew it (G3.8b): clicks resolve against
+     *  it on the AppKit main thread without waiting for the render thread. */
+    private static volatile com.atakmap.map.MapSceneModel scene;
     /** The first frame must show the attached content (the gates); false
      *  for the app, whose layers may keep loading after the first frame. */
     private static boolean contentGate = true;
@@ -229,6 +232,34 @@ public final class WindowApp {
     public static void removeMarker(String uid) {
         final MapMarkers m = markers;
         if (m != null) m.remove(uid);
+    }
+
+    /** Add or move a line (G3.8b, {@link MapMarkers#putLine}); dropped before the map exists. */
+    public static void putLine(String uid, double[] latLons, int color, float width, boolean arrow, String label) {
+        final MapMarkers m = markers;
+        if (m != null) m.putLine(uid, latLons, color, width, arrow, label);
+    }
+
+    /**
+     * The ground under a surface pixel (upper-left origin) as the last frame
+     * drew it: {lat, lon, hae}, hae NaN where no elevation data covers it;
+     * null off the world or before the first frame (G3.8b).
+     */
+    public static double[] groundAt(float x, float y) {
+        final com.atakmap.map.MapSceneModel sm = scene;
+        return sm == null ? null : MapPick.ground(sm, x, y);
+    }
+
+    /** The marker within {@code radius} pixels of a surface pixel, nearest first; null for none (G3.8b). */
+    public static String markerAt(float x, float y, float radius) {
+        final com.atakmap.map.MapSceneModel sm = scene;
+        final MapMarkers m = markers;
+        return sm == null || m == null ? null : m.markerAt(sm, x, y, radius);
+    }
+
+    /** Keep the camera the frame just drew with (a fresh object per call). Render thread. */
+    private static void publishScene() {
+        scene = view.getMapSceneModel(false, com.atakmap.map.MapRenderer3.DisplayOrigin.UpperLeft);
     }
 
     /** Whether markers can be drawn yet: the host resends them all once this turns true. */
@@ -425,6 +456,7 @@ public final class WindowApp {
                 if (stopRequested) break;   // shell is shutting us down mid-run
                 ctx.pump();
                 view.render();
+                publishScene();
                 NativeEgl.finish();
                 rendered++;
                 int err;
@@ -603,6 +635,7 @@ public final class WindowApp {
             final long now = System.nanoTime();
             if (scriptRunning && scriptedPan) panStep((now - t0) / 1e9);
             view.render();
+            publishScene();
             int err;
             while ((err = NativeEgl.getGlError()) != 0) {
                 glErrors++;
@@ -1030,6 +1063,7 @@ public final class WindowApp {
     private static void teardown() {
         bridge = null;   // no more input once the view goes
         markers = null;
+        scene = null;
         if (view != null) {
             view.stop();
             view.release();

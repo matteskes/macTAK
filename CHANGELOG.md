@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.8b, lines on the map and clicks (`dev/g3/NOTES.md` §G3.8b): the
+  map draws lines with an arrow head and a label, and a click can be
+  turned into a place on the ground or the marker under it. The range
+  and bearing tool builds on these.
+
 - G3.8a, range and bearing's numbers (`dev/g3/NOTES.md` §G3.8a):
   - Range, bearing, slant range and grid convergence, computed as the
     engine does.

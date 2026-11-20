@@ -74,6 +74,22 @@ public final class EngineBridge {
     /** Remove a marker. */
     public static void removeMarker(String uid) { WindowApp.removeMarker(uid); }
 
+    /**
+     * Add or move a line (G3.8b): {@code latLons} is lat, lon pairs, two or
+     * more points; {@code color} ARGB; {@code width} pixels; {@code arrow}
+     * puts an arrow head at the last point; {@code label} null draws none.
+     * {@link #removeMarker} removes it. Dropped until {@link #markersReady()}.
+     */
+    public static void putLine(String uid, double[] latLons, int color, float width, boolean arrow, String label) {
+        WindowApp.putLine(uid, latLons, color, width, arrow, label);
+    }
+
+    /** The ground under a pixel (upper-left origin): {lat, lon, hae (NaN if unknown)}, or null. */
+    public static double[] groundAt(float x, float y) { return WindowApp.groundAt(x, y); }
+
+    /** The marker within {@code radius} pixels of a pixel (upper-left origin), or null. */
+    public static String markerAt(float x, float y, float radius) { return WindowApp.markerAt(x, y, radius); }
+
     /** Whether the map takes markers yet; the host resends them all once it does. */
     public static boolean markersReady() { return WindowApp.markersReady(); }
 

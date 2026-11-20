@@ -482,6 +482,13 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/markers.sh dev/g2/build/render-markers.png
 
+      - name: Render a map line and pick clicks (dev/g2/render/test/lines.sh)
+        # G3.8b's gate: the marker layer draws a line over its points, a
+        # click comes back as the ground point and the marker under it; with
+        # neither on the map the same checks must fail
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/lines.sh dev/g2/build/render-lines.png
+
       - name: Render an offline MBTiles basemap under the vector layer
         # G2 M2.3: raster pipeline — synthetic graticule → gdalwarp/gdal_translate
         # (Homebrew gdal CLI) → MBTiles → PersistentRasterDataStore →
@@ -569,6 +576,7 @@ jobs:
             dev/g2/build/render-smoke.png
             dev/g2/build/render-layer.png
             dev/g2/build/render-markers.png
+            dev/g2/build/render-lines.png
             dev/g2/build/render-basemap.png
             dev/g2/build/render-geotiff.png
             dev/g2/build/render-elevation.png

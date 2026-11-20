@@ -2402,3 +2402,59 @@ path. Each can follow on **b**'s groundwork.
 | `make test-app` | passes; `RangeBearingLabelTests` (3) and `RangeBearingPreferencesTests` (4) new |
 | `make app` | the bundle carries `wmm_cof`; `check-bundle.py` and the license check pass |
 | `make lint` | passes |
+
+### G3.8b — lines on the map and clicks (2026-11-20, branch `g3/map-lines`)
+
+#### What changed
+
+- **Lines** beside the markers: `MapMarkers.putLine` writes a line
+  string to the same in-memory store, clamped to the ground:
+  - a stroke in an ARGB colour and a width in pixels, with an arrow head
+    at the last point when asked (`ArrowStrokeStyle`, 16 px as 5.5's
+    `GLArrow2` draws it)
+  - a label drawn along the line, white on a translucent black box, at
+    every resolution
+  - `remove` takes markers and lines alike.
+- **A click as a place**: the render thread keeps a copy of the scene
+  model after every frame (`WindowApp.publishScene`), and
+  `EngineBridge.groundAt` turns a pixel into a latitude and longitude
+  through it on the main thread, without waiting for the render thread
+  (`MapPick`). The height comes from the elevation data there
+  (`ElevationManager`, as 5.5 takes a tapped point's), NaN where none
+  covers it.
+- **A click on a marker**: `EngineBridge.markerAt` returns the marker
+  nearest the pixel within a radius, each marker's point taken through
+  the same scene model. Lines are not picked.
+- **Swift**: `EngineBridge.putLine`, `groundAt` and `markerAt`, with
+  `JNI` double-array helpers; `MetalView.onClick` for a press that
+  didn't drag (`ClickTracker`: 4 points of slop, scaled by the backing).
+  Nothing calls them yet: the R&B tool (c) does.
+
+#### What 5.5 does that this keeps
+
+- **The label hides when it doesn't fit along the line.** 5.5's
+  `GLArrow2` gives its text to the label manager with the line as its
+  geometry, as the engine's feature renderer does here; on a short line
+  neither draws it.
+
+#### What it doesn't do yet
+
+- **The ground under a click ignores terrain.** The scene model's
+  inverse hits the earth model, so with the map tilted over hills the
+  place can sit off the one under the pointer. Looking straight down it
+  is the same place. A ray cast against the terrain needs the render
+  thread.
+- **Marker hits use a radius**, not the icon's box, and a marker's point
+  is taken at its own height (0 when unknown), not on the terrain the
+  engine clamps it to.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `dev/g2/render/test/lines.sh` (new, CI render job) | the line's pixels orange at two points, black beside it; clicks at two points came back 0.00 m off (a pixel is 2 m); a click 6 px off a marker picked it, one on bare ground picked none; with no line and no marker the same checks fail |
+| `dev/g2/render/test/markers.sh` | passes (`put` now shares the store write with lines) |
+| `dev/g2/render/test/input-bridge.sh` | passes |
+| `dev/g2/render/test/args.sh` | passes, with four new bad-argument cases |
+| `make test-app` | 145 tests pass; `ClickTrackerTests` (5) new |
+| `make lint` | passes |
