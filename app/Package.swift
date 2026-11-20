@@ -91,7 +91,15 @@ let package = Package(
             // the app's must stay inside its bundle (dev/deps/check-bundle.py).
             linkerSettings: [.unsafeFlags(["-L\(commoLib)", "-lcommoncommo"])]
         ),
-        .target(name: "MacTAKCot"),
+        // NOAA's World Magnetic Model as the engine carries it, for magnetic
+        // north (G3.8a): formats/wmm and port/Platform.h vendored unchanged,
+        // and a shim porting util/GeomagneticField.cpp. -w: NOAA's code, as
+        // is (dev/g3/test/geoid-oracle.cpp builds it the same way).
+        .target(
+            name: "CMagnetic",
+            cxxSettings: [.headerSearchPath("."), .unsafeFlags(["-w"])]
+        ),
+        .target(name: "MacTAKCot", dependencies: ["CMagnetic"]),
         // reads the golden fixtures in dev/g3/test/cot-golden, which the
         // kernel's leg reads too (make test-cot-golden)
         .testTarget(name: "MacTAKCotTests", dependencies: ["MacTAKCot"]),

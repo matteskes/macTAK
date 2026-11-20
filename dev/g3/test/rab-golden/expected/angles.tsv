@@ -1,0 +1,22 @@
+# written by dev/g3/test/RabOracle.java (make test-rab-golden --write); do not edit
+# bearing°	bearing mils	angle°	angle mils
+360°	0 mils	0°	0 mils
+360°	7 mils	0°	7 mils
+1°	9 mils	1°	9 mils
+1°	18 mils	1°	18 mils
+1°	18 mils	1°	18 mils
+46°	809 mils	46°	809 mils
+180°	3,191 mils	180°	3,191 mils
+180°	3,200 mils	180°	3,200 mils
+181°	3,209 mils	-179°	3,209 mils
+359°	6,389 mils	-1°	6,389 mils
+360°	6,391 mils	0°	6,391 mils
+360°	6,393 mils	0°	6,393 mils
+360°	6,400 mils	0°	6,400 mils
+1°	6,418 mils	1°	6,418 mils
+360°	-7 mils	0°	-7 mils
+315°	-800 mils	-45°	-800 mils
+180°	-3,209 mils	180°	-3,209 mils
+360°	12,804 mils	0°	12,804 mils
+123°	2,195 mils	123°	2,195 mils
+1°	-6,391 mils	1°	-6,391 mils

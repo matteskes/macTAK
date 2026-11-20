@@ -1,0 +1,25 @@
+# metres, in each unit system (RabOracle: SpanUtilities.formatType(type,
+# metres, Span.METER)), at 5.5's thresholds and at 100 ft / 500 m
+0
+0.5
+1.5
+2.5
+3.5
+999.5
+1000
+1609.344
+1609.35
+1852
+1999.6
+2000
+2000.4
+2001
+5000
+99995
+99999
+100000
+185200
+999949
+999950
+1852000
+12345678

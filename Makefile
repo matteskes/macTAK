@@ -1,4 +1,4 @@
-.PHONY: help hooks deps check-deps check-runtime test-app-bundle kernel-jars build build-angle angle angle-from-source check-angle-patches gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-cot-golden test-coord-golden test-symbol-golden test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
+.PHONY: help hooks deps check-deps check-runtime test-app-bundle kernel-jars build build-angle angle angle-from-source check-angle-patches gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-cot-golden test-coord-golden test-rab-golden test-symbol-golden test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -32,6 +32,7 @@ help:
 	@echo "  test-kernel    - takkernel's own :port and :shared unit tests on Gradle 8.13 (dev/g1/kernel/test-kernel.sh; after kernel-jars)"
 	@echo "  test-cot-golden - the kernel's CotEvent writes dev/g3/test/cot-golden's expected events, as the Swift port must (G3.4; after kernel-jars)"
 	@echo "  test-coord-golden - 5.5's coordinate formatter and the engine's geoid write dev/g3/test/coord-golden and app/Resources/egm96-15.grid, as the Swift port must (G3.6; after kernel-jars)"
+	@echo "  test-rab-golden - 5.5's range, bearing, magnetic north and range text on the engine's natives write dev/g3/test/rab-golden, as the Swift port must; the vendored WMM must be the engine's (G3.8; after kernel-jars and build-native)"
 	@echo "  test-symbol-golden - the kernel's own CoT type to 2525C mapping, on 5.5's providers, writes dev/g3/test/symbol-golden, as the Swift port must; the app's renderer must draw the same codes, pixel for pixel (G3.7; after kernel-jars)"
 	@echo "  test-jni       - G1.9 JNI guard/behavior unit canary on a real desktop JVM: guards mode (class-init bailouts, clean JNI_ERR) + kernel mode (Java-backed IOProviderFactory on real files) + noslf4j + missing-member (a failed class init leaves a clean JNIEnv) (dev/g1/jni-tests/run.sh; skips without a JDK)"
 	@echo "  test-roundtrip - run headless round-trip tests (dev/g1/headless/run.sh)"
@@ -129,6 +130,9 @@ test-cot-golden:
 
 test-coord-golden:
 	bash dev/g3/test/coord-golden.sh
+
+test-rab-golden:
+	bash dev/g3/test/rab-golden.sh
 
 test-symbol-golden:
 	bash dev/g3/test/symbol-golden.sh

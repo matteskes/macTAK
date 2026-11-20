@@ -181,6 +181,15 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: make check-deps
 
+      - name: Range and bearing golden test, the kernel's leg (make test-rab-golden)
+        # G3.8a: 5.5's GeoCalculations, magnetic north (the engine's WMM with
+        # wmm_cof), AngleUtilities and SpanUtilities on this job's natives
+        # must write dev/g3/test/rab-golden/expected, which the Swift port
+        # (RangeBearingTests, make test-app) is held to; and app/'s vendored
+        # WMM files must be the engine's, byte for byte.
+        if: needs.changes.outputs.changed == 'true'
+        run: make test-rab-golden
+
       - name: atak-headless offline layer open (GeoJSON/GPKG/KML/SHP via FeatureDataStore2)
         # G1 "offline map layer opens": native OGR provider parses the
         # fixture (+ ogr2ogr-derived GPKG/KML/SHP), the persistent feature

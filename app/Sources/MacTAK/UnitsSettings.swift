@@ -55,6 +55,41 @@ struct UnitsSettings: View {
                 Text("Changes the coordinate format").tag(UnitPreferences.SelfCoordAction.cycleCoordinate)
                 Text("Does nothing").tag(UnitPreferences.SelfCoordAction.nothing)
             }
+            Section("Range & Bearing") {
+                Picker("North reference", selection: $units.northReference) {
+                    Text("Magnetic north").tag(NorthReference.magnetic)
+                    Text("True north").tag(NorthReference.true)
+                    Text("Grid north").tag(NorthReference.grid)
+                }
+                if units.magnetic == nil && units.northReference == .magnetic {
+                    Text("The magnetic model isn't in this build, so magnetic bearings show unknown.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                Picker("Bearing units", selection: $units.bearingUnits) {
+                    Text("Degrees").tag(BearingUnits.degrees)
+                    Text("Mils (6400)").tag(BearingUnits.mils)
+                }
+                Picker("Range units", selection: $units.rangeUnits) {
+                    Text("Feet / miles").tag(RangeUnits.feetMiles)
+                    Text("Meters / kilometers").tag(RangeUnits.metersKilometers)
+                    Text("Nautical miles").tag(RangeUnits.nauticalMiles)
+                }
+                Picker("Range", selection: $units.slantRange) {
+                    Text("Along the ground").tag(false)
+                    Text("Slant range").tag(true)
+                }
+                TextField("Feet up to", value: $units.rangeThresholds.feetToMiles, format: .number.grouping(.never))
+                    .help("Ranges above this many feet show in miles (5.5: 5280)")
+                TextField("Meters up to", value: $units.rangeThresholds.metersToKilometers,
+                          format: .number.grouping(.never))
+                    .help("Ranges above this many meters show in kilometers (5.5: 2000)")
+                LabeledContent("Example") {
+                    Text(RangeBearing(from: CotPoint(lat: 38.8977, lon: -77.0365, hae: 20),
+                                      to: CotPoint(lat: 38.8893, lon: -77.0502, hae: 10))
+                        .label(units.rangeBearingStyle, magnetic: units.magnetic) ?? "unknown")
+                        .textSelection(.enabled)
+                }
+            }
         }
         .formStyle(.grouped)
         .frame(width: 520)
