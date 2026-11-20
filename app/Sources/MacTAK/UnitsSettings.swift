@@ -8,8 +8,9 @@ import SwiftUI
 struct UnitsSettings: View {
     @EnvironmentObject private var units: UnitPreferences
 
-    /// The formats the app offers: 5.5's, less ADDR (no geocoder yet).
-    static let formats: [CoordinateFormat] = [.mgrs, .dd, .dm, .dms, .utm]
+    /// The formats the app offers: 5.5's. ADDR shows positions in DD, as
+    /// 5.5's formatter does; it is an entry format (My Details).
+    static let formats: [CoordinateFormat] = [.mgrs, .dd, .dm, .dms, .address, .utm]
 
     /// 5.5's Self Coordinate Information, as on or off: the app has only
     /// the bottom-right box. My Details in the sidebar has the same

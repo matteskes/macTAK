@@ -32,6 +32,7 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.me)
                 .environmentObject(delegate.chatSelection)
                 .environmentObject(delegate.units)
+                .environmentObject(delegate.geocoders)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -47,8 +48,14 @@ struct MacTAKApp: App {
 
         // ⌘, (G3.6b)
         Settings {
-            UnitsSettings()
-                .environmentObject(delegate.units)
+            TabView {
+                UnitsSettings()
+                    .tabItem { Label("Units", systemImage: "ruler") }
+                GeocoderSettings()
+                    .tabItem { Label("Address Lookup", systemImage: "mappin.and.ellipse") }
+            }
+            .environmentObject(delegate.units)
+            .environmentObject(delegate.geocoders)
         }
     }
 }
@@ -68,6 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let chatSelection = ChatSelection()
     /// How positions and altitudes show (G3.6b), and the geoid for MSL.
     let units: UnitPreferences
+    /// Address lookup for ADDR: Apple's, and imported Nominatim servers.
+    let geocoders: GeocoderRegistry
     private let watcher: InterfaceWatcher
     /// The map's markers: the contacts and the self position (G3.7b).
     private let markers: MapMarkerSync
@@ -79,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let details = SelfDetails(settings: settings, uid: DeviceUID.resolve(suite: suite))
         me = SelfReporter(settings: settings, details: details, locator: LocationService())
         units = UnitPreferences(settings: settings, geoid: UnitPreferences.bundledGeoid())
+        geocoders = GeocoderRegistry(settings: settings)
         // Chat history and user groups, one file per settings suite (G3.5b).
         let chatStore: ChatStore?
         do {

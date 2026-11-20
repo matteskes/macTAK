@@ -34,6 +34,8 @@ public struct Contact: Sendable, Equatable, Identifiable {
     public var takv: TakVersion?
     public var track: Track?
     public var battery: Int?
+    /// Its looked-up street address (<__address>), when the SA carries one.
+    public var address: AddressDetail?
     /// The contact's own endpoint ("192.168.1.20:4242:tcp", or "*:-1:stcp"
     /// through a server).
     public var endpoint: String
@@ -87,7 +89,8 @@ public final class ContactStore: ObservableObject {
             group: GroupDetail(event.detail(GroupDetail.elementName)), point: event.point, how: event.how,
             precision: PrecisionLocation(event.detail(PrecisionLocation.elementName)),
             takv: TakVersion(event.detail("takv")), track: Track(event.detail("track")),
-            battery: event.detail("status")?["battery"].flatMap(Int.init), endpoint: endpoint, paths: paths,
+            battery: event.detail("status")?["battery"].flatMap(Int.init),
+            address: AddressDetail(event.detail(AddressDetail.elementName)), endpoint: endpoint, paths: paths,
             lastHeard: now, staleAt: staleAt, removeAt: staleAt.addingTimeInterval(Self.removeAfterStale))
         publish()
         return true

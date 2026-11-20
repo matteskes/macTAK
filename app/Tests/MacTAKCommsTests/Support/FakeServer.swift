@@ -63,6 +63,12 @@ final class FakeServer: @unchecked Sendable {
         return try FakeServer(python, [script, String(port), cert, key])
     }
 
+    /// dev/g3/test/fake-nominatim-server.py on `port` (ADDR).
+    static func nominatim(port: Int) throws -> FakeServer {
+        let script = repoRoot.appendingPathComponent("dev/g3/test/fake-nominatim-server.py").path
+        return try FakeServer("/usr/bin/env", ["python3", script, String(port)])
+    }
+
     /// dev/g3/test/fake-enroll-server.py on `port`: TAK Server's enrollment
     /// port, signing with `pki`'s CA, for `user` and `password`.
     /// `named`: serve the leaf that names 127.0.0.1, for the name checks.
