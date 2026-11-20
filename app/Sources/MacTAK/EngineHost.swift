@@ -26,6 +26,7 @@ final class EngineHost: ObservableObject {
             let launch = try LaunchConfig.load()
             launch.applyEnvironment()
             let jvm = try JavaBoot.start(classpath: launch.resolvedClasspath, options: launch.resolvedJvmOptions)
+            SignalQuit.install()        // after the JVM: its handlers would replace ours (#226)
             let engine = try EngineBridge(jni: jvm.jni)
             engine.onFailure = { msg in
                 fputs("macTAK: engine bridge broke: \(msg)\n", stderr)

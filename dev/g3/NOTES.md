@@ -2032,3 +2032,20 @@ user icon sets.
   message.** `send-markers.py` first sent ten events on one connection,
   and none arrived. It now opens one connection per event, as a TAK
   client sends to port 4242.
+
+- **19 — the JVM's SIGTERM handler exits around the app's teardown**
+  (#226). The JVM installs handlers for SIGTERM, SIGINT and SIGHUP, and
+  they call `Runtime.exit` while the map is up. The process then exits
+  without `WindowApp`'s teardown, and the engine's C++ statics destroy a
+  Java-backed elevation source after the JVM is gone (G2 trap #73).
+  Every MacTAK crash report from 2026-11-16 to 11-18 (six) was this, from
+  a signal; ⌘Q was never affected. `SignalQuit` takes the three signals
+  back once the JVM is up and quits through `NSApp.terminate`. Not
+  `-Xrs`: it would also turn off SIGQUIT, which `jcmd` and `jstack` need.
+  Calling `terminate` from the signal's main-queue block deadlocks:
+  AppKit's quit loop runs inside that block, and
+  `applicationShouldTerminate`'s `Task` needs the main queue. It goes
+  through `RunLoop.main.perform`. A/B on the dev Mac (launch with `open`,
+  wait 20 s, signal): before, SIGTERM leaves a crash report with
+  `JVM_Halt` and `~ManagedElevationSource`; after, SIGTERM, SIGINT and
+  SIGHUP each quit cleanly with no crash report.
