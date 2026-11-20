@@ -177,7 +177,7 @@ final class EnrollmentTests: XCTestCase {
 
     /// A device profile as a TAK server sends one: a data package of
     /// preferences with no server connection.
-    private static func profile(callsign: String) throws -> URL {
+    static func profile(callsign: String) throws -> URL {
         var zip = ZipWriter()
         zip.add("MANIFEST/manifest.xml", "<MissionPackageManifest version='2'/>")
         zip.add("profile/enrollment.pref", ImportParsingTests.pref(streams: [], app: ["locationCallsign": callsign]))

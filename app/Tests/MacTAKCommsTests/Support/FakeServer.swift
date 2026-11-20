@@ -65,11 +65,13 @@ final class FakeServer: @unchecked Sendable {
 
     /// dev/g3/test/fake-enroll-server.py on `port`: TAK Server's enrollment
     /// port, signing with `pki`'s CA, for `user` and `password`.
-    static func enroll(port: Int, pki: TestPKI, user: String, password: String,
+    /// `named`: serve the leaf that names 127.0.0.1, for the name checks.
+    static func enroll(port: Int, pki: TestPKI, user: String, password: String, named: Bool = false,
                        _ options: [String] = []) throws -> FakeServer {
         let script = repoRoot.appendingPathComponent("dev/g3/test/fake-enroll-server.py").path
         return try FakeServer("/usr/bin/env", ["OPENSSL=\(TestPKI.opensslPath)", "python3", script, String(port),
-                                                pki.serverCert, pki.serverKey, pki.caPEM, pki.caKey,
+                                                named ? pki.namedServerCert : pki.serverCert,
+                                                named ? pki.namedServerKey : pki.serverKey, pki.caPEM, pki.caKey,
                                                 user, password] + options)
     }
 

@@ -53,6 +53,23 @@ public struct ConnectString: Sendable, Hashable, Codable, CustomStringConvertibl
         self.init(host: host, port: port, proto: proto)
     }
 
+    /// The streaming port a quick connect assumes, as ATAK's does.
+    public static let quickConnectPort = 8089
+
+    /// Parses a quick connect's address as ATAK's dialog takes it: a host,
+    /// optionally with a port and a proto, any `scheme://` dropped. The port
+    /// defaults to 8089 and the proto is TLS unless it says quic: a quick
+    /// connect always enrolls for a certificate, so never plain TCP.
+    public init(quickConnect text: String) throws {
+        var address = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let scheme = address.range(of: "://") { address = String(address[scheme.upperBound...]) }
+        if let path = address.firstIndex(of: "/") { address = String(address[..<path]) }
+        let hasPort = address.hasPrefix("[") ? address.contains("]:") : address.contains(":")
+        var parsed = try ConnectString(parsing: hasPort ? address : address + ":\(Self.quickConnectPort)")
+        if parsed.proto != .quic { parsed.proto = .ssl }
+        self = parsed
+    }
+
     /// The form ATAK writes back, brackets restored around an IPv6 host.
     public var description: String {
         (host.contains(":") ? "[\(host)]" : host) + ":\(port):\(proto.rawValue)"

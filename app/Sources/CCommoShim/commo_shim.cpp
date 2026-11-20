@@ -712,6 +712,92 @@ extern "C" int mactak_commo_https_get(const char *url, const char *user, const c
     return 0;
 }
 
+// OpenSSL's entry points for mactak_commo_ca_pkcs12, looked up as
+// initLibraries looks up OPENSSL_init_ssl: commo's libcrypto is loaded by
+// then, and this target stays free of OpenSSL headers and link flags.
+namespace {
+struct CaPkcs12Api {
+    using D2iX509 = void *(*)(void **, const unsigned char **, long);
+    using X509Free = void (*)(void *);
+    using SkNewNull = void *(*)();
+    using SkPush = int (*)(void *, const void *);
+    using SkPopFree = void (*)(void *, void (*)(void *));
+    using Pkcs12Create = void *(*)(const char *, const char *, void *, void *, void *,
+                                   int, int, int, int, int);
+    using I2dPkcs12 = int (*)(void *, unsigned char **);
+    using Pkcs12Free = void (*)(void *);
+
+    D2iX509 d2iX509 = reinterpret_cast<D2iX509>(dlsym(RTLD_DEFAULT, "d2i_X509"));
+    X509Free x509Free = reinterpret_cast<X509Free>(dlsym(RTLD_DEFAULT, "X509_free"));
+    SkNewNull skNewNull = reinterpret_cast<SkNewNull>(dlsym(RTLD_DEFAULT, "OPENSSL_sk_new_null"));
+    SkPush skPush = reinterpret_cast<SkPush>(dlsym(RTLD_DEFAULT, "OPENSSL_sk_push"));
+    SkPopFree skPopFree = reinterpret_cast<SkPopFree>(dlsym(RTLD_DEFAULT, "OPENSSL_sk_pop_free"));
+    Pkcs12Create pkcs12Create = reinterpret_cast<Pkcs12Create>(dlsym(RTLD_DEFAULT, "PKCS12_create"));
+    I2dPkcs12 i2dPkcs12 = reinterpret_cast<I2dPkcs12>(dlsym(RTLD_DEFAULT, "i2d_PKCS12"));
+    Pkcs12Free pkcs12Free = reinterpret_cast<Pkcs12Free>(dlsym(RTLD_DEFAULT, "PKCS12_free"));
+
+    bool loaded() const {
+        return d2iX509 && x509Free && skNewNull && skPush && skPopFree && pkcs12Create && i2dPkcs12 && pkcs12Free;
+    }
+};
+}
+
+extern "C" int mactak_commo_ca_pkcs12(const uint8_t *der, size_t der_len, const char *password,
+                                      uint8_t **out, size_t *out_len, char *err, size_t errlen) {
+    if (!der || der_len == 0 || !password || !out || !out_len) {
+        setError(err, errlen, "no certificates, password or output");
+        return -1;
+    }
+    static const CaPkcs12Api api;
+    if (!api.loaded()) {
+        setError(err, errlen, "OpenSSL is not loaded (is libcommoncommo linked?)");
+        return -1;
+    }
+    void *certs = api.skNewNull();
+    if (!certs) {
+        setError(err, errlen, "out of memory");
+        return -1;
+    }
+    auto freeCerts = [&] { api.skPopFree(certs, api.x509Free); };
+    const unsigned char *cursor = der;
+    const unsigned char *end = der + der_len;
+    while (cursor < end) {
+        void *cert = api.d2iX509(nullptr, &cursor, static_cast<long>(end - cursor));
+        if (!cert) {
+            freeCerts();
+            setError(err, errlen, "certificate at byte " + std::to_string(cursor - der) + " is not DER");
+            return -1;
+        }
+        if (api.skPush(certs, cert) <= 0) {
+            api.x509Free(cert);
+            freeCerts();
+            setError(err, errlen, "out of memory");
+            return -1;
+        }
+    }
+    // No key and no leaf: every certificate goes in as a CA, which is where
+    // commo's readCACerts (PKCS12_parse) looks. 0s take OpenSSL 3's defaults.
+    void *pkcs12 = api.pkcs12Create(password, nullptr, nullptr, nullptr, certs, 0, 0, 0, 0, 0);
+    freeCerts();
+    if (!pkcs12) {
+        setError(err, errlen, "PKCS12_create failed");
+        return -1;
+    }
+    int size = api.i2dPkcs12(pkcs12, nullptr);
+    auto *bytes = size > 0 ? static_cast<uint8_t *>(std::malloc(static_cast<size_t>(size))) : nullptr;
+    unsigned char *write = bytes;
+    if (!bytes || api.i2dPkcs12(pkcs12, &write) != size) {
+        std::free(bytes);
+        api.pkcs12Free(pkcs12);
+        setError(err, errlen, "encoding the PKCS#12 failed");
+        return -1;
+    }
+    api.pkcs12Free(pkcs12);
+    *out = bytes;
+    *out_len = static_cast<size_t>(size);
+    return 0;
+}
+
 extern "C" void mactak_commo_free(void *pointer) {
     std::free(pointer);
 }

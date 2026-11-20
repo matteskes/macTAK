@@ -706,7 +706,7 @@ Decided with the plan (owner, 2026-11-16):
   PKCS#12, and the Keychain can't export certificates alone in that form
   (G3.2b). So `IdentityStore.enroll` refuses a server without a
   truststore. It needs a PKCS#12 of the public roots, built by OpenSSL
-  in the shim, say.
+  in the shim, say. **Done in G3.2e (2026-11-20).**
 
 #### Traps
 
@@ -825,6 +825,97 @@ through the GUI), against a real TAK server.
   TLS. Giving the async wait its own label (`within:`) keeps Swift from
   preferring it at the synchronous call sites: overloading on `async`
   alone broke them.
+
+### G3.2e — quick connect (2026-11-20, branch `g3/quick-connect`)
+
+G3.2c's "not yet": ATAK's TAK Server Quick Connect, enrollment against
+the public CAs for a server with a certificate from one.
+
+#### What 5.5 does (read at the pin)
+
+- The dialog (`EnrollmentDialog`) takes an address, a username and a
+  password. `onEnrollmentOk` drops any `scheme://`, takes the port
+  after the host (8089 if none), and the proto `quic` if given, else
+  `ssl`. It adds the server with `enrollForCertificate` on and
+  `enrollUseTrust` off, and enrolls it with `isQuickConnect`.
+- A server with `enrollUseTrust` off enrolls the same way however it was
+  added (a data package's `enrollUseTrust=0`, the add dialog's "Enroll
+  with Preconfigured Trust" unchecked).
+- `CertificateEnrollmentClient.execute`, quick connect:
+  - The enrollment trusts the local trust manager's issuers, Android's
+    public CAs among them, as a PKCS#12.
+  - commo's `verifyHost` is on.
+  - A server that sends no CAs fails: "Server did not return trust
+    configuration".
+  - The CAs it sends become the server's truststore.
+  - The device profile is fetched with host names checked
+    (`allowAllHostnames` off).
+- A quick connect that fails removes the server it added.
+
+#### What changed
+
+- **`mactak_commo_ca_pkcs12`** (`CCommoShim`): DER certificates in, a
+  PKCS#12 holding each as a CA out (`PKCS12_create` with no key or leaf,
+  OpenSSL 3's default algorithms), where commo's `readCACerts` finds
+  them. OpenSSL's entry points are looked up with `dlsym`, as
+  `initLibraries` looks up `OPENSSL_init_ssl`, so the shim still has no
+  OpenSSL headers or link flags and there is one OpenSSL in the process.
+  `TLSTruststore(certificates:)` wraps it.
+- **`IdentityStore.publicRoots`**: the system's roots
+  (`SecTrustCopyAnchorCertificates`), or the tests' CA standing in.
+- **`IdentityStore.enroll`**: with `enrollUseTrust` off, it follows 5.5:
+  - It trusts the public roots, with the name checked, on the enrollment
+    and on the profile GET.
+  - It requires the server's CAs, checked before the identity is kept,
+    and keeps them as the server's truststore.
+  - With `enrollUseTrust` on, it behaves as before.
+- **`ConnectString(quickConnect:)`**: the dialog's address rules; IPv6 in
+  brackets too, and a `/path` dropped.
+- **`ServerConnections.quickConnect`**: adds the server under the address
+  as typed, enrolls it, and removes it if the enrollment fails.
+- **The app**:
+  - a Quick Connect… item heads the Servers + menu, with ATAK's three
+    fields
+  - Add Server gets ATAK's "Enroll with preconfigured trust" toggle, on by
+    default
+  - the Enroll sheet and the row's menu no longer ask for a truststore
+    when the server doesn't use one (`ServerConfig.canEnroll`).
+- **Tests** (`QuickConnectTests`, 7):
+  - The gate: a quick connect through `ServerConnections` against the
+    fake server adds it with an identity and the CA it sent as its
+    truststore, and the profile's callsign arrives over the name-checked
+    GET.
+  - A failed quick connect keeps no server.
+  - The refusals:
+    - a certificate that doesn't name the host
+    - a server no public CA signed (neither reaches the server)
+    - a server that sends no CA, which keeps no identity.
+  - The system's real roots make a PKCS#12 commo reads: it refuses the
+    test server as untrusted, not as an invalid CA.
+  - The address rules.
+
+  `TestPKI` gains a server leaf naming 127.0.0.1 (`subjectAltName`), and
+  `FakeServer.enroll(named:)` serves it.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 132 tests pass (7 new) |
+| A/B: the enrollment's name check off | the name test fails: the server is enrolled |
+| A/B: the "sent no CA" check off | that test fails: the enrollment succeeds and keeps an identity |
+| `make lint` | passes |
+
+Not run by an agent: a quick connect by hand against a real TAK server
+with a public CA's certificate.
+
+#### Unlike 5.5
+
+- 5.5's trust manager also holds the CAs ATAK itself carries and any the
+  user installed. Here the public CAs are the system's roots only; a CA
+  added to the Keychain by hand is not trusted.
+- 5.5 keeps the username and password (`TYPE_COT_SERVICE`). macTAK keeps
+  no passwords: a client certificate is what connects.
 
 ## G3.3 — mesh networking (plan approved 2026-11-17)
 

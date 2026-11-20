@@ -1,8 +1,9 @@
 // ServersView.swift — the sidebar's Servers section (G3.2d).
 //
-// A row per server with its status and an on/off switch; a menu to add a
-// server by hand or import an ATAK data package; a sheet to enroll for a
-// client certificate, or to give a hand-added server its certificates. The
+// A row per server with its status and an on/off switch; a menu to quick
+// connect (G3.2e), add a server by hand or import an ATAK data package; a
+// sheet to enroll for a client certificate, or to give a hand-added server
+// its certificates. The
 // work happens in ServerConnections (MacTAKComms), which the tests drive.
 
 import MacTAKComms
@@ -12,6 +13,7 @@ import UniformTypeIdentifiers
 struct ServersSection: View {
     @EnvironmentObject private var connections: ServerConnections
     @State private var adding = false
+    @State private var quickConnecting = false
     @State private var importing = false
     @State private var enrolling: ServerConfig?
     @State private var certifying: ServerConfig?
@@ -31,6 +33,7 @@ struct ServersSection: View {
                 Text("Servers")
                 Spacer()
                 Menu {
+                    Button("Quick Connect…") { quickConnecting = true }
                     Button("Add Server…") { adding = true }
                     Button("Import Data Package…") { importing = true }
                 } label: {
@@ -42,6 +45,7 @@ struct ServersSection: View {
             }
         }
         .sheet(isPresented: $adding) { AddServerSheet() }
+        .sheet(isPresented: $quickConnecting) { QuickConnectSheet() }
         .sheet(item: $enrolling) { EnrollSheet(server: $0) }
         .sheet(item: $certifying) { CertificatesSheet(server: $0) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.zip, .data]) { result in
@@ -87,7 +91,7 @@ private struct ServerRow: View {
                 .toggleStyle(.switch).controlSize(.mini).labelsHidden()
         }
         .contextMenu {
-            Button("Enroll for a Certificate…", action: enroll).disabled(server.truststore == nil)
+            Button("Enroll for a Certificate…", action: enroll).disabled(!server.canEnroll)
             Button("Certificates…", action: certify)
             Divider()
             Button("Remove", role: .destructive) { connections.remove(server.id) }
@@ -125,6 +129,7 @@ private struct AddServerSheet: View {
     @State private var port = 8089
     @State private var proto = ConnectString.Proto.ssl
     @State private var enroll = true
+    @State private var useTrust = true
 
     var body: some View {
         Form {
@@ -138,6 +143,13 @@ private struct AddServerSheet: View {
             }
             if proto != .tcp {
                 Toggle("Enroll for a client certificate with a username and password", isOn: $enroll)
+                if enroll {
+                    Toggle(isOn: $useTrust) {
+                        Text("Enroll with preconfigured trust")
+                        Text("Enrollment requires the server to match the truststore you import. "
+                             + "Turn off to trust widely trusted public CAs.")
+                    }
+                }
             }
             HStack {
                 Spacer()
@@ -145,7 +157,8 @@ private struct AddServerSheet: View {
                 Button("Add") {
                     let address = ConnectString(host: host, port: port, proto: proto)
                     connections.add(ServerConfig(description: name.isEmpty ? address.description : name,
-                                                 address: address, enrollForCertificate: proto != .tcp && enroll))
+                                                 address: address, enrollForCertificate: proto != .tcp && enroll,
+                                                 enrollUseTrust: useTrust))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -170,7 +183,10 @@ private struct EnrollSheet: View {
     var body: some View {
         Form {
             Text("Enroll with \(server.description) (\(server.address.host)) for a client certificate.")
-            if server.truststore == nil {
+            if !server.enrollUseTrust {
+                Text("The server must have a certificate from a public CA for its address.")
+                    .foregroundStyle(.secondary)
+            } else if server.truststore == nil {
                 Text("Import the server's truststore first (Certificates…): enrollment trusts only the server's own CA.")
                     .foregroundStyle(.secondary)
             }
@@ -195,7 +211,56 @@ private struct EnrollSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(user.isEmpty || password.isEmpty || working || server.truststore == nil)
+                .disabled(user.isEmpty || password.isEmpty || working || !server.canEnroll)
+            }
+        }
+        .padding()
+        .frame(width: 420)
+    }
+}
+
+/// ATAK's TAK Server Quick Connect (G3.2e): an address, a username and a
+/// password. The server is added and enrolled against the public CAs; one
+/// that fails to enroll isn't kept.
+private struct QuickConnectSheet: View {
+    @EnvironmentObject private var connections: ServerConnections
+    @Environment(\.dismiss) private var dismiss
+    @State private var address = ""
+    @State private var user = ""
+    @State private var password = ""
+    @State private var working = false
+    @State private var problem: String?
+
+    var body: some View {
+        Form {
+            Text("TAK Server Quick Connect").font(.headline)
+            Text("For a server with a certificate from a public CA. The port defaults to \(ConnectString.quickConnectPort).")
+                .foregroundStyle(.secondary)
+            TextField("Address", text: $address, prompt: Text("tak.example.org"))
+            TextField("Username", text: $user)
+            SecureField("Password", text: $password)
+            if let problem { Text(problem).foregroundStyle(.red) }
+            HStack {
+                if working { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .disabled(working)
+                Button("Connect") {
+                    working = true
+                    problem = nil
+                    Task {
+                        do {
+                            try await connections.quickConnect(address: address, user: user, password: password)
+                            dismiss()
+                        } catch {
+                            problem = "\(error)"
+                        }
+                        working = false
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty || user.isEmpty
+                          || password.isEmpty || working)
             }
         }
         .padding()

@@ -11,7 +11,9 @@ final class TemporaryKeychain {
     let store: IdentityStore
     private let keychain: SecKeychain
 
-    init() throws {
+    /// `publicRoots`: what a quick connect trusts in this store; the
+    /// system's roots unless a test stands its own CA in for them.
+    init(publicRoots: (@Sendable () throws -> [Data])? = nil) throws {
         let path = FileManager.default.temporaryDirectory
             .appendingPathComponent("mactak-test-\(UUID().uuidString.prefix(8)).keychain-db").path
         let password = UUID().uuidString
@@ -19,7 +21,7 @@ final class TemporaryKeychain {
         let status = SecKeychainCreate(path, UInt32(password.utf8.count), password, false, nil, &keychain)
         guard status == errSecSuccess, let keychain else { throw IdentityError("creating a keychain", status) }
         self.keychain = keychain
-        store = IdentityStore(keychain: keychain)
+        store = IdentityStore(keychain: keychain, publicRoots: publicRoots ?? IdentityStore.systemRoots)
     }
 
     func delete() {

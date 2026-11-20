@@ -16,6 +16,20 @@ struct TestPKI {
     var caKey: String { path("ca.key") }
     var serverCert: String { path("server.crt") }
     var serverKey: String { path("server.key") }
+    /// A server leaf that names 127.0.0.1, for the name checks (G3.2e).
+    var namedServerCert: String { path("named-server.crt") }
+    var namedServerKey: String { path("named-server.key") }
+
+    /// A CA's certificate as DER, as the system's roots come (G3.2e).
+    func caDER(other: Bool = false) throws -> Data {
+        try Self.der(fromPEM: try String(contentsOfFile: path(other ? "other-ca.crt" : "ca.crt"), encoding: .utf8))
+    }
+
+    static func der(fromPEM pem: String) throws -> Data {
+        let body = pem.split(separator: "\n").filter { !$0.hasPrefix("-----") }.joined()
+        guard let der = Data(base64Encoded: body) else { throw CommoError(description: "not a PEM certificate") }
+        return der
+    }
 
     /// A client identity signed by the server's CA, with the CA as its trust.
     func credentials(_ client: String) throws -> TLSCredentials {
@@ -41,6 +55,7 @@ struct TestPKI {
         try pki.makeCA("ca")
         try pki.makeCA("other-ca")
         try pki.makeLeaf("server", ca: "ca", usage: "serverAuth")
+        try pki.makeLeaf("named-server", ca: "ca", usage: "serverAuth", extra: "subjectAltName=IP:127.0.0.1\n")
         for client in clients {
             try pki.makeLeaf(client, ca: "ca", usage: "clientAuth")
         }
@@ -68,8 +83,8 @@ struct TestPKI {
                      "-out", path("\(name).crt"), "-days", "2", "-extfile", path("\(name).ext")])
     }
 
-    private func makeLeaf(_ name: String, ca: String, usage: String) throws {
-        try write("\(name).ext", "extendedKeyUsage=\(usage)\n")
+    private func makeLeaf(_ name: String, ca: String, usage: String, extra: String = "") throws {
+        try write("\(name).ext", "extendedKeyUsage=\(usage)\n" + extra)
         try openssl(["req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", path("\(name).key"),
                      "-out", path("\(name).csr"), "-subj", "/CN=\(name)"])
         try openssl(["x509", "-req", "-in", path("\(name).csr"), "-CA", path("\(ca).crt"),
