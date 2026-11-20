@@ -28,6 +28,9 @@ public struct CotMarker: Sendable, Equatable, Identifiable {
     /// The callsign, else the uid unless it is a UUID (MarkerImporter).
     public var label: String?
     public var point: CotPoint
+    /// Its looked-up street address (<__address>), kept against `point`
+    /// as 5.5's AddressDetailHandler keeps it.
+    public var address: AddressDetail?
     /// When its last event arrived here.
     public var lastHeard: Date
     /// When it goes stale if nothing newer arrives.
@@ -76,7 +79,7 @@ public final class CotMarkerStore: ObservableObject {
         let staleAt = now.addingTimeInterval(autoStale)
         byUID[event.uid] = CotMarker(
             uid: event.uid, traits: Self.traits(event), label: Self.label(event), point: event.point,
-            lastHeard: now, staleAt: staleAt, removeAt: staleAt.addingTimeInterval(ContactStore.removeAfterStale))
+            address: AddressDetail(event.detail(AddressDetail.elementName)), lastHeard: now, staleAt: staleAt, removeAt: staleAt.addingTimeInterval(ContactStore.removeAfterStale))
         publish()
         return true
     }

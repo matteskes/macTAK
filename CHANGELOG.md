@@ -9,6 +9,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.6c, ADDR (`dev/g3/NOTES.md` §G3.6c): addresses as ATAK 5.5 has
+  them.
+  - My Details can place you at an address you type, and looks up the
+    address of where you are placed.
+  - Lookups go to Apple Maps, or to a Nominatim server imported from an
+    ATAK geocoder file (Settings › Address Lookup).
+  - Units offers ADDR, shown as DD as in 5.5.
+  - Addresses received on contacts and markers (`<__address>`) are
+    kept, and a contact's shows in its details.
+
 - G3.2e, Quick Connect (`dev/g3/NOTES.md` §G3.2e): ATAK's TAK Server
   Quick Connect, from the Servers menu. It takes an address, a username
   and a password, and enrolls for a client certificate trusting the

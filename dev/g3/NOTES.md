@@ -1823,6 +1823,112 @@ Two things to know first:
   the other's position and Altitude row follow every change in Settings
   › Units: format, MSL/HAE and ft/m.
 
+### G3.6c — ADDR, address lookup (2026-11-20, branch `g3/addr`)
+
+Decided (owner, 2026-11-20):
+
+- The geocoders: Apple's (MapKit) as the default, the counterpart of
+  5.5's "Native Android Geocoder", plus Nominatim servers imported from
+  ATAK's `<NominatimProperties>` files, with a picker.
+- The scope: address entry, and the `<__address>` detail.
+
+#### What 5.5 does (read at the pin)
+
+- **ADDR as a display format is DD.** `CoordinateFormatUtilities` formats
+  ADDRESS exactly as DD, so readouts never show an address.
+- **Address entry** (`AddrPane`, the coordinate dialog's ADDR tab):
+  - Typed text is looked up within the map's view first, then anywhere.
+  - With no text and a point, it looks up the point's address when the
+    pane opens.
+  - It records `address_text`, `address_geocoder` and
+    `address_lookuptime` with the point.
+- **`<__address text geocoder time>`** (`AddressDetailHandler`):
+  - Sent with a map item whose address was looked up for where it still
+    is (`locationHash`, five decimal places).
+  - Read into the item's metadata.
+  - Only point markers get one (`GenericPointDetailsView`). The self SA
+    doesn't: `getSelfEvent` builds its details by hand.
+- **Geocoders** (`GeocodeManager`):
+  - Android's own comes first and can't be removed.
+  - Nominatim servers are read from `tools/address/*.xml`
+    (`<NominatimProperties><entry name url serviceKey/>`, the url as the
+    uid).
+  - The choice is kept under `selected_geocoder_uid`.
+  - `GeocoderNominatim` builds the requests: `reverse?format=json[&key]
+    &accept-language&addressdetails=1&lat&lon`, and `search?…&limit
+    &q&viewbox=W,N,E,S&bounded=1`, then `bounded=0` if that found
+    nothing.
+  - It keeps `display_name` less its last part (the country).
+
+#### What changed
+
+- **`AddressDetail`** (MacTAKCot): `<__address>`, read and written as
+  5.5 does, with `locationHash`.
+- **Received:** `Contact.address` and `CotMarker.address`. A contact's
+  popover shows it.
+- **Geocoding** (`MacTAKComms/Geocoding`):
+  - `AppleGeocoder`: MapKit's `MKGeocodingRequest` and
+    `MKReverseGeocodingRequest`, available from macOS 26. The address is
+    the full address on one line, without the country.
+  - `NominatimGeocoder`: 5.5's requests and reading of the reply, and
+    the import of `<NominatimProperties>` files. It uses URLSession, not
+    commo's curl: a geocoder isn't a TAK server, and 5.5 allows plain
+    http.
+  - `GeocoderRegistry`: the selection under `selected_geocoder_uid`, and
+    the imported servers in the settings store.
+- **The placed position's address:** `SelfReporter.place(_:address:)`
+  keeps the address with the position it was looked up for (persisted).
+  `addressOfPlaced` returns it only while the position hasn't moved
+  (`locationHash`).
+- **The app:**
+  - Units offers ADDR, shown as DD.
+  - My Details' ADDR mode:
+    - Type an address and Find it.
+    - Switching to ADDR looks up the placed position's address, as 5.5's
+      pane does when it opens.
+    - The caption names the geocoder that receives the query.
+  - Settings has an Address Lookup pane: the picker, the imported
+    servers, and Import Geocoder File….
+- **Tests:**
+  - `AddressDetailTests` (3).
+  - `GeocodingTests` (9), run against
+    `dev/g3/test/fake-nominatim-server.py`:
+    - 5.5's URLs, key and viewbox included
+    - reading replies: the country dropped, "nothing there" as nil
+    - the bounded-then-unbounded search, the User-Agent, an HTTP error
+    - ATAK's file import
+    - the registry: persistence, selection, fallback, the native
+      geocoder can't be removed
+    - the placed address kept, and dropped once the position moves
+    - `<__address>` on received contacts and markers
+  - `testApplesGeocoderFindsAnAddress` runs only with
+    `MACTAK_NETWORK_TESTS=1`.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | 141 tests, 1 skipped (Apple's, which needs the network) |
+| `MACTAK_NETWORK_TESTS=1`, Apple's test | passes: "1600 Pennsylvania Ave NW, Washington, DC 20500" found at the White House, and that point's address read back |
+| A/B: no unbounded fallback | the server test fails: "far" isn't found |
+| `make lint` | passes |
+
+Not run by an agent: the My Details ADDR mode and the Address Lookup
+pane by hand.
+
+#### Unlike 5.5
+
+- 5.5 searches within the map's view first. The app's map doesn't
+  report its bounds, so the search prefers ±0.25° around this client's
+  position.
+- 5.5 imports geocoder files from data packages too. Here they are
+  imported in Settings.
+- No `<__address>` is sent yet. 5.5 sends it with point markers, which
+  macTAK can't make until G3.8 (points). The self SA carries none, as
+  in 5.5.
+- A received marker's address is kept, but there is no marker details
+  view to show it yet.
+
 ## G3.7 — markers with 2525 symbols (plan approved 2026-11-18)
 
 Gap 8 (§Plan revision). Three PRs, then a docs PR:
