@@ -92,7 +92,10 @@ struct UnitsSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
+        // A grouped Form has no height of its own, so the Settings window
+        // opened cut off above Range & Bearing (G3.8c hand check): ask for
+        // room for all of it; it still scrolls on a short screen.
+        .frame(width: 520, height: 780)
         .padding()
     }
 }

@@ -10,6 +10,7 @@
 // "-NAME", so a second copy on one Mac is a second client.
 
 import AppKit
+import Combine
 import MacTAKComms
 import MacTAKCore
 import SwiftUI
@@ -33,6 +34,7 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.chatSelection)
                 .environmentObject(delegate.units)
                 .environmentObject(delegate.geocoders)
+                .environmentObject(delegate.rangeBearing)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -77,6 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let units: UnitPreferences
     /// Address lookup for ADDR: Apple's, and imported Nominatim servers.
     let geocoders: GeocoderRegistry
+    /// Range and bearing lines and their tool (G3.8c).
+    let rangeBearing = RangeBearingLines()
+    private var rangeBearingChanges: AnyCancellable?
     private let watcher: InterfaceWatcher
     /// The map's markers: the contacts and the self position (G3.7b).
     private let markers: MapMarkerSync
@@ -102,8 +107,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                         chatStore: chatStore)
         watcher = InterfaceWatcher { mesh.refresh() }
         markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
-                                me: me)
+                                me: me, rangeBearing: rangeBearing, units: units)
         super.init()
+        let rangeBearing = rangeBearing, markers = markers
+        host.onMapClick = { pick in rangeBearing.click(pick) }
+        // a click, a delete or the tool starting shows at once, not at the next tick
+        rangeBearingChanges = rangeBearing.objectWillChange.sink { _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { markers.refresh() } }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -146,6 +157,7 @@ struct ContentView: View {
     @EnvironmentObject private var host: EngineHost
     @EnvironmentObject private var me: SelfReporter
     @EnvironmentObject private var units: UnitPreferences
+    @EnvironmentObject private var rangeBearing: RangeBearingLines
 
     var body: some View {
         NavigationSplitView {
@@ -154,16 +166,22 @@ struct ContentView: View {
                 MeshSection()
                 ContactsSection()
                 ChatSection()
+                RangeBearingSection(lines: rangeBearing)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {
             ZStack(alignment: .bottom) {
                 MapView(host: host)
+                RangeBearingPrompt(lines: rangeBearing)
+                    .frame(maxHeight: .infinity, alignment: .top)
                 status
                 if host.state == .running && units.selfCoordDisplay != .none {
                     SelfReadoutView(me: me, details: me.details, units: units, host: host)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
+            }
+            .toolbar {
+                RangeBearingToolButton(lines: rangeBearing, mapRunning: host.state == .running)
             }
         }
     }

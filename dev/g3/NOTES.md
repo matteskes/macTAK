@@ -2458,3 +2458,67 @@ path. Each can follow on **b**'s groundwork.
 | `dev/g2/render/test/args.sh` | passes, with four new bad-argument cases |
 | `make test-app` | 145 tests pass; `ClickTrackerTests` (5) new |
 | `make lint` | passes |
+
+### G3.8c — the range and bearing tool (2026-11-20, branch `g3/rab-tool`)
+
+#### What changed
+
+- **`RangeBearingLines`** (MacTAKComms) is the tool and the lines, as
+  5.5's `RangeAndBearingTool` and `RangeAndBearingMapItem` have them:
+  - two clicks, the start then the end. A click on a marker (a contact, a
+    CoT marker, the self marker) ties that end to it; a click on the map
+    fixes the end there, and the first such click shows 5.5's red start
+    point (`shape_marker`, `reference_point.png`) until the line is made
+  - the same marker twice is ignored; the second click makes the line
+    and ends the tool; Cancel (Esc) makes nothing
+  - 5.5's prompts, with "Click" for "Tap"
+  - titles "R&B n", the lowest n free (`getInstanceNum`)
+  - when a marker an end is tied to goes, the line stays and that end
+    stays where the marker was last seen (`removePoint`).
+- **On the map** (`MapMarkerSync`): each line red (`rab_color_pref`'s
+  default), 3 px, with an arrow at the end and 5.5's label from the Units
+  preferences, redrawn when a tied marker moves or a preference changes.
+  A click, a delete or the tool starting shows at once, not at the next
+  one-second tick.
+- **Clicks**: `EngineHost` turns a click into the marker under it (16
+  points around its point) or the ground (G3.8b) and hands it to the
+  tool. The start point can't be clicked, as in 5.5.
+- **The controls**: an R&B Line button in the map's toolbar, the prompt
+  over the map, and a Range & Bearing section in the sidebar listing the
+  lines with their labels; a line's context menu deletes it, the
+  header's trash deletes them all.
+- `dev/g3/test/send-markers.py --north M` sends its markers M metres
+  further north, to move them.
+- Settings › Units asks for 780 points of height: a grouped form has
+  none of its own, and the window opened cut off above Range & Bearing
+  (found in the hand check).
+
+#### Not done (5.5 has them)
+
+- Lines are not kept across launches (5.5 persists them).
+- No line menu on the map: lines can't be clicked, so delete is in the
+  sidebar. No moving an end after the line is made
+  (`RangeAndBearingEndpointMoveTool`), no reversing, no colour choice.
+- No long press: 5.5's long press on a marker measures from the self
+  marker to it. Here, click the self marker first.
+
+#### Hand check (owner)
+
+1. `make app`, then `open --stdout L --stderr L build/MacTAK.app`;
+   send markers with `python3 dev/g3/test/send-markers.py`.
+2. Click the toolbar's R&B Line: the prompt shows. Click the map: the
+   red start point shows, the prompt changes. Click elsewhere: a red
+   line with an arrow and a label; the tool ends; R&B 1 is in the
+   sidebar with the same label.
+3. Start the tool, click your self marker, then a marker: the line runs
+   from you to it. Run `send-markers.py --north 300`: the line follows.
+4. Settings › Units › Range & Bearing: change the north reference and
+   the range units: the labels change within a second.
+5. Start the tool, click the map, press Esc: the start point goes,
+   nothing is made.
+6. Delete a line from its context menu; delete the rest with the trash.
+7. `send-markers.py --delete g37c-friend --force` with a line tied to
+   it: the line stays, its end where the marker was.
+
+All seven passed (owner, 2026-11-20), after scrolling the Units pane to
+reach Range & Bearing; the pane's height is fixed since.
