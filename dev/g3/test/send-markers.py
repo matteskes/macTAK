@@ -21,6 +21,9 @@ rules; the label says which:
 
 usage:
   send-markers.py [--host H] [--port P]           send the set
+  send-markers.py --north M                       send it M metres further north
+                                                  (moves the markers: G3.8c's
+                                                  R&B lines follow them)
   send-markers.py --delete UID [--force]          send a delete task (t-x-d-d):
                                                   stale now, or gone with --force
 """
@@ -60,11 +63,12 @@ def event(uid, type_, stale_s, lat, lon, detail, how="h-g-i-g-o"):
                                                stamp(stale), quoteattr(how), lat, lon, detail))
 
 
-def markers():
+def markers(north_m=0.0):
     out = []
+    lat = LAT + north_m / 111320.0
     for i, (uid, type_, label, stale_s, extra) in enumerate(MARKERS):
         lon = LON + (i - len(MARKERS) / 2) * STEP
-        out.append(event(uid, type_, stale_s, LAT, lon, "<contact callsign=%s/>%s" % (quoteattr(label), extra)))
+        out.append(event(uid, type_, stale_s, lat, lon, "<contact callsign=%s/>%s" % (quoteattr(label), extra)))
     return out
 
 
@@ -79,8 +83,9 @@ def main():
     p.add_argument("--port", type=int, default=4242)
     p.add_argument("--delete", metavar="UID")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--north", type=float, default=0.0, metavar="METRES")
     a = p.parse_args()
-    events = delete(a.delete, a.force) if a.delete else markers()
+    events = delete(a.delete, a.force) if a.delete else markers(a.north)
     for e in events:  # commo reads one TCP connection as one message
         with socket.create_connection((a.host, a.port), timeout=5) as s:
             s.sendall(e.encode("utf-8"))

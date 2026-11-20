@@ -36,19 +36,41 @@ final class MapMarkerSync {
     private let contacts: ContactStore
     private let cotMarkers: CotMarkerStore
     private let me: SelfReporter
+    private let rangeBearing: RangeBearingLines
+    private let units: UnitPreferences
     private var timer: Timer?
     /// What the engine has, by uid; nil until the map takes markers.
     private var sent: [String: Marker]?
+    private var sentLines: [String: Line] = [:]
+
+    /// One line as the engine was last told it.
+    struct Line: Equatable {
+        var start, end: CotPoint
+        var label: String?
+    }
+
+    /// The R&B tool's start point: 5.5's shape_marker, red, not clickable.
+    static let rabStartUID = "mactak-rab-start"
+    /// 5.5's R&B line: rab_color_pref "red", stroke weight 3.
+    static let rabColor: UInt32 = 0xFFFF_0000
+    static let rabWidth: Float = 3
     private var symbols: CotSymbols?
     private var symbolIcons: [String: String?] = [:]
     private var selfIcon: String?
 
-    init(host: EngineHost, contacts: ContactStore, cotMarkers: CotMarkerStore, me: SelfReporter) {
+    init(host: EngineHost, contacts: ContactStore, cotMarkers: CotMarkerStore, me: SelfReporter,
+         rangeBearing: RangeBearingLines, units: UnitPreferences) {
         self.host = host
         self.contacts = contacts
         self.cotMarkers = cotMarkers
         self.me = me
+        self.rangeBearing = rangeBearing
+        self.units = units
+        host.unclickable = [Self.rabStartUID]
     }
+
+    /// Send what changed now, not at the next tick (after a click).
+    func refresh() { sync() }
 
     func start() {
         let t = Timer(timeInterval: Self.tick, repeats: true) { [weak self] _ in
@@ -66,6 +88,7 @@ final class MapMarkerSync {
     private func sync(now: Date = Date()) {
         guard let engine = host.markerEngine else {
             sent = nil   // a map that starts again starts empty
+            sentLines = [:]
             return
         }
         var have = sent ?? [:]
@@ -80,6 +103,26 @@ final class MapMarkerSync {
             have[uid] = nil
         }
         sent = have
+        syncLines(engine, markers: want, now: now)
+    }
+
+    private func syncLines(_ engine: EngineBridge, markers: [String: Marker], now: Date) {
+        let places = markers.mapValues { CotPoint(lat: $0.lat, lon: $0.lon, hae: $0.hae ?? CotPoint.unknown) }
+        let style = units.rangeBearingStyle
+        var want: [String: Line] = [:]
+        var labels: [String: String] = [:]
+        for (line, start, end) in rangeBearing.ends(markers: places) {
+            let label = RangeBearing(from: start, to: end).label(style, magnetic: units.magnetic, at: now)
+            want["mactak-rab-" + line.id] = Line(start: start, end: end, label: label)
+            labels[line.id] = label
+        }
+        for (uid, l) in want where sentLines[uid] != l {
+            engine.putLine(uid: uid, points: [(l.start.lat, l.start.lon), (l.end.lat, l.end.lon)],
+                           color: Self.rabColor, width: Self.rabWidth, arrow: true, label: l.label)
+        }
+        for uid in sentLines.keys where want[uid] == nil { engine.removeMarker(uid: uid) }
+        sentLines = want
+        rangeBearing.setLabels(labels)
     }
 
     private func markers(_ engine: EngineBridge, now: Date) -> [String: Marker] {
@@ -93,6 +136,12 @@ final class MapMarkerSync {
             let icon = MarkerIcons.contact(c, stale: c.isStale(at: now)) { symbolIcon($0, engine) }
             want[c.uid] = Marker(lat: c.point.lat, lon: c.point.lon, hae: Self.hae(c.point), icon: icon,
                                  rotation: nil, label: c.callsign)
+        }
+        if let p = rangeBearing.startPoint {
+            want[Self.rabStartUID] = Marker(lat: p.lat, lon: p.lon, hae: Self.hae(p),
+                                            icon: MarkerIcon(uri: "asset://icons/reference_point.png",
+                                                             color: Self.rabColor),
+                                            rotation: nil, label: nil)
         }
         if let location = me.location {
             let uri = selfIcon ?? engine.selfIconURI(fill: SelfMarker.fill, stroke: SelfMarker.stroke)

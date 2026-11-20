@@ -3,7 +3,9 @@
 // when the app quits. Main thread only (the JNIEnv is bound to it).
 
 import AppKit
+import MacTAKComms
 import MacTAKCore
+import MacTAKCot
 
 @MainActor
 final class EngineHost: ObservableObject {
@@ -17,6 +19,10 @@ final class EngineHost: ObservableObject {
     private var engine: EngineBridge?
     private weak var view: MetalView?
     private var poll: Timer?
+    /// A single click on the map, as the marker under it or the ground
+    /// (G3.8b/c); markers in `unclickable` are looked through.
+    var onMapClick: ((MapPick) -> Void)?
+    var unclickable: Set<String> = []
 
     /// Start the engine on `view` (once per process: a process gets one JVM).
     func attach(_ view: MetalView) {
@@ -35,6 +41,10 @@ final class EngineHost: ObservableObject {
             let (w, h) = view.pixelSize
             try engine.start(layer: view.metalLayer, width: w, height: h, dpi: view.dpi, config: launch.mapConfig)
             view.connect(to: engine)
+            view.onClick = { [weak self, weak view] x, y in
+                guard let self, let view else { return }
+                MainActor.assumeIsolated { self.clicked(x: x, y: y, scale: Float(view.backingScale)) }
+            }
             self.engine = engine
             self.view = view
             watchOcclusion(of: view.window)
@@ -48,6 +58,18 @@ final class EngineHost: ObservableObject {
     func panTo(lat: Double, lon: Double) {
         guard state == .running else { return }
         engine?.panTo(lat: lat, lon: lon)
+    }
+
+    /// Half a 32-point marker icon: a click this near a marker's point picks it.
+    static let markerHitPoints: Float = 16
+
+    private func clicked(x: Float, y: Float, scale: Float) {
+        guard let onMapClick, let engine = markerEngine else { return }
+        if let uid = engine.markerAt(x: x, y: y, radius: Self.markerHitPoints * scale), !unclickable.contains(uid) {
+            onMapClick(.item(uid))
+        } else if let g = engine.groundAt(x: x, y: y) {
+            onMapClick(.ground(CotPoint(lat: g.lat, lon: g.lon, hae: g.hae ?? CotPoint.unknown)))
+        }
     }
 
     /// The engine, once the map runs and takes markers (G3.7b); nil before.

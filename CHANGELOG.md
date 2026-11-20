@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.8c, the range and bearing tool (`dev/g3/NOTES.md` §G3.8c): the R&B
+  Line button measures from one click to another, a marker or a place,
+  and leaves a red line with 5.5's label that follows the markers it
+  joins. The sidebar lists the lines and deletes them.
+
 - G3.8b, lines on the map and clicks (`dev/g3/NOTES.md` §G3.8b): the
   map draws lines with an arrow head and a label, and a click can be
   turned into a place on the ground or the marker under it. The range
