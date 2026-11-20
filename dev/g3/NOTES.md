@@ -2014,7 +2014,10 @@ user icon sets.
   reports precise deltas, which `MetalView.scrollWheel` reads as a
   trackpad: the wheel pans instead of zooming, and there is no way to
   zoom out with it. Trackpad scrolls carry a gesture phase; a wheel's
-  don't.
+  don't. Fixed: `ScrollSource` pans only scrolls with a phase or momentum
+  phase and zooms the rest, a precise wheel delta taken as 10 points per
+  line. The shell's scripted trackpad pans now set a phase
+  (began/changed/ended), or they would zoom.
 - **The map stopped once while the owner was zooming** (#212) (app launched
   with `open`, so no log). The UI stayed up; the engine's render thread
   was gone. Not seen again with the log on.
