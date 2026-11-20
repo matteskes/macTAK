@@ -9,6 +9,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.8a, range and bearing's numbers (`dev/g3/NOTES.md` §G3.8a):
+  - Range, bearing, slant range and grid convergence, computed as the
+    engine does.
+  - Magnetic north from 5.5's own World Magnetic Model (WMMHR-2025).
+  - Bearings and ranges written as 5.5 writes them, held to the
+    kernel's answers by a golden test (`make test-rab-golden`).
+  - Settings › Units has a Range & Bearing section with 5.5's
+    preferences.
+  - A contact's details show range and bearing from you.
+
 - G3.6c, ADDR (`dev/g3/NOTES.md` §G3.6c): addresses as ATAK 5.5 has
   them.
   - My Details can place you at an address you type, and looks up the
