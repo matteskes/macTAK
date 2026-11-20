@@ -169,13 +169,36 @@ public final class ServerConnections: ObservableObject {
         replace(server)
     }
 
+    /// ATAK's Quick Connect (G3.2e): adds the server at `address` (see
+    /// ConnectString(quickConnect:)), enrolled against the public CAs, and
+    /// connects it. If the enrollment fails the server is removed again, as
+    /// ATAK removes its stream.
+    @discardableResult
+    public func quickConnect(address text: String, user: String, password: String,
+                             enrollmentPort: Int = CommoClient.enrollmentPort) async throws -> ServerConfig {
+        let address = try ConnectString(quickConnect: text)
+        let server = ServerConfig(description: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  address: address, enabled: false, enrollForCertificate: true,
+                                  enrollUseTrust: false)
+        add(server)
+        do {
+            try await enroll(server.id, user: user, password: password, enrollmentPort: enrollmentPort)
+        } catch {
+            remove(server.id)
+            throw error
+        }
+        return servers.first { $0.id == server.id } ?? server
+    }
+
     /// Enrolls the server for a client certificate (G3.2c), applies the
     /// profile's callsign, and connects.
-    public func enroll(_ id: UUID, user: String, password: String) async throws {
+    public func enroll(_ id: UUID, user: String, password: String,
+                       enrollmentPort: Int = CommoClient.enrollmentPort) async throws {
         guard let server = servers.first(where: { $0.id == id }) else { return }
         let enrolling = try CommoClient(uid: uid, callsign: callsign)
         defer { Task { await enrolling.shutdown() } }
-        var result = try await identities.enroll(server, user: user, password: password, using: enrolling)
+        var result = try await identities.enroll(server, user: user, password: password, using: enrolling,
+                                                 port: enrollmentPort)
         if let callsign = result.profile?.callsign { setCallsign(callsign) }
         result.server.enabled = true
         replace(result.server)

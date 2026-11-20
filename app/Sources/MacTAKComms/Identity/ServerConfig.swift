@@ -36,6 +36,10 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
         self.truststore = truststore
     }
 
+    /// Whether an enrollment has what it trusts: the server's truststore,
+    /// or the public CAs when enrollUseTrust is off (a quick connect).
+    public var canEnroll: Bool { !enrollUseTrust || truststore != nil }
+
     /// The transport commo connects with: TCP as is, SSL and QUIC with the
     /// identity and truststore exported from `store`.
     public func transport(using store: IdentityStore) throws -> CommoTransport {

@@ -9,6 +9,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.2e, Quick Connect (`dev/g3/NOTES.md` §G3.2e): ATAK's TAK Server
+  Quick Connect, from the Servers menu. It takes an address, a username
+  and a password, and enrolls for a client certificate trusting the
+  system's public CAs, with the server's name checked. The CA the server
+  sends becomes its truststore. A server with Enroll with Preconfigured
+  Trust turned off, a new toggle in Add Server, enrolls the same way.
+
 - G3.4a, the CoT model (`dev/g3/NOTES.md` §G3.4a):
   - `MacTAKCot`, a pure-Swift port of the kernel's CoT event, point and
     detail classes, and of ATAK 5.5's self-SA (`SelfEvent`, with 5.5's

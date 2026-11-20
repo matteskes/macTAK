@@ -191,7 +191,17 @@ int mactak_commo_https_get(const char *url, const char *user, const char *passwo
                            long *status, uint8_t **body, size_t *body_len,
                            char *err, size_t errlen);
 
-/// Free memory the shim handed out (mactak_commo_https_get's body).
+/// A truststore as commo takes one, from certificates: der holds der_len
+/// bytes of DER certificates back to back, and *out (free it with
+/// mactak_commo_free) gets *out_len bytes of a PKCS#12 holding each as a CA,
+/// under password. The Keychain can't export certificates alone as PKCS#12
+/// (dev/g3/NOTES.md §G3.2b); quick connect needs the system's roots in that
+/// form. Uses commo's OpenSSL, so commo must be loaded. 0 on success.
+int mactak_commo_ca_pkcs12(const uint8_t *der, size_t der_len, const char *password,
+                           uint8_t **out, size_t *out_len, char *err, size_t errlen);
+
+/// Free memory the shim handed out (mactak_commo_https_get's body,
+/// mactak_commo_ca_pkcs12's PKCS#12).
 void mactak_commo_free(void *pointer);
 
 /// Shut commo down and free it. No callback runs after this returns.

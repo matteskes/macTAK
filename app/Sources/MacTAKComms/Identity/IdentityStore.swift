@@ -51,6 +51,9 @@ public struct IdentityError: Error, CustomStringConvertible, Equatable {
 public final class IdentityStore: @unchecked Sendable {
     /// nil: the default keychain (the user's login keychain).
     let keychain: SecKeychain?
+    /// The public CAs quick connect trusts (ServerEnrollment): the system's
+    /// roots, or the tests' own CA standing in for them.
+    let publicRoots: @Sendable () throws -> [Data]
 
     private static let truststoreService = "macTAK truststore"
 
@@ -58,8 +61,21 @@ public final class IdentityStore: @unchecked Sendable {
     public static let login = IdentityStore(keychain: nil)
 
     /// A store over `keychain`; the tests' throwaway keychains come in here.
-    init(keychain: SecKeychain?) {
+    init(keychain: SecKeychain?, publicRoots: @escaping @Sendable () throws -> [Data] = IdentityStore.systemRoots) {
         self.keychain = keychain
+        self.publicRoots = publicRoots
+    }
+
+    /// The system's root certificates (DER), the public CAs a quick connect
+    /// trusts, as ATAK's local trust manager holds Android's.
+    @Sendable
+    static func systemRoots() throws -> [Data] {
+        var anchors: CFArray?
+        let status = SecTrustCopyAnchorCertificates(&anchors)
+        guard status == errSecSuccess, let roots = anchors as? [SecCertificate], !roots.isEmpty else {
+            throw IdentityError("reading the system's root certificates", status)
+        }
+        return roots.map { SecCertificateCopyData($0) as Data }
     }
 
     // MARK: - client identities
@@ -166,9 +182,13 @@ public final class IdentityStore: @unchecked Sendable {
         let stored = try loadTruststore(fingerprint)
         let certificates = try Self.parse(stored.pkcs12, password: stored.password).chain
         guard !certificates.isEmpty else { throw IdentityError("truststore \(fingerprint) carries no certificate") }
-        return Data(certificates.map { certificate in
-            let base64 = (SecCertificateCopyData(certificate) as Data).base64EncodedString(options: .lineLength64Characters)
-            return "-----BEGIN CERTIFICATE-----\n\(base64)\n-----END CERTIFICATE-----\n"
+        return Self.pem(certificates.map { SecCertificateCopyData($0) as Data })
+    }
+
+    /// DER certificates as PEM, as curl takes them.
+    static func pem(_ certificates: [Data]) -> Data {
+        Data(certificates.map { der in
+            "-----BEGIN CERTIFICATE-----\n\(der.base64EncodedString(options: .lineLength64Characters))\n-----END CERTIFICATE-----\n"
         }.joined().utf8)
     }
 

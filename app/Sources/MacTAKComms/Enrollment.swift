@@ -117,6 +117,26 @@ public struct TLSTruststore: Sendable {
         self.password = password
     }
 
+    /// A truststore holding `certificates` (DER) as CAs, built by commo's
+    /// OpenSSL: the Keychain can't export certificates alone as PKCS#12.
+    public init(certificates: [Data]) throws {
+        guard !certificates.isEmpty else { throw CommoError(description: "a truststore needs a certificate") }
+        try CommoClient.initLibraries()
+        let password = try Self.randomPassword()
+        let der = certificates.reduce(Data(), +)
+        var out: UnsafeMutablePointer<UInt8>?
+        var count = 0
+        try der.withUnsafeBytes { bytes in
+            try CommoClient.check { err, len in
+                mactak_commo_ca_pkcs12(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, password,
+                                       &out, &count, err, len)
+            }
+        }
+        defer { mactak_commo_free(out) }
+        guard let out else { throw CommoError(description: "building the truststore returned nothing") }
+        self.init(pkcs12: Data(bytes: out, count: count), password: password)
+    }
+
     static func randomPassword() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 24)
         let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
