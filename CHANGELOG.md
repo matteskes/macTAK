@@ -320,6 +320,13 @@ this is a patch release, not 0.4.0. In it:
 
 ### Fixed
 
+- The feature renderer no longer draws a batch while its buffers are
+  still mapped (#228, G3 trap 20, engine patch
+  `featurerenderer-unmap-under-monitor.patch`). A batch arriving from the
+  worker between the unmap and the draw was drawn mapped, a GL error
+  that failed CI's basemap smoke now and then, and a bad frame in the
+  app.
+
 - An enrollment server that indents its signing reply, or sends an empty
   certificate element, no longer crashes the app (G3 trap 8, commo patch
   0009). commo read the whitespace between the reply's elements as a

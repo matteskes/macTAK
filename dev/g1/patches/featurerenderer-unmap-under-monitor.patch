@@ -1,0 +1,26 @@
+--- a/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryFeatureDataStoreRenderer3.cpp
++++ b/tmp/takeng-src/cpp/renderer/feature/GLBatchGeometryFeatureDataStoreRenderer3.cpp
+@@ -527,6 +527,9 @@
+     }
+ 
+     {
++        // macTAK (#228): under monitor_, as in drawImpl, so no batch arrives
++        // between the unmap and the delete.
++        Monitor::Lock lock(monitor_);
+         Lock bl(discardBuffers.mutex);
+         auto renderCtx = &view.getRenderContext();
+         if(!discardBuffers.value[renderCtx].empty()) {
+@@ -572,6 +575,13 @@
+ }
+ void GLBatchGeometryFeatureDataStoreRenderer3::drawImpl(const TAK::Engine::Renderer::Core::GLGlobeBase &view, const int renderPass) NOTHROWS
+ {
++    // macTAK (#228): hold monitor_ (recursive) from the unmap through the
++    // draw. The worker hands a batch over in updateRenderableLists under
++    // monitor_, its buffers still mapped and queued for this unmap; unlocked,
++    // a batch landing after the unmap was drawn mapped: GL_INVALID_OPERATION
++    // ("An active buffer is mapped" on ANGLE), now and then on a slow runner.
++    // The worker's mappedBuffers pushes and this read also raced.
++    Monitor::Lock lock(monitor_);
+     unmapMappedBuffers();
+     editRenderer.setColor(color);
+     renderer.setColor(color);

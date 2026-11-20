@@ -2049,3 +2049,20 @@ user icon sets.
   wait 20 s, signal): before, SIGTERM leaves a crash report with
   `JVM_Halt` and `~ManagedElevationSource`; after, SIGTERM, SIGINT and
   SIGHUP each quit cleanly with no crash report.
+
+- **20 — the feature renderer could draw a batch still mapped** (#228).
+  `GLBatchGeometryFeatureDataStoreRenderer3`'s worker hands a batch over
+  in `updateRenderableLists` under `monitor_`, its buffers still mapped
+  and queued for `drawImpl` to unmap. `drawImpl` unmapped without the
+  lock and took it only in the base class's draw, so a batch landing in
+  between was drawn mapped: `GL_INVALID_OPERATION`, "An active buffer is
+  mapped" on ANGLE (`glDrawArrays`, then `glDrawArraysInstanced`). It
+  failed CI's basemap smoke once, at about 105 ms a frame; the dev Mac,
+  at 23 ms, went 0 in 20. A diagnostic build with a 40 ms sleep after
+  the unmap failed 5 runs in 8 with CI's exact errors; with the fix and
+  the same sleep, 0 in 8. Fix:
+  `../g1/patches/featurerenderer-unmap-under-monitor.patch` holds
+  `monitor_` (recursive) from the unmap through the draw, and around
+  patch 42's unmap and delete in `draw()`. The lock order is the
+  worker's, `monitor_` then the discard mutex. In the app the engine
+  clears GL errors, so this was a silently bad frame.
