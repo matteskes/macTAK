@@ -1887,6 +1887,9 @@ Decided (owner, 2026-11-20):
     - Switching to ADDR looks up the placed position's address, as 5.5's
       pane does when it opens.
     - The caption names the geocoder that receives the query.
+    - Saving a new placed position that this client now reports pans
+      the map to it, so a place found far away is on screen (found in
+      the owner's hand check: the marker moved, the map didn't).
   - Settings has an Address Lookup pane: the picker, the imported
     servers, and Import Geocoder File….
 - **Tests:**
@@ -1913,8 +1916,9 @@ Decided (owner, 2026-11-20):
 | A/B: no unbounded fallback | the server test fails: "far" isn't found |
 | `make lint` | passes |
 
-Not run by an agent: the My Details ADDR mode and the Address Lookup
-pane by hand.
+Checked by hand (owner, 2026-11-20): an address in Tucson found with
+Apple Maps, saved as the placed position (with Placed by hand only),
+and the map pans to it.
 
 #### Unlike 5.5
 

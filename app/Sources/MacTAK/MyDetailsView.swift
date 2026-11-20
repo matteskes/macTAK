@@ -17,6 +17,9 @@
 // geocoder places this client there; switching to ADDR with a position
 // looks up its address, as 5.5 does when the pane opens. The address is
 // kept with the placed position while it stays put.
+//
+// Saving a new placed position that this client now reports pans the map
+// to it, so a place found by address is on screen.
 
 import MacTAKComms
 import SwiftUI
@@ -26,6 +29,7 @@ struct MyDetailsSheet: View {
     @ObservedObject var me: SelfReporter
     @ObservedObject var units: UnitPreferences
     @ObservedObject var geocoders: GeocoderRegistry
+    @EnvironmentObject private var host: EngineHost
     @Environment(\.dismiss) private var dismiss
 
     @State private var callsign = ""
@@ -366,8 +370,13 @@ struct MyDetailsSheet: View {
         details.unitType = unitType.trimmingCharacters(in: .whitespaces)
         details.remarks = remarks.trimmingCharacters(in: .whitespacesAndNewlines)
         details.reporting = reporting
+        let before = me.placed
         if case let .success(p) = placed { me.place(p, address: addressFor(p)) }
         me.mode = mode
+        // On the new place, if it is where this client now says it is.
+        if let p = me.placed, p != before, let now = me.location, now.source == .manual {
+            host.panTo(lat: now.point.lat, lon: now.point.lon)
+        }
     }
 }
 
