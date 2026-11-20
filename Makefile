@@ -176,6 +176,7 @@ test-render:
 	bash dev/g2/render/run.sh --out dev/g2/build/render-smoke.png
 	bash dev/g2/render/test/asset-icons.sh dev/g2/build/render-layer.png
 	bash dev/g2/render/test/markers.sh dev/g2/build/render-markers.png
+	bash dev/g2/render/test/lines.sh dev/g2/build/render-lines.png
 	bash dev/g2/fixtures/make-basemap.sh
 	bash dev/g2/render/run.sh --basemap dev/g2/build/fixtures/sf-graticule.mbtiles --layer dev/g1/headless/test/fixtures/sf-landmarks.geojson --out dev/g2/build/render-basemap.png
 	bash dev/g2/render/test/basemap-gate.sh

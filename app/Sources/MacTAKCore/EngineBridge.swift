@@ -61,6 +61,7 @@ public final class EngineBridge {
     private let midStart, midPoll, midExit, midStop, midResize, midVisible, midInput, midPanTo: jmethodID
     private let midSymbolPng, midCanRenderSymbol: jmethodID
     private let midPutMarker, midRemoveMarker, midMarkersReady, midSelfIconUri: jmethodID
+    private let midPutLine, midGroundAt, midMarkerAt: jmethodID
     /// Called when a call across JNI raises; defaults to printing and exit(2).
     public var onFailure: (String) -> Never = { msg in
         fputs("EngineBridge: \(msg)\n", stderr)
@@ -87,6 +88,9 @@ public final class EngineBridge {
         midRemoveMarker = try jni.staticMethod(cls, "removeMarker", "(Ljava/lang/String;)V")
         midMarkersReady = try jni.staticMethod(cls, "markersReady", "()Z")
         midSelfIconUri = try jni.staticMethod(cls, "selfIconUri", "(II)Ljava/lang/String;")
+        midPutLine = try jni.staticMethod(cls, "putLine", "(Ljava/lang/String;[DIFZLjava/lang/String;)V")
+        midGroundAt = try jni.staticMethod(cls, "groundAt", "(FF)[D")
+        midMarkerAt = try jni.staticMethod(cls, "markerAt", "(FFF)Ljava/lang/String;")
     }
 
     /// Start the render thread on `layer` (w x h pixels at dpi) and return.
@@ -193,6 +197,46 @@ public final class EngineBridge {
             var a = [jvalue](repeating: jvalue(), count: 1)
             a[0].l = jUid
             try jni.callStaticVoid(cls, midRemoveMarker, a)
+        }
+    }
+
+    /// Add or move a line (G3.8b) through `points` (two or more), clamped
+    /// to the ground: `color` ARGB, `width` pixels, `arrow` an arrow head at
+    /// the last point, `label` drawn along it (hidden where it doesn't fit)
+    /// or nil. `removeMarker(uid:)` removes it. Dropped until `markersReady`.
+    public func putLine(uid: String, points: [(lat: Double, lon: Double)], color: UInt32, width: Float,
+                        arrow: Bool, label: String?) {
+        call {
+            let jUid = try jni.newString(uid)
+            let jPoints = try jni.newDoubleArray(points.flatMap { [$0.lat, $0.lon] })
+            let jLabel = try label.map { try jni.newString($0) }
+            defer { jni.deleteLocalRef(jUid); jni.deleteLocalRef(jPoints); jni.deleteLocalRef(jLabel) }
+            var a = [jvalue](repeating: jvalue(), count: 6)
+            a[0].l = jUid; a[1].l = jPoints; a[2].i = jint(bitPattern: color); a[3].f = jfloat(width)
+            a[4].z = jboolean(arrow ? JNI_TRUE : JNI_FALSE); a[5].l = jLabel
+            try jni.callStaticVoid(cls, midPutLine, a)
+        }
+    }
+
+    /// The ground under a surface pixel (upper-left origin) as the last
+    /// frame drew it, with its height above the ellipsoid where elevation
+    /// data covers it; nil off the world or before the first frame (G3.8b).
+    public func groundAt(x: Float, y: Float) -> (lat: Double, lon: Double, hae: Double?)? {
+        call {
+            var a = [jvalue](repeating: jvalue(), count: 2)
+            a[0].f = jfloat(x); a[1].f = jfloat(y)
+            guard let v = try jni.callStaticDoubles(cls, midGroundAt, a), v.count == 3 else { return nil }
+            return (v[0], v[1], v[2].isNaN ? nil : v[2])
+        }
+    }
+
+    /// The uid of the marker nearest a surface pixel (upper-left origin)
+    /// within `radius` pixels, or nil (G3.8b). Lines are not picked.
+    public func markerAt(x: Float, y: Float, radius: Float) -> String? {
+        call {
+            var a = [jvalue](repeating: jvalue(), count: 3)
+            a[0].f = jfloat(x); a[1].f = jfloat(y); a[2].f = jfloat(radius)
+            return try jni.callStaticString(cls, midMarkerAt, a)
         }
     }
 

@@ -83,6 +83,16 @@ public final class JNI {
         return arr
     }
 
+    /// A double[] holding `values`; the caller frees its local reference.
+    public func newDoubleArray(_ values: [Double]) throws -> jdoubleArray {
+        let arr = f.NewDoubleArray!(env, jint(values.count))
+        try check("creating a double[\(values.count)]")
+        guard let arr else { throw JNIError("NewDoubleArray returned null") }
+        values.withUnsafeBufferPointer { f.SetDoubleArrayRegion!(env, arr, 0, jint(values.count), $0.baseAddress) }
+        try check("filling a double[]")
+        return arr
+    }
+
     public func newObject(_ cls: jclass, _ ctor: jmethodID) throws -> jobject {
         let obj = f.NewObjectA!(env, cls, ctor, nil)
         try check("constructing an object")
@@ -127,6 +137,21 @@ public final class JNI {
         }
         try check("reading a byte[]")
         return bytes
+    }
+
+    /// A static method returning double[]: its values, or nil for null. The
+    /// array's local reference is freed here.
+    public func callStaticDoubles(_ cls: jclass, _ mid: jmethodID, _ args: [jvalue] = []) throws -> [Double]? {
+        var a = args
+        let arr = a.withUnsafeMutableBufferPointer { f.CallStaticObjectMethodA!(env, cls, mid, $0.baseAddress) }
+        try check("calling a static double[] method")
+        guard let arr else { return nil }
+        defer { deleteLocalRef(arr) }
+        let count = Int(f.GetArrayLength!(env, arr))
+        var values = [Double](repeating: 0, count: count)
+        values.withUnsafeMutableBufferPointer { f.GetDoubleArrayRegion!(env, arr, 0, jint(count), $0.baseAddress) }
+        try check("reading a double[]")
+        return values
     }
 
     /// A static method returning String: its value, or nil for null. The

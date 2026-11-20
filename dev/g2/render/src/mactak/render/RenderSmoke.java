@@ -74,6 +74,12 @@ public final class RenderSmoke {
       + "  --marker LAT,LON,ICON[,AARRGGBB]  a map marker (G3.7b, MapMarkers): ICON is an\n"
       + "                icon URI (asset://icons/roles/team.png) or \"self\" (5.5's self marker);\n"
       + "                the tint defaults to none; check it with --expect (repeatable)\n"
+      + "  --line LAT,LON,LAT,LON,AARRGGBB[,LABEL]  a map line (G3.8b, MapMarkers.putLine),\n"
+      + "                3 px wide; check it with --expect (repeatable)\n"
+      + "  --expect-ground LAT,LON  a click on that point's pixel must come back as that\n"
+      + "                point, within a pixel (G3.8b, MapPick; repeatable)\n"
+      + "  --expect-marker LAT,LON,UID  a click beside that point must pick marker UID\n"
+      + "                (marker-0, marker-1, ... in --marker order; \"none\": no marker; repeatable)\n"
       + "  --elevation P  elevation: a GeoTIFF DEM file, or a DTED directory (w123/n37.dt1);\n"
       + "                the terrain renderer must draw it (ray casts hit the terrain mesh)\n"
       + "  --tilt DEG    camera tilt from straight down (default 0)\n"
@@ -86,6 +92,20 @@ public final class RenderSmoke {
       + "                until content pixels have appeared, so a slow runner can't race it\n";
 
     private RenderSmoke() { }
+
+    /** {@code --line LAT,LON,LAT,LON,AARRGGBB[,LABEL]}. */
+    record LineSpec(double[] latLons, int color, String label) {
+        static final float WIDTH = 3f;
+
+        static LineSpec parse(String spec) {
+            final String[] p = spec.split(",", 6);
+            if (p.length < 5 || p[4].length() != 8)
+                throw new IllegalArgumentException("want LAT,LON,LAT,LON,AARRGGBB[,LABEL], got " + spec);
+            final double[] ll = new double[4];
+            for (int i = 0; i < 4; i++) ll[i] = Double.parseDouble(p[i]);
+            return new LineSpec(ll, (int) Long.parseLong(p[4], 16), p.length == 6 ? p[5] : null);
+        }
+    }
 
     public static void main(String[] args) throws IOException {
         List<String> libs = new ArrayList<>();
@@ -104,6 +124,8 @@ public final class RenderSmoke {
         double atLat = Double.NaN, atLon = Double.NaN;
         final java.util.List<PixelExpectation> expectations = new java.util.ArrayList<>();
         final java.util.List<String> markerSpecs = new java.util.ArrayList<>();
+        final java.util.List<LineSpec> lineSpecs = new java.util.ArrayList<>();
+        final java.util.List<PickExpectation> picks = new java.util.ArrayList<>();
         final java.util.List<File> elevations = new java.util.ArrayList<>();
         final java.util.List<ElevationChecks.Height> heights = new java.util.ArrayList<>();
         double tilt = 0d;
@@ -133,6 +155,9 @@ public final class RenderSmoke {
                     case "--settle": settleMs = Long.parseLong(args[++i]); break;
                     case "--expect": expectations.add(PixelExpectation.parse(args[++i])); break;
                     case "--marker": markerSpecs.add(args[++i]); break;
+                    case "--line": lineSpecs.add(LineSpec.parse(args[++i])); break;
+                    case "--expect-ground": picks.add(PickExpectation.parseGround(args[++i])); break;
+                    case "--expect-marker": picks.add(PickExpectation.parseMarker(args[++i])); break;
                     case "--elevation": elevations.add(new File(args[++i])); break;
                     case "--tilt": tilt = Double.parseDouble(args[++i]); break;
                     case "--expect-height": heights.add(ElevationChecks.Height.parse(args[++i])); break;
@@ -289,9 +314,10 @@ public final class RenderSmoke {
             globe.addLayer(new FeatureLayer3("mactak-layer", store.dataStore()));
             frame = b;   // vector bounds win: that's what the fixture is about
         }
-        // --marker: G3.7b's marker layer, over the data layers as the app adds it
-        if (!markerSpecs.isEmpty()) {
-            final MapMarkers markers = new MapMarkers();
+        // --marker, --line: G3.7b's marker layer, over the data layers as the app adds it
+        MapMarkers markers = null;
+        if (!markerSpecs.isEmpty() || !lineSpecs.isEmpty()) {
+            markers = new MapMarkers();
             globe.addLayer(markers.layer());
             int n = 0;
             for (String spec : markerSpecs) {
@@ -304,7 +330,9 @@ public final class RenderSmoke {
                         self ? SelfIcon.WIDTH : MapMarkers.ICON_SIZE, self ? SelfIcon.HEIGHT : MapMarkers.ICON_SIZE, Double.NaN,
                         "MARKER-" + n);
             }
-            System.out.printf("render-smoke: %d marker(s)%n", markers.count());
+            for (LineSpec l : lineSpecs)
+                markers.putLine("line-" + (n++), l.latLons(), l.color(), LineSpec.WIDTH, false, l.label());
+            System.out.printf("render-smoke: %d marker(s) and line(s)%n", markers.count());
         }
         if (frame == null && !Double.isNaN(atLat) && !Double.isNaN(res))   // --at and --res frame on their own
             frame = new Envelope(atLon, atLat, 0, atLon, atLat, 0);
@@ -334,7 +362,8 @@ public final class RenderSmoke {
         // generous cap — until content pixels have actually appeared.
         // elevation is content too: the terrain renderer loads its tiles asynchronously
         // and so are markers: their icons load on the engine's loader threads
-        boolean hasContent = !layers.isEmpty() || !basemaps.isEmpty() || !attached.isEmpty() || !markerSpecs.isEmpty();
+        boolean hasContent = !layers.isEmpty() || !basemaps.isEmpty() || !attached.isEmpty() || !markerSpecs.isEmpty()
+                || !lineSpecs.isEmpty();
         long deadline = System.currentTimeMillis() + (hasContent ? settleMs : 0);
         long cap = System.currentTimeMillis() + (hasContent ? Math.max(settleMs * 5, 15000) : 0);
         boolean contentSeen = !hasContent;
@@ -412,6 +441,11 @@ public final class RenderSmoke {
         boolean expectationsHold = true;
         for (PixelExpectation e : expectations)
             expectationsHold &= e.check(view, px, w, h);
+        final com.atakmap.map.MapSceneModel scene =
+                view.getMapSceneModel(false, com.atakmap.map.MapRenderer3.DisplayOrigin.UpperLeft);
+        boolean picksHold = true;
+        for (PickExpectation p : picks)
+            picksHold &= p.check(scene, markers);
         boolean heightsHold = true;
         for (ElevationChecks.Height e : heights)
             heightsHold &= e.check();
@@ -446,11 +480,13 @@ public final class RenderSmoke {
             System.err.println("render-smoke: FAIL: " + swapFails + " of " + (presented + swapFails) + " presents failed");
         final long required = ContentGate.requiredPixels(w, h, !layers.isEmpty(), !basemaps.isEmpty());
         boolean pass = readOk && glErrors == 0 && sentinel == 0 && resizeSeen
-                && content >= required && windowOk && expectationsHold && heightsHold && terrainHolds;
+                && content >= required && windowOk && expectationsHold && picksHold && heightsHold && terrainHolds;
         if (content < required)
             System.err.println("render-smoke: FAIL: " + ContentGate.failure(content, required, w, h, !basemaps.isEmpty()));
         if (!expectationsHold)
             System.err.println("render-smoke: FAIL: a pixel over a known ground point has the wrong colour (--expect)");
+        if (!picksHold)
+            System.err.println("render-smoke: FAIL: a click came back as the wrong place or marker (--expect-ground, --expect-marker)");
         if (!heightsHold)
             System.err.println("render-smoke: FAIL: a height at a known point is wrong (--expect-height)");
         if (!terrainHolds)

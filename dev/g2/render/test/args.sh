@@ -38,6 +38,10 @@ expect_usage 'bad --at'               --at 37.8
 expect_usage '--expect needs a value' --expect
 expect_usage 'bad --expect'           --expect 37.8,-122.4
 expect_usage 'bad --expect'           --expect 37.8,-122.4,green
+expect_usage '--line needs a value'   --line
+expect_usage 'bad --line'             --line 37.8,-122.4,37.9,-122.3
+expect_usage 'bad --expect-ground'    --expect-ground 37.8
+expect_usage 'bad --expect-marker'    --expect-marker 37.8,-122.4
 expect_usage '--elevation needs a value' --elevation
 expect_usage 'bad --tilt'             --tilt steep
 expect_usage 'bad --expect-height'    --expect-height 37.8,-122.4

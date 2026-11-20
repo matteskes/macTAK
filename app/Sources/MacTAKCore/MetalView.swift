@@ -13,6 +13,10 @@ public final class MetalView: NSView {
     public var onBackingChange: ((Int, Int, Double) -> Void)?
     /// Called with each input event once the render thread exists.
     public var onGesture: ((Gesture, Float, Float, Float, Float, Double) -> Void)?
+    /// Called with a single click's position, surface pixels from the upper
+    /// left (G3.8b): a press and release that didn't drag the map. The
+    /// first click of a double-click comes here too.
+    public var onClick: ((Float, Float) -> Void)?
     /// Called once, when the view is first in a window with a non-empty size:
     /// the moment a host can start the engine on it. SwiftUI adds the view to
     /// its window before laying it out, so joining the window alone is too
@@ -25,6 +29,7 @@ public final class MetalView: NSView {
     /// the layer's bounds by the time setFrameSize runs (G2 trap #58).
     private var reported: (w: Int, h: Int, scale: CGFloat)?
     private var lastDrag: (x: CGFloat, y: CGFloat)?
+    private var press = ClickTracker()
 
     /// `log` gets one line per backing change.
     public init(frame frameRect: NSRect, log: @escaping (String) -> Void = { print($0) }) {
@@ -119,17 +124,24 @@ public final class MetalView: NSView {
     public override func mouseDown(with e: NSEvent) {
         let p = pixels(e)
         lastDrag = p
+        press.down(at: p, scale: backingScale)
         if e.clickCount == 2 { send(.doubleClick, p) }
     }
 
     public override func mouseDragged(with e: NSEvent) {
         let p = pixels(e)
+        press.moved(to: p)
         defer { lastDrag = p }
         guard let last = lastDrag else { return }
         send(e.modifierFlags.contains(.option) ? .optionDrag : .drag, p, dx: p.x - last.x, dy: p.y - last.y)
     }
 
-    public override func mouseUp(with e: NSEvent) { lastDrag = nil }
+    public override func mouseUp(with e: NSEvent) {
+        lastDrag = nil
+        let p = pixels(e)
+        press.moved(to: p)
+        if press.up(), e.clickCount <= 1 { onClick?(Float(p.x), Float(p.y)) }
+    }
 
     /// Trackpad or Magic Mouse surface: pan, the content following the
     /// fingers. Mouse wheel: zoom about the pointer, positive = in.
@@ -169,6 +181,34 @@ public enum ScrollSource: Equatable {
     /// WHEEL takes. A smooth-scrolled wheel's precise delta is in points.
     public static func wheelLines(_ deltaY: CGFloat, precise: Bool) -> Double {
         precise ? Double(deltaY) / pointsPerLine : Double(deltaY)
+    }
+}
+
+/// Tells a click from a drag (G3.8b): a press is a click when the pointer
+/// stays within `slop` points of where it went down, as AppKit's own
+/// controls allow a little hand movement.
+struct ClickTracker {
+    static let slop: CGFloat = 4
+    private var start: (x: CGFloat, y: CGFloat)?
+    private var limit: CGFloat = 0
+    private var dragged = false
+
+    /// The button went down at `p` (pixels) on a `scale`x backing.
+    mutating func down(at p: (x: CGFloat, y: CGFloat), scale: CGFloat) {
+        start = p
+        limit = Self.slop * scale
+        dragged = false
+    }
+
+    mutating func moved(to p: (x: CGFloat, y: CGFloat)) {
+        guard let s = start, !dragged else { return }
+        dragged = hypot(p.x - s.x, p.y - s.y) > limit
+    }
+
+    /// The button came up: whether the press was a click.
+    mutating func up() -> Bool {
+        defer { start = nil }
+        return start != nil && !dragged
     }
 }
 
