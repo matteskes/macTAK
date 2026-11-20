@@ -11,6 +11,14 @@
 //                       (default) or none (5.5's bottom_bar reads as
 //                       bottom_right: the app has no bottom bar)
 //
+// Range and bearing (G3.8a), 5.5's Units › Range & Bearing:
+//   rab_north_ref_pref     "0" true, "1" magnetic (default), "2" grid
+//   rab_brg_units_pref     "0" degrees (default) or "1" mils
+//   rab_rng_units_pref     "0" ft/mi, "1" m/km (default), "2" NM
+//   rab_dist_slant_range   "clamped" (default, ground range) or "slantrange"
+//   rng_feet_display_pref  feet shown up to this, then miles (5280)
+//   rng_meters_display_pref  metres shown up to this, then km (2000)
+//
 // The geoid turns HAE into MSL. It comes from the app bundle; without it
 // (a broken bundle) MSL shows unknown rather than an HAE passed off as MSL.
 
@@ -38,7 +46,29 @@ public final class UnitPreferences: ObservableObject {
         didSet { settings.set(selfCoordDisplay.rawValue, forKey: Key.selfCoordDisplay) }
     }
 
+    @Published public var northReference: NorthReference {
+        didSet { settings.set(String(northReference.rawValue), forKey: Key.northReference) }
+    }
+    @Published public var bearingUnits: BearingUnits {
+        didSet { settings.set(String(bearingUnits.rawValue), forKey: Key.bearingUnits) }
+    }
+    @Published public var rangeUnits: RangeUnits {
+        didSet { settings.set(String(rangeUnits.rawValue), forKey: Key.rangeUnits) }
+    }
+    @Published public var slantRange: Bool {
+        didSet { settings.set(slantRange ? "slantrange" : "clamped", forKey: Key.slantRange) }
+    }
+    @Published public var rangeThresholds: RangeBearingText.Thresholds {
+        didSet {
+            settings.set(String(rangeThresholds.feetToMiles), forKey: Key.feetThreshold)
+            settings.set(String(rangeThresholds.metersToKilometers), forKey: Key.metersThreshold)
+        }
+    }
+
     public let geoid: Geoid?
+    /// Magnetic north (5.5's wmm_cof); without it bearings from magnetic
+    /// north show unknown.
+    public let magnetic: MagneticModel?
     private let settings: SettingsStore
 
     /// 5.5's tap_selfoverlay_values.
@@ -62,11 +92,22 @@ public final class UnitPreferences: ObservableObject {
         static let coordinateFormat = "coord_display_pref", altitudeReference = "alt_display_pref"
         static let altitudeUnits = "alt_unit_pref", selfCoordAction = "self_coord_action"
         static let speedUnits = "speed_unit_pref", selfCoordDisplay = "self_coord_info_display"
+        static let northReference = "rab_north_ref_pref", bearingUnits = "rab_brg_units_pref"
+        static let rangeUnits = "rab_rng_units_pref", slantRange = "rab_dist_slant_range"
+        static let feetThreshold = "rng_feet_display_pref", metersThreshold = "rng_meters_display_pref"
     }
 
-    public init(settings: SettingsStore, geoid: Geoid?) {
+    public init(settings: SettingsStore, geoid: Geoid?, magnetic: MagneticModel? = nil) {
         self.settings = settings
         self.geoid = geoid
+        self.magnetic = magnetic
+        func number(_ key: String) -> Int? { settings.string(forKey: key).flatMap { Int($0) } }
+        northReference = number(Key.northReference).flatMap(NorthReference.init(rawValue:)) ?? .magnetic
+        bearingUnits = number(Key.bearingUnits).flatMap(BearingUnits.init(rawValue:)) ?? .degrees
+        rangeUnits = number(Key.rangeUnits).flatMap(RangeUnits.init(rawValue:)) ?? .metersKilometers
+        slantRange = settings.string(forKey: Key.slantRange) == "slantrange"
+        rangeThresholds = RangeBearingText.Thresholds(feetToMiles: number(Key.feetThreshold) ?? 5280,
+                                                      metersToKilometers: number(Key.metersThreshold) ?? 2000)
         coordinateFormat = CoordinateFormat(displayName: settings.string(forKey: Key.coordinateFormat))
         altitudeReference = settings.string(forKey: Key.altitudeReference).flatMap(AltitudeReference.init(rawValue:))
             ?? .default
@@ -77,6 +118,26 @@ public final class UnitPreferences: ObservableObject {
         selfCoordAction = settings.string(forKey: Key.selfCoordAction).flatMap(SelfCoordAction.init(rawValue:))
             ?? .panTo
         selfCoordDisplay = SelfCoordDisplay(stored: settings.string(forKey: Key.selfCoordDisplay))
+    }
+
+    /// How the R&B preferences say to write a range and bearing.
+    public var rangeBearingStyle: RangeBearing.Style {
+        RangeBearing.Style(north: northReference, bearingUnits: bearingUnits, rangeUnits: rangeUnits,
+                           slantRange: slantRange, thresholds: rangeThresholds)
+    }
+
+    /// The app's magnetic model: 5.5's wmm_cof in the bundle's Resources.
+    public static func bundledMagneticModel(_ bundle: Bundle = .main) -> MagneticModel? {
+        guard let url = bundle.url(forResource: "wmm_cof", withExtension: nil) else {
+            NSLog("macTAK: wmm_cof isn't in the bundle; bearings from magnetic north show unknown")
+            return nil
+        }
+        do {
+            return try MagneticModel(contentsOf: url)
+        } catch {
+            NSLog("macTAK: \(error); bearings from magnetic north show unknown")
+            return nil
+        }
     }
 
     /// The app's geoid: egm96-15.grid in the bundle's Resources.

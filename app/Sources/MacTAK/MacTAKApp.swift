@@ -87,7 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.mesh = mesh
         let details = SelfDetails(settings: settings, uid: DeviceUID.resolve(suite: suite))
         me = SelfReporter(settings: settings, details: details, locator: LocationService())
-        units = UnitPreferences(settings: settings, geoid: UnitPreferences.bundledGeoid())
+        units = UnitPreferences(settings: settings, geoid: UnitPreferences.bundledGeoid(),
+                                magnetic: UnitPreferences.bundledMagneticModel())
         geocoders = GeocoderRegistry(settings: settings)
         // Chat history and user groups, one file per settings suite (G3.5b).
         let chatStore: ChatStore?

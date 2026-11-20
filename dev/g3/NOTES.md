@@ -2328,3 +2328,77 @@ path. Each can follow on **b**'s groundwork.
    the one 5.5 ships, and the golden test checks the same code.
 3. The details show range and bearing from where the self-SA says this
    client is (CoreLocation or placed), as 5.5 uses the self marker.
+
+### G3.8a — the numbers, the units and the details (2026-11-20, branch `g3/rab-math`)
+
+#### What changed
+
+- **`MacTAKCot/RangeBearing`**, ported from the engine's C++ and the
+  kernel's Java:
+  - `Geodesy`:
+    - range is `util/Distance.cpp` `calculateRange`, Vincenty's inverse
+      with that file's own WGS84 constants
+    - bearing is `computeDirection` (Vincenty after Rainsford, from
+      GeoTools), with the great-circle fallback; the Java wrapper adds
+      360 to a negative bearing
+    - slant range is the straight line in ECEF (`EcefWGS84.forward`)
+    - grid convergence is the bearing to the point the line's length
+      north in the start's UTM zone
+  - `RangeBearingText`: `AngleUtilities`, `SpanUtilities` and
+    `DirectionType`
+  - `RangeBearing`: 5.5's R&B label (`updateLabel`) and details table
+    (`RangeAndBearingTableHandler`).
+- **Magnetic north**: `CMagnetic` vendors the engine's NOAA library
+  (`formats/wmm`, `port/Platform.h`) unchanged and ports
+  `util/GeomagneticField.cpp` around it. 5.5's `wmm_cof` (WMMHR-2025) is
+  `app/Resources/wmm_cof`, and `bundle.sh` stages it. Both come from
+  takkernel, under its GPL-3.0, as the engine natives do
+  (`licenses/inventory.csv`).
+- **`UnitPreferences`** keeps 5.5's six R&B keys (magnetic north,
+  degrees, m/km, ground range, 5280 ft, 2000 m by default).
+  Settings › Units has a Range & Bearing section with an example label.
+- **A contact's popover** shows the range in all three unit systems
+  (the chosen one first) and the bearing magnetic and true in degrees
+  and mils, with the compass point, from where the self-SA says this
+  client is. Checked by hand (owner, 2026-11-20) with a test contact
+  sent over loopback: the first layout drew the mils line over the
+  bearing (an empty Grid label has no height), so each line has its
+  own label.
+- **The golden test**, `make test-rab-golden`, runs in CI's
+  `native-engine` job:
+  - `RabOracle.java` runs 5.5's `GeoCalculations`, `magneticDeclination`
+    and `convertFromTrueToMagnetic` (with `world-magnetic-model-file`
+    set), `AngleUtilities` and `SpanUtilities` on the engine's natives.
+    The output must match `dev/g3/test/rab-golden/expected`.
+  - The vendored WMM files must be the engine's, byte for byte.
+  - `RangeBearingTests` holds the Swift port to the same files.
+
+#### What 5.5 does that the port keeps
+
+- **A bearing under 1° writes as 360°**, and 0 as 360°
+  (`AngleUtilities.wrapDeg`). Mils don't wrap: 0 is "0 mils".
+- **Whole metres and feet round half to even.** `DecimalFormat`'s
+  default is HALF_EVEN, and `SpanUtilities` doesn't round first, so
+  0.5 m is "0 m" and 2.5 m is "2 m".
+- **`FEET_TO_MILES` is 0.000189394**, not 1/5280.
+- **The engine counts a leap year's extra day from January 1**: in a
+  leap year, January and February run a day late for magnetic north.
+- **Magnetic north is taken at sea level**, with the latitude and
+  longitude cast to float, on the local calendar day.
+- **The label's north letter follows the unit with no space**
+  ("4,145 milsG").
+- **The up or down angle is `acos(ground / slant)`**, shown only with
+  slant range on and both heights known. The engine's own
+  `slantAngle` is not used for it.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-rab-golden` | the vendored files match; 23 pairs, 12 magnetic dates, 20 angles and 23 ranges, all the kernel's |
+| `RangeBearingTests` (5) | every value matched on the first run, except grid convergence for the same point twice: a 4×10⁻¹¹ m line whose bearing is rounding noise in both, which the test skips |
+| A/B: no leap-year day | the February 2028 magnetic rows fail |
+| A/B: whole metres HALF_UP | 0.5 m and 2.5 m fail |
+| `make test-app` | passes; `RangeBearingLabelTests` (3) and `RangeBearingPreferencesTests` (4) new |
+| `make app` | the bundle carries `wmm_cof`; `check-bundle.py` and the license check pass |
+| `make lint` | passes |

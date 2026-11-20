@@ -1,0 +1,25 @@
+# written by dev/g3/test/RabOracle.java (make test-rab-golden --write); do not edit
+# ft/mi	m/km	NM	ft/mi@100	m/km@500
+0 ft	0 m	0.00 NM	0 ft	0 m
+2 ft	0 m	0.00 NM	2 ft	0 m
+5 ft	2 m	0.00 NM	5 ft	2 m
+8 ft	2 m	0.00 NM	8 ft	2 m
+11 ft	4 m	0.00 NM	11 ft	4 m
+3,279 ft	1,000 m	0.54 NM	0.62 mi	1.00 km
+3,281 ft	1,000 m	0.54 NM	0.62 mi	1.00 km
+5,280 ft	1,609 m	0.87 NM	1.00 mi	1.61 km
+1.00 mi	1,609 m	0.87 NM	1.00 mi	1.61 km
+1.15 mi	1,852 m	1.00 NM	1.15 mi	1.85 km
+1.24 mi	2,000 m	1.08 NM	1.24 mi	2.00 km
+1.24 mi	2,000 m	1.08 NM	1.24 mi	2.00 km
+1.24 mi	2.00 km	1.08 NM	1.24 mi	2.00 km
+1.24 mi	2.00 km	1.08 NM	1.24 mi	2.00 km
+3.11 mi	5.00 km	2.70 NM	3.11 mi	5.00 km
+62.13 mi	100.00 km	53.99 NM	62.13 mi	100.00 km
+62.14 mi	100.00 km	54.00 NM	62.14 mi	100.00 km
+62.14 mi	100.0 km	54.00 NM	62.14 mi	100.0 km
+115.1 mi	185.2 km	100.0 NM	115.1 mi	185.2 km
+621.3 mi	999.9 km	539.9 NM	621.3 mi	999.9 km
+621.3 mi	1,000.0 km	539.9 NM	621.3 mi	1,000.0 km
+1,151 mi	1,852 km	1,000 NM	1,151 mi	1,852 km
+7,671 mi	12,346 km	6,666 NM	7,671 mi	12,346 km

@@ -16,7 +16,11 @@ enum JavaNumber {
     /// DecimalFormat with RoundingMode.HALF_UP, `minInt` integer digits and
     /// exactly `fraction` fraction digits ("00.0000" is minInt 2, fraction
     /// 4); `grouping` puts a comma every three integer digits ("#,##0").
-    static func format(_ x: Double, minInt: Int = 1, fraction: Int = 0, grouping: Bool = false) -> String {
+    /// `halfEven`: DecimalFormat's default RoundingMode.HALF_EVEN instead
+    /// (an exact half goes to the even digit), for a format that keeps it
+    /// (SpanUtilities' whole metres and feet, G3.8a).
+    static func format(_ x: Double, minInt: Int = 1, fraction: Int = 0, grouping: Bool = false,
+                       halfEven: Bool = false) -> String {
         let sign = isNegative(x) ? "-" : ""
         if x.isNaN { return "NaN" }
         if x.isInfinite { return sign + "∞" }
@@ -26,8 +30,12 @@ enum JavaNumber {
         let exact = String(format: "%.80f", abs(x))
         let point = exact.firstIndex(of: ".")!
         var digits = Array(exact[..<point]) + Array(exact[exact.index(after: point)...].prefix(fraction))
-        let dropped = exact[exact.index(after: point)...].dropFirst(fraction).first ?? "0"
-        if dropped >= "5" {   // HALF_UP: an exact half goes up
+        let rest = exact[exact.index(after: point)...].dropFirst(fraction)
+        let dropped = rest.first ?? "0"
+        let exactHalf = dropped == "5" && rest.dropFirst().allSatisfy { $0 == "0" }
+        let lastOdd = (digits.last?.wholeNumberValue ?? 0) % 2 == 1
+        if dropped > "5" || (dropped == "5" && (!halfEven || !exactHalf || lastOdd)) {
+            // HALF_UP: an exact half goes up; HALF_EVEN: to the even digit
             var i = digits.count - 1
             while i >= 0 {
                 if digits[i] == "9" { digits[i] = "0"; i -= 1 } else { digits[i] = Character(String(digits[i].wholeNumberValue! + 1)); break }

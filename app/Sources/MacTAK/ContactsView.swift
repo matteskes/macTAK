@@ -20,7 +20,7 @@ struct ContactsSection: View {
     var body: some View {
         Section {
             MeRow(details: me.details, units: units, location: me.location) { editing = true }
-            ContactRows(store: connections.contacts, servers: connections.servers, units: units)
+            ContactRows(store: connections.contacts, servers: connections.servers, units: units, me: me)
         } header: {
             Text("Contacts")
         }
@@ -62,6 +62,7 @@ private struct ContactRows: View {
     @ObservedObject var store: ContactStore
     let servers: [ServerConfig]
     let units: UnitPreferences
+    let me: SelfReporter
 
     var body: some View {
         if store.contacts.isEmpty {
@@ -70,7 +71,7 @@ private struct ContactRows: View {
         // ages and stale states move with the clock, not with new SA
         TimelineView(.periodic(from: .now, by: 5)) { timeline in
             ForEach(store.contacts) { contact in
-                ContactRow(contact: contact, now: timeline.date, servers: servers, units: units)
+                ContactRow(contact: contact, now: timeline.date, servers: servers, units: units, me: me)
             }
         }
     }
@@ -81,6 +82,7 @@ private struct ContactRow: View {
     let now: Date
     let servers: [ServerConfig]
     let units: UnitPreferences
+    let me: SelfReporter
     @State private var showing = false
 
     var body: some View {
@@ -95,7 +97,7 @@ private struct ContactRow: View {
         .contentShape(Rectangle())
         .onTapGesture { showing = true }
         .popover(isPresented: $showing, arrowEdge: .trailing) {
-            ContactDetails(contact: contact, servers: servers, units: units).padding().frame(width: 320)
+            ContactDetails(contact: contact, servers: servers, units: units, me: me).padding().frame(width: 340)
         }
     }
 
@@ -109,6 +111,7 @@ private struct ContactDetails: View {
     let contact: Contact
     let servers: [ServerConfig]
     @ObservedObject var units: UnitPreferences
+    @ObservedObject var me: SelfReporter
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, verticalSpacing: 4) {
@@ -118,6 +121,23 @@ private struct ContactDetails: View {
             row("Position", contact.point == .zero ? "unknown" : units.position(contact.point))
             if contact.point != .zero { row("Altitude", units.altitude(contact.point)) }
             if let address = contact.address { row("Address", "\(address.text) (\(address.geocoder))") }
+            if contact.point != .zero, let here = me.location?.point {
+                // 5.5's range and bearing from me (RangeAndBearingTableHandler)
+                // Each line has its own label: an empty one has no height in
+                // a Grid, and its row drew over the one above.
+                let t = RangeBearing(from: here, to: contact.point)
+                    .table(magnetic: units.magnetic, thresholds: units.rangeThresholds)
+                let (preferred, others) = switch units.rangeUnits {
+                case .metersKilometers: (t.metersKilometers, [t.feetMiles, t.nauticalMiles])
+                case .feetMiles: (t.feetMiles, [t.metersKilometers, t.nauticalMiles])
+                case .nauticalMiles: (t.nauticalMiles, [t.metersKilometers, t.feetMiles])
+                }
+                row("Range", preferred)
+                row("Also", others.joined(separator: "   "))
+                row("Bearing", [t.magneticDegrees, t.trueDegrees].compactMap { $0 }.joined(separator: "   ")
+                    + "   (\(t.cardinal))")
+                row("In mils", [t.magneticMils, t.trueMils].compactMap { $0 }.joined(separator: "   "))
+            }
             row("Source", source)
             if let track = contact.track, track.speed > 0 {
                 row("Moving", String(format: "%.1f m/s, %.0f°", track.speed, track.course))
