@@ -128,8 +128,8 @@ Not in G3.8: range circles, the bullseye, Bloodhound, the dynamic R&B
 tool, measuring along a path, keeping lines across launches, and a menu
 on the line itself.
 
-Next: G3.9, routes, dropping, editing and deleting points, and the layer
-manager.
+Next: G3.9, points kept across launches (plan approved 2026-11-20,
+§G3.9); then G3.10 routes and G3.11 the Overlay Manager.
 
 ## The plan (approved 2026-11-13)
 
@@ -171,7 +171,9 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
 | G3.6 | **coordinates** (7): MGRS (the default), DD, DM, DMS, UTM; altitude in MSL (the default) or HAE | conversion tests against the engine's |
 | G3.7 | **markers on the map with 2525 symbols** (8), the self marker; the renderer comes from the #171 spike | markers' pixels where expected (CI) |
 | G3.8 | **range and bearing** (added 2026-11-20): the numbers and units golden-tested against 5.5, lines on the map, the R&B tool, `u-rb-a` | the kernel's R&B golden test; a line's pixels; one client's R&B line on the other's map |
-| G3.9 | routes, dropping, editing and deleting points, the layer manager | a route render; a dropped point reaches the other client |
+| G3.9 | **points** (split 2026-11-20): map items kept across launches; dropping, editing and deleting points; points as CoT | an R&B line survives a relaunch; a dropped point reaches the other client |
+| G3.10 | routes: `b-m-r` made, edited, drawn and shared | a route render; one client's route on the other's map |
+| G3.11 | the Overlay Manager | hand check |
 | Exit | `make g3-exit`: two app instances, TLS, FTS and OTS | each sees the other's contact, marker (on screen) and chat |
 
 The numbers in bold refer to the sanity check's gaps (§Plan revision, below).
@@ -2645,3 +2647,79 @@ reach Range & Bearing; the pane's height is fixed since.
 | `make test-app` | 165 tests pass |
 | `make app` | builds; bundle and license checks pass |
 | `make lint` | passes |
+
+## G3.9 — points (plan approved 2026-11-20)
+
+The 2026-11-13 plan's last milestone was routes, points and the layer
+manager together. Planned against 5.5 it is about seven PRs, so the
+owner split it three ways: **G3.9 points** (with the store that keeps
+map items across launches), **G3.10 routes**, **G3.11 the Overlay
+Manager**. Each closes with its own docs PR.
+
+### What 5.5 does (read at the pin)
+
+- **Map items are kept across launches** (`StateSaver`): every item
+  marked `archive` (placed here, or received with an `<archive/>`
+  detail, `ArchiveDetailHandler`) is stored as its CoT XML in
+  `statesaver2.sqlite`, table `cotevents` (uid, type, event, visible,
+  lastUpdateTime, queryOrder). At start `StateSaverPublisher` feeds the
+  events back through the CoT importers, retrying any that come back
+  `DEFERRED` (a line whose marker isn't loaded yet). R&B lines are kept
+  this way too; G3.8 doesn't keep them.
+- **The Point Dropper** (`EnterLocationDropDownReceiver`) places points
+  from icon palettes: 2525C, Spot Map, Mission Specific, user icon sets
+  and vehicles. 2525C has quick drops for the four affiliations
+  (`a-h-G`, `a-f-G`, `a-n-G`, `a-u-G`); Spot Map drops coloured dots
+  (`b-m-p-s-m`).
+- **Placing** goes through `PlacePointTool.MarkerCreator`: `archive` on,
+  `readiness` true, `how` `h-g-i-g-o`. The name, unless one is given, is
+  `genCallsign`'s: a prefix by type (the hostile prefix, `F`, `N`, `U`,
+  `S` for Spot Map, `MED`), then the day and the time (`U.20.1432`); a
+  name already on the map gets `.n` (`getCount`/`getHighestNumbered`).
+  The `legacyPointDropNaming` preference uses the device callsign
+  instead.
+- **Editing** is the point's radial menu and its details drop-down
+  (`cotdetails`): name, type, colour, remarks, moving, deleting,
+  sending, R&B from the point.
+- **As CoT**, a point is written by `CotMapComponent` and the detail
+  handlers a marker triggers (`contact`, `link` to its creator,
+  `archive`, `color`, `usericon`, `remarks`, `precisionlocation`,
+  `__address`, `creator`, …) and read by `MarkerImporter`.
+
+### The PRs
+
+| PR | Branch | What | Gate |
+|---|---|---|---|
+| **a** | `g3/map-items-store` | 5.5's StateSaver: archived items' CoT XML in SQLite, one store per settings suite (as the chat history), reloaded through the importers at launch with deferred ones retried; R&B lines join it | store and reload tests; an R&B line tied to a marker survives a relaunch |
+| **b** | `g3/point-dropper` | dropping a point with a click: 2525C's four affiliations and Spot Map's colours, named by `genCallsign` | the naming rules in tests against 5.5's; hand check (owner) |
+| **c** | `g3/point-edit` | a right-click menu in place of the radial (move, delete, send, R&B from here); a click opens an inspector beside the map (name, type, colour, remarks); drag to move | hand check (owner) |
+| **d** | `g3/point-cot` | points as 5.5's marker CoT, field by field, with `__address` (waiting since G3.6c); others' points through `MarkerImporter`'s rules | golden test against the kernel; **a dropped point reaches the other client** (CI comms leg) |
+
+Then a docs PR, as after each milestone.
+
+Not in G3.9: the Mission Specific, user icon set and vehicle palettes;
+2525D/E points and the type picker; shapes and drawing; routes (G3.10);
+the Overlay Manager (G3.11).
+
+**G3.10, routes:** `b-m-r` routes with waypoints (`b-m-p-w`) and control
+points (`b-m-p-c`) as `<link>`s and `link_attr` (colour, method,
+direction, route type, order, prefix); made by clicking points and
+edited as `RouteEditTool` edits; drawn with their points' labels and
+leg distances; sent and read as `Route.toCot` and `RouteImporter` do.
+Not in it: navigation and cues, the route planners, the elevation
+profile, route-around regions, GPX and KML export.
+
+**G3.11, the Overlay Manager** (`hierarchy`): a tree of map items by
+kind (markers by affiliation, Spot Map, R&B, routes), each shown or
+hidden, gone to, deleted, sent or searched. Not in it: file overlays.
+
+### Decided with the plan (owner, 2026-11-20)
+
+1. Split three ways: G3.9 points, G3.10 routes, G3.11 the Overlay
+   Manager.
+2. The store comes first, so points are kept from the start and R&B
+   lines stop being lost at quit.
+3. The first palettes are 2525C's four affiliations and Spot Map; the
+   others can follow as their own PRs.
+4. On the Mac a right-click menu stands in for the radial menu, and a
+   click opens an inspector beside the map; a point drags to move.
