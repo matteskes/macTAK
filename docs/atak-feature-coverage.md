@@ -124,8 +124,7 @@ above is not needed. What follows from it:
   matters (garbage-collection pauses, per-GL-call JNI in the Java
   renderers, JVM memory and startup) is inside the engine, and is
   measured at G2's exit run and paid down where the numbers show it,
-  by porting a hot Java renderer to C++ one at a time. Dropping the JVM
-  entirely is the long-term limit of that path, not a G3 step.
+  by porting a hot Java renderer to C++ one at a time.
 - Porting cost is paid per package, so G3's feature list
   ([roadmap.md](roadmap.md) G3) is also its porting order.
 
