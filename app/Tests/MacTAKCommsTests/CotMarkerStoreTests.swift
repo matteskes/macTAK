@@ -97,4 +97,33 @@ final class CotMarkerStoreTests: XCTestCase {
         XCTAssertNil(store["b"])
         XCTAssertFalse(store.receive(delete("nobody", force: true), at: later))
     }
+
+    // G3.9a: a marker that came with <archive/> is kept across launches,
+    // and so never goes stale or times out.
+
+    func testAnArchivedMarkerNeverGoesStaleAndIgnoresAPlainDelete() throws {
+        let store = CotMarkerStore(selfUID: "me") { _ in false }
+        let xml = event("k", staleAfter: 60, detail: "<archive/>")
+        store.receive(xml, at: t0)
+        let k = try XCTUnwrap(store["k"])
+        XCTAssertTrue(k.archived)
+        XCTAssertEqual(k.archivedEvent, xml, "kept as it came")
+        XCTAssertFalse(k.isStale(at: t0.addingTimeInterval(86_400 * 365)))
+        store.expire(at: t0.addingTimeInterval(86_400 * 365))
+        XCTAssertNotNil(store["k"])
+        XCTAssertFalse(store.receive(delete("k", force: false), at: t0), "only a force delete")
+        XCTAssertTrue(store.receive(delete("k", force: true), at: t0))
+        XCTAssertNil(store["k"])
+    }
+
+    func testOnceArchivedAnUpdateWithoutItStaysKept() throws {
+        let store = CotMarkerStore(selfUID: "me") { _ in false }
+        store.receive(event("k", detail: "<archive/>"), at: t0)
+        store.receive(event("k", detail: "<contact callsign='Moved'/>"), at: t0)
+        let kept = try CotEvent.parse(try XCTUnwrap(store["k"]?.archivedEvent))
+        XCTAssertNotNil(kept.detail("archive"), "kept with <archive/> added")
+        XCTAssertEqual(kept.detail("contact")?["callsign"], "Moved", "as the update says")
+        store.receive(event("plain"), at: t0)
+        XCTAssertNil(store["plain"]?.archivedEvent)
+    }
 }

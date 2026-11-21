@@ -16,6 +16,14 @@
 // A delete task (t-x-d-d, CotDeleteImporter) for a marker removes it at once
 // with <__forcedelete>, and otherwise makes it stale now
 // (staleRemoteDisconnects, on by default).
+//
+// A marker that came with <archive/> (ArchiveDetailHandler) is kept across
+// launches (G3.9a, the MapItemArchive) and, as 5.5 sets no
+// autoStaleDuration on one (CotMapAdapter.isAtakSpecialType), never goes
+// stale and isn't removed by time; a delete task without <__forcedelete>
+// leaves it alone (the refresher skips a marker with no autoStaleDuration
+// before it reads forceStale). Once archived it stays so, as the meta
+// value stays when an update leaves the detail out.
 
 import Foundation
 import MacTAKCot
@@ -37,6 +45,11 @@ public struct CotMarker: Sendable, Equatable, Identifiable {
     public var staleAt: Date
     /// When it is removed if nothing newer arrives.
     public var removeAt: Date
+    /// The CoT it is kept as across launches, <archive/> included; nil
+    /// when it isn't kept.
+    public var archivedEvent: String?
+
+    public var archived: Bool { archivedEvent != nil }
 
     public var type: String { traits.type }
 
@@ -75,11 +88,13 @@ public final class CotMarkerStore: ObservableObject {
         if ContactStore.isContactSA(event) || isContact(event.uid) {
             return remove(event.uid)
         }
-        let autoStale = max(0, event.stale.timeIntervalSince(event.start) * 1.5)
-        let staleAt = now.addingTimeInterval(autoStale)
+        let archivedEvent = Self.archivedEvent(event, xml: xml, wasArchived: byUID[event.uid]?.archived == true)
+        let staleAt = archivedEvent != nil ? .distantFuture
+            : now.addingTimeInterval(max(0, event.stale.timeIntervalSince(event.start) * 1.5))
         byUID[event.uid] = CotMarker(
             uid: event.uid, traits: Self.traits(event), label: Self.label(event), point: event.point,
-            address: AddressDetail(event.detail(AddressDetail.elementName)), lastHeard: now, staleAt: staleAt, removeAt: staleAt.addingTimeInterval(ContactStore.removeAfterStale))
+            address: AddressDetail(event.detail(AddressDetail.elementName)), lastHeard: now, staleAt: staleAt,
+            removeAt: staleAt.addingTimeInterval(ContactStore.removeAfterStale), archivedEvent: archivedEvent)
         publish()
         return true
     }
@@ -112,12 +127,25 @@ public final class CotMarkerStore: ObservableObject {
         if event.detail("__forcedelete") != nil {
             return remove(uid)
         }
-        guard !marker.isStale(at: now) else { return false }
+        guard !marker.archived, !marker.isStale(at: now) else { return false }
         marker.staleAt = now
         marker.removeAt = now.addingTimeInterval(ContactStore.removeAfterStale)
         byUID[uid] = marker
         publish()
         return true
+    }
+
+    /// What an archived marker is kept as: the event as it came when it
+    /// carries <archive/>, else (an update to a marker already archived)
+    /// with <archive/> added; nil for a marker that isn't kept.
+    static func archivedEvent(_ event: CotEvent, xml: String, wasArchived: Bool) -> String? {
+        if event.detail("archive") != nil { return xml }
+        guard wasArchived else { return nil }
+        var kept = event
+        var detail = kept.detail ?? CotDetail("detail")
+        detail.add(CotDetail("archive"))
+        kept.detail = detail
+        return kept.xml()
     }
 
     /// The details 5.5's handlers keep for the icon: __group, <color argb>

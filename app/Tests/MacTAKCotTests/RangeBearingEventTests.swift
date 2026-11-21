@@ -23,7 +23,8 @@ final class RangeBearingEventTests: XCTestCase {
     func testToCotFieldByField() {
         let style = RangeBearing.Style(north: .grid, bearingUnits: .mils, rangeUnits: .feetMiles)
         let e = RangeBearingEvent.make(uid: "line-1", title: "R&B 1", start: start, end: end,
-                                       startUID: nil, endUID: "marker-9", style: style, creator: creator, now: now)
+                                       startUID: nil, endUID: "marker-9", style: style, archive: true,
+                                       creator: creator, now: now)
         XCTAssertEqual(e.type, "u-rb-a")
         XCTAssertEqual(e.how, "h-e")
         XCTAssertEqual(e.uid, "line-1")
@@ -47,6 +48,7 @@ final class RangeBearingEventTests: XCTestCase {
             "strokeWeight value=3.0",
             "strokeStyle value=solid",
             "color value=-65536",
+            "archive",
             "creator uid=ANDROID-1 type=a-f-G-U-C callsign=VIPER time=\(Cot.time(creator.time))",
         ])
         XCTAssertGreaterThan(rab.depressionAngle, 0, "the far end is higher: up")
@@ -60,6 +62,7 @@ final class RangeBearingEventTests: XCTestCase {
         XCTAssertFalse(names.contains("rangeUID"))
         XCTAssertFalse(names.contains("anchorUID"))
         XCTAssertFalse(names.contains("creator"))
+        XCTAssertFalse(names.contains("archive"), "only a kept line carries <archive/>")
         XCTAssertEqual(flat.detail("inclination")?["value"], "0.0", "5.5's _depAngle stays 0 without a slant range")
         XCTAssertEqual(flat.detail("northRef")?["value"], "1", "magnetic by default")
         XCTAssertEqual(flat.detail("rangeUnits")?["value"], "1", "metric by default")
@@ -80,6 +83,10 @@ final class RangeBearingEventTests: XCTestCase {
         XCTAssertEqual(r.creator?.uid, "ANDROID-1")
         XCTAssertEqual(r.creator?.callsign, "VIPER")
         XCTAssertEqual(r.creator?.time, creator.time)
+        XCTAssertFalse(r.archive)
+        let kept = RangeBearingEvent.make(uid: "line-2", title: "R&B 2", start: start, end: end, startUID: nil,
+                                          endUID: nil, style: .atak, archive: true, creator: nil, now: now)
+        XCTAssertEqual(RangeBearingEvent.parse(try CotEvent.parse(kept.xml(), now: now))?.archive, true)
         let far = r.farEnd
         XCTAssertLessThan(Geodesy.distance(lat1: far.lat, lon1: far.lon, lat2: end.lat, lon2: end.lon), 0.01)
         // the engine's flat-earth height: start + tan(inclination) × range,

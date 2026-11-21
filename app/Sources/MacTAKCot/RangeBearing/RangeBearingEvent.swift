@@ -18,8 +18,10 @@
 //   - the handlers': <contact callsign> the title (ContactDetailHandler);
 //     <strokeColor value>, <strokeWeight value>, <strokeStyle value>
 //     (StrokeFillDetailHandler, a line is a Shape); <color value>, the
-//     stroke colour (toCot sets it for ColorDetailHandler); <creator uid
-//     type callsign time>, who made it and when (CreatorDetailHandler, from
+//     stroke colour (toCot sets it for ColorDetailHandler); <archive/> on a
+//     line kept across launches (ArchiveDetailHandler: the tool's lines
+//     are, and a received one that came with it); <creator uid type
+//     callsign time>, who made it and when (CreatorDetailHandler, from
 //     setAuthorInformation in the tool).
 //   The numbers are written as Java's Double.toString writes them.
 //
@@ -28,7 +30,7 @@
 // <range> along <bearing> from the anchor (pointAtDistance), with the
 // inclination's height when there is one. A missing title is the caller's
 // "R&B n". The colour and weight are what the detail handlers leave (see
-// Received), and <creator> is kept to send on.
+// Received); <archive/> and <creator> are kept to send on.
 
 import Foundation
 
@@ -50,11 +52,12 @@ public enum RangeBearingEvent {
     }
 
     /// The line `uid` from `start` to `end` as 5.5's toCot writes it.
-    /// `startUID` and `endUID` name an end's marker when 5.5 would.
+    /// `startUID` and `endUID` name an end's marker when 5.5 would;
+    /// `archive` marks a line kept across launches.
     public static func make(uid: String, title: String, start: CotPoint, end: CotPoint,
                             startUID: String?, endUID: String?, style: RangeBearing.Style,
-                            color: Int32 = red, weight: Double = strokeWeight, creator: Creator?,
-                            now: Date) -> CotEvent {
+                            color: Int32 = red, weight: Double = strokeWeight, archive: Bool = false,
+                            creator: Creator?, now: Date) -> CotEvent {
         let rab = RangeBearing(from: start, to: end)
         var detail = CotDetail("detail")
         func value(_ name: String, _ v: String) {
@@ -78,6 +81,7 @@ public enum RangeBearingEvent {
         value("strokeWeight", Cot.number(weight))
         value("strokeStyle", "solid")
         value("color", String(color))
+        if archive { detail.add(CotDetail("archive")) }
         if let creator {
             var c = CotDetail("creator")
             c["uid"] = creator.uid
@@ -111,6 +115,8 @@ public enum RangeBearingEvent {
         public var weight: Double?
         /// <creator>, as CreatorDetailHandler keeps it; nil when absent.
         public var creator: Creator?
+        /// <archive/>: kept across launches (ArchiveDetailHandler).
+        public var archive = false
 
         /// The far end when `rangeUID` isn't a marker here: `range` along
         /// `bearing` from the anchor, as the importer computes it.
@@ -149,6 +155,7 @@ public enum RangeBearingEvent {
                         range: number("range", -1),
                         bearing: number("bearing", -1),
                         inclination: number("inclination", .nan),
-                        color: color, weight: weight, creator: creator)
+                        color: color, weight: weight, creator: creator,
+                        archive: event.detail("archive") != nil)
     }
 }
