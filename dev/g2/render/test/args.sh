@@ -34,6 +34,7 @@ expect_usage '--size needs a value'   --size
 expect_usage '--at needs a value'     --at
 expect_usage 'bad --frames'           --frames many
 expect_usage 'bad --size'             --size 512
+expect_usage 'bad --size'             --size 4097x512   # past ANGLE's pbuffer cap (#213)
 expect_usage 'bad --at'               --at 37.8
 expect_usage '--expect needs a value' --expect
 expect_usage 'bad --expect'           --expect 37.8,-122.4

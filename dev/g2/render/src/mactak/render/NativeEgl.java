@@ -17,6 +17,21 @@ final class NativeEgl {
     static final int STR_GL_VERSION = 3;
     static final int STR_LAST_ERROR = 4;
 
+    /**
+     * The largest pbuffer side, in pixels: ANGLE's Metal backend gives every
+     * config {@code maxPBufferWidth/Height} 4096 ({@code DisplayMtl.mm}), and
+     * a bigger one fails with EGL_BAD_ATTRIBUTE. A window surface on a
+     * CAMetalLayer has no such cap (G3 #213).
+     */
+    static final int MAX_PBUFFER_SIZE = 4096;
+
+    /**
+     * The pbuffer {@link #init} makes when a window surface replaces it at
+     * once ({@link #createWindowSurface}): it only makes the context current,
+     * so it is small, whatever the window's size (#213).
+     */
+    static final int BOOTSTRAP_SIZE = 16;
+
     static native boolean init(String eglLib, String glesLib, int width, int height);
 
     static native boolean makeCurrent();

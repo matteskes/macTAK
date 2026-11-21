@@ -207,6 +207,7 @@ test-render-window: build-window-host
 	bash dev/g2/render/run.sh --window 640x480 --resize 384x256 \
 		--layer dev/g1/headless/test/fixtures/sf-landmarks.geojson \
 		--out dev/g2/build/render-window-layer.png
+	bash dev/g2/render/run.sh --window 4200x256 --resize 4400x300 --frames 4
 
 # M3.2 shell compile (no run): since G3.0 the harness is a product of the
 # Swift package at app/ (swift build) — what CI can do without a GUI session.

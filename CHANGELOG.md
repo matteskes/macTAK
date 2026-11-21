@@ -171,6 +171,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   settings (G3.4b). Each install's uid changes once, from G3.2d's random
   one.
 
+### Fixed
+
+- The map no longer fails to start (exit 3) when its window is wider
+  or taller than 2048 points on a Retina display: EGL started on a
+  pbuffer the window's size, and ANGLE caps pbuffers at 4096 pixels
+  (#213).
+
 ## [0.3.3] - 2026-11-17 — G3: commo from Swift, servers and identity, mesh networking + the license audit and bundled natives
 
 G2's gate stays open on trap 77 (#125), and G3 isn't complete either, so
