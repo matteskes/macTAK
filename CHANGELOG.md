@@ -170,6 +170,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The device uid is now `MACTAK-<hardware UUID>`, kept outside the
   settings (G3.4b). Each install's uid changes once, from G3.2d's random
   one.
+- The roadmap drops G6 rung 8, a native engine with no JVM (added
+  2026-11-12). The JVM stays in the shipped app; hot Java renderers can
+  still move to C++ where measurements point to them.
 
 ### Fixed
 
