@@ -103,8 +103,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("macTAK: no chat history: \(error)")
             chatStore = nil
         }
+        // The map items kept across launches, one file per suite too (G3.9a).
+        let mapItemStore: MapItemStore?
+        do {
+            mapItemStore = try MapItemStore.appStore(suite: suite)
+        } catch {
+            NSLog("macTAK: map items won't be kept: \(error)")
+            mapItemStore = nil
+        }
         connections = ServerConnections(settings: settings, identities: .login, me: me, mesh: mesh,
-                                        chatStore: chatStore)
+                                        chatStore: chatStore, mapItemStore: mapItemStore)
         watcher = InterfaceWatcher { mesh.refresh() }
         markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
                                 me: me, rangeBearing: connections.rangeBearing, units: units)

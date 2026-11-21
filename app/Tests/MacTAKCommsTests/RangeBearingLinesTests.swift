@@ -119,9 +119,10 @@ final class RangeBearingReceiveTests: XCTestCase {
     private let there = CotPoint(lat: 37.80, lon: -122.44)
 
     private func xml(uid: String = "remote-1", title: String = "R&B 7", startUID: String? = nil,
-                     endUID: String? = nil, color: Int32 = RangeBearingEvent.red) -> String {
+                     endUID: String? = nil, color: Int32 = RangeBearingEvent.red, archive: Bool = false,
+                     creator: RangeBearingEvent.Creator? = nil) -> String {
         RangeBearingEvent.make(uid: uid, title: title, start: here, end: there, startUID: startUID, endUID: endUID,
-                               style: .atak, color: color, creator: nil, now: now).xml()
+                               style: .atak, color: color, archive: archive, creator: creator, now: now).xml()
     }
 
     func testAHeardLineIsAdded() {
@@ -213,5 +214,43 @@ final class RangeBearingReceiveTests: XCTestCase {
         let sa = CotEvent(uid: "c", type: "a-f-G-U-C", time: now, stale: now, how: "m-g", point: here).xml()
         XCTAssertFalse(rab.receive(sa) { _ in false })
         XCTAssertTrue(rab.lines.isEmpty)
+    }
+
+    // G3.9a: which lines are kept across launches, and taking them back.
+
+    func testALineMadeHereIsKeptAHeardOneOnlyWithArchive() {
+        let rab = RangeBearingLines()
+        XCTAssertTrue(rab.add(start: .point(here), end: .point(there)).archived, "the tool's lines persist")
+        rab.receive(xml(uid: "plain")) { _ in false }
+        rab.receive(xml(uid: "kept", archive: true)) { _ in false }
+        XCTAssertEqual(rab["plain"]?.archived, false)
+        XCTAssertEqual(rab["kept"]?.archived, true)
+        rab.receive(xml(uid: "kept", title: "renamed")) { _ in false }
+        XCTAssertEqual(rab["kept"]?.archived, true, "an update without <archive/> doesn't unkeep it")
+    }
+
+    func testRestoreDefersUntilItsMarkerIsIn() {
+        let rab = RangeBearingLines()
+        var markers: Set<String> = []
+        let kept = xml(endUID: "m1", archive: true)
+        XCTAssertEqual(rab.restore(kept, isMarker: markers.contains, selfUID: "me"), .deferred)
+        guard case .point = rab["remote-1"]?.end else { return XCTFail("a fixed end meanwhile") }
+        markers.insert("m1")
+        XCTAssertEqual(rab.restore(kept, isMarker: markers.contains, selfUID: "me"), .restored)
+        XCTAssertEqual(rab["remote-1"]?.end, .item("m1"), "tied once the marker is in")
+        XCTAssertEqual(rab.lines.count, 1)
+    }
+
+    func testARestoredLineIsThisClientsWhenItMadeIt() {
+        let rab = RangeBearingLines()
+        let mine = RangeBearingEvent.Creator(uid: "me", type: "a-f-G-U-C", callsign: "ME", time: now)
+        let theirs = RangeBearingEvent.Creator(uid: "peer", type: "a-f-G-U-C", callsign: "PEER", time: now)
+        rab.restore(xml(uid: "a", archive: true, creator: mine), isMarker: { _ in false }, selfUID: "me")
+        rab.restore(xml(uid: "b", archive: true, creator: theirs), isMarker: { _ in false }, selfUID: "me")
+        XCTAssertEqual(rab["a"]?.received, false)
+        XCTAssertEqual(rab["b"]?.received, true)
+        XCTAssertEqual(rab["a"]?.archived, true)
+        let sa = CotEvent(uid: "c", type: "a-f-G-U-C", time: now, stale: now, how: "m-g", point: here).xml()
+        XCTAssertEqual(rab.restore(sa, isMarker: { _ in false }, selfUID: "me"), .ignored)
     }
 }

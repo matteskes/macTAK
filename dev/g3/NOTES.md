@@ -2723,3 +2723,57 @@ hidden, gone to, deleted, sent or searched. Not in it: file overlays.
    others can follow as their own PRs.
 4. On the Mac a right-click menu stands in for the radial menu, and a
    click opens an inspector beside the map; a point drags to move.
+
+### G3.9a — map items kept across launches (2026-11-21, branch `g3/map-items-store`)
+
+#### What changed
+
+- **`MapItemStore`**: 5.5's StateSaver table, `cotevents` (uid, type,
+  event, visible, lastUpdateTime, queryOrder), one row per uid, loaded
+  by query order (routes 2, jump points 1, the rest 0) and then as first
+  saved. Application Support/macTAK/`statesaver.sqlite`, or
+  `statesaver-<suite>.sqlite`, as the chat history. Left out:
+  `point_geom` (SpatiaLite) and `json_serialized` (always empty for CoT).
+- **`MapItemArchive`**: the StateSaver's listener and publisher.
+  `ServerConnections` hands it every archived item as it is now, after
+  any change to the markers, lines, contacts or self position (coalesced
+  to the main queue's next turn), and only what changed is written; what
+  is gone is removed. At launch the kept events go back through the
+  importers, and the deferred ones are tried again last. Taking them
+  back writes nothing. `stop` writes once more before it clears the
+  markers, then stops writing until `start` takes them back.
+- **What is archived**, as 5.5 marks it:
+  - every line the R&B tool makes (5.5 makes it persistent)
+  - a received line or marker that came with `<archive/>`
+    (`ArchiveDetailHandler`); once archived, it stays so.
+- **An archived marker never goes stale** and isn't removed by time (5.5
+  sets no `autoStaleDuration` on one). A delete task without
+  `<__forcedelete>` leaves it alone.
+- **A line's CoT carries `<archive/>`** when it is kept, sent or stored,
+  as `ArchiveDetailHandler` writes it. G3.8d's sends left it out, so a
+  5.5 peer didn't keep a macTAK line across its own restarts.
+- **`RangeBearingLines.restore`**: returns DEFERRED while a marker the
+  line names isn't in yet. A restored line is shown as received unless
+  its creator is this client.
+- **`SQLiteDatabase`**: the SQLite plumbing `ChatStore` had, now shared
+  by both stores.
+
+#### Kept as 5.5 has it
+
+- A line is stored as its u-rb-a event. An end tied to a contact or the
+  self marker is written as a place (`isEndpointSerializable`), so after
+  a relaunch that end is fixed where it was.
+- A line tied to a marker that wasn't kept comes back with that end
+  fixed where the marker was.
+- Stored units are 5.5's defaults: a line here keeps no units of its
+  own, and the label follows the Units preferences.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `MapItemArchiveTests` (6) | a line tied to a kept marker survives a relaunch, still tied; a line stored before its marker is tied on the deferred try; unarchived items aren't kept; deletes leave the store; `stop` keeps what it clears; changes are written unasked |
+| A/B: no deferred retry | the deferred test fails |
+| `MapItemStoreTests` (5), `CotMarkerStoreTests` (+2), `RangeBearingReceiveTests` (+3), `RangeBearingEventTests` | pass |
+| `make test-app` | 181 tests pass, 1 skipped (Apple's geocoder, network) |
+| `make lint` | passes |

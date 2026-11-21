@@ -22,6 +22,13 @@
 // A delete task with <__forcedelete> removes the line it names, made here
 // or not; one without only greys markers, so it leaves lines alone.
 //
+// Kept across launches (G3.9a): a line the tool makes is archived, as 5.5
+// makes it persistent; a received one is when it came with <archive/>.
+// The MapItemArchive stores them and gives them back at launch through
+// `restore`, which, as 5.5's StateSaverPublisher does, reports a line
+// whose named marker isn't loaded yet as deferred, to try again once
+// everything else is.
+//
 // The map side (drawing, the label from the Units preferences) is the app's
 // MapMarkerSync; this file holds what the lines are.
 
@@ -50,12 +57,16 @@ public struct RangeBearingLine: Identifiable, Equatable, Sendable {
     /// Who made it and when: this client at the tool's second click
     /// (setAuthorInformation), or a received line's <creator>.
     public var creator: RangeBearingEvent.Creator?
+    /// Kept across launches (5.5's archive meta value).
+    public var archived: Bool
 
     public init(id: String, title: String, start: RangeBearingEnd, end: RangeBearingEnd,
                 color: Int32 = RangeBearingEvent.red, received: Bool = false,
-                weight: Double = RangeBearingEvent.strokeWeight, creator: RangeBearingEvent.Creator? = nil) {
+                weight: Double = RangeBearingEvent.strokeWeight, creator: RangeBearingEvent.Creator? = nil,
+                archived: Bool = true) {
         self.id = id; self.title = title; self.start = start; self.end = end
         self.color = color; self.received = received; self.weight = weight; self.creator = creator
+        self.archived = archived
     }
 }
 
@@ -153,6 +164,30 @@ public final class RangeBearingLines: ObservableObject {
         guard let event = try? CotEvent.parse(xml) else { return false }
         if event.type == CotMarkerStore.deleteType { return delete(event) }
         guard let r = RangeBearingEvent.parse(event) else { return false }
+        return take(r, isMarker: isMarker, received: true)
+    }
+
+    /// What `restore` made of a kept event (5.5's ImportResult).
+    public enum RestoreResult: Equatable, Sendable {
+        case restored
+        /// A marker it names isn't here yet: try again later.
+        case deferred
+        /// Not a line.
+        case ignored
+    }
+
+    /// Takes back a line kept across launches. It is this client's own
+    /// (not shown as received) when its creator is `selfUID`.
+    public func restore(_ xml: String, isMarker: (String) -> Bool, selfUID: String) -> RestoreResult {
+        guard let event = try? CotEvent.parse(xml), let r = RangeBearingEvent.parse(event) else { return .ignored }
+        take(r, isMarker: isMarker, received: r.creator?.uid != selfUID)
+        let missing = [r.anchorUID, r.rangeUID].contains { $0.map { !isMarker($0) } ?? false }
+        return missing ? .deferred : .restored
+    }
+
+    /// Adds the line `r` says, or updates the one with its uid.
+    @discardableResult
+    private func take(_ r: RangeBearingEvent.Received, isMarker: (String) -> Bool, received: Bool) -> Bool {
         let existing = lines.firstIndex { $0.id == r.uid }
         let old = existing.map { lines[$0] }
         func end(_ uid: String?, _ was: RangeBearingEnd?, _ place: @autoclosure () -> CotPoint) -> RangeBearingEnd {
@@ -163,9 +198,10 @@ public final class RangeBearingLines: ObservableObject {
         let line = RangeBearingLine(id: r.uid, title: r.title ?? nextTitle(),
                                     start: end(r.anchorUID, old?.start, r.anchor),
                                     end: end(r.rangeUID, old?.end, r.farEnd),
-                                    color: r.color, received: old?.received ?? true,
+                                    color: r.color, received: old?.received ?? received,
                                     weight: r.weight ?? old?.weight ?? RangeBearingEvent.strokeWeight,
-                                    creator: r.creator ?? old?.creator)
+                                    creator: r.creator ?? old?.creator,
+                                    archived: r.archive || old?.archived == true)
         if let existing {
             if lines[existing] == line { return false }
             lines[existing] = line
