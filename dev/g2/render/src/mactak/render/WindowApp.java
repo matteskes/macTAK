@@ -290,7 +290,9 @@ public final class WindowApp {
         try {
             for (String lib : libs) System.load(lib);
 
-            eglUp = NativeEgl.init(eglPath, glesPath, w, h);
+            // a small pbuffer: the window surface below replaces it, and a
+            // window's size can be past ANGLE's pbuffer cap (#213)
+            eglUp = NativeEgl.init(eglPath, glesPath, NativeEgl.BOOTSTRAP_SIZE, NativeEgl.BOOTSTRAP_SIZE);
             if (!eglUp) {
                 System.err.println(TAG + ": EGL init failed: "
                         + NativeEgl.getString(NativeEgl.STR_LAST_ERROR));

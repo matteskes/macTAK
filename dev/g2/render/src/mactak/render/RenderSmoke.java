@@ -196,9 +196,18 @@ public final class RenderSmoke {
         if (libs.isEmpty() || egl == null || gles == null) { System.err.print(USAGE); System.exit(2); }
         if (windowMode && windowHostLib == null) { System.err.print(USAGE); System.exit(2); }
 
+        if (!windowMode && (Math.max(w, h) > NativeEgl.MAX_PBUFFER_SIZE
+                || Math.max(resizeW, resizeH) > NativeEgl.MAX_PBUFFER_SIZE)) {
+            System.err.println("render-smoke: bad --size: a pbuffer is at most " + NativeEgl.MAX_PBUFFER_SIZE
+                    + " px a side on ANGLE's Metal backend; --window takes more");
+            System.exit(2);
+        }
+
         for (String lib : libs) System.load(lib);
 
-        if (!NativeEgl.init(egl, gles, w, h)) {
+        // --window: a small pbuffer, replaced by the window surface below (#213)
+        final int boot = NativeEgl.BOOTSTRAP_SIZE;
+        if (!(windowMode ? NativeEgl.init(egl, gles, boot, boot) : NativeEgl.init(egl, gles, w, h))) {
             System.err.println("render-smoke: EGL init failed: " + NativeEgl.getString(NativeEgl.STR_LAST_ERROR));
             System.exit(3);
         }

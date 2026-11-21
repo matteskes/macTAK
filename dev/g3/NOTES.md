@@ -2254,7 +2254,8 @@ user icon sets.
 - **EGL failed at start (exit 3) once** (#213): `eglCreatePbufferSurface`
   returned `EGL_BAD_ATTRIBUTE` (0x3004) when the binary was started
   straight from a background shell, not through LaunchServices. Started
-  with `open`, it drew.
+  with `open`, it drew. Found later (2026-11-20): the window's size, not
+  the launch path; fixed, trap 21.
 
 #### Traps
 
@@ -2296,6 +2297,22 @@ user icon sets.
   patch 42's unmap and delete in `draw()`. The lock order is the
   worker's, `monitor_` then the discard mutex. In the app the engine
   clears GL errors, so this was a silently bad frame.
+
+- **21 — ANGLE's Metal backend caps a pbuffer at 4096 pixels a side**
+  (#213, fixed 2026-11-20). `DisplayMtl.mm` gives every config
+  `maxPBufferWidth/Height` 4096, and a bigger pbuffer fails with
+  `EGL_BAD_ATTRIBUTE`. `WindowApp` started EGL on a pbuffer the map's
+  size in pixels before swapping in the window surface, so a map wider or
+  taller than 2048 points on a 2× display (a window restored large) failed
+  at start with exit 3. The launch path in the first report was a red
+  herring. A/B with the shell at 2200 × 300 points (4400 px): before,
+  exit 3 with #213's exact message; after, the window draws. Fix:
+  `WindowApp`, and RenderSmoke's `--window`, start EGL on a 16 px
+  pbuffer (`NativeEgl.BOOTSTRAP_SIZE`), which the window surface
+  replaces at once; a window surface on a CAMetalLayer has no cap, and
+  resizes rebuild the window surface. RenderSmoke refuses a pbuffer past
+  the cap with a usage error. CI's window step has a 4200 px leg resized
+  to 4400 px.
 
 ## G3.8 — range and bearing (plan approved 2026-11-20)
 
