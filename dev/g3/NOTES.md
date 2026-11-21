@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.7 done — 2026-11-18): servers, identity, mesh, SA, GeoChat, coordinates and markers
+## State (G3.8 done — 2026-11-20): servers, identity, mesh, SA, GeoChat, coordinates, markers, and range and bearing
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -100,8 +100,35 @@ G3.7 put markers on the map, drawn as ATAK 5.5 draws them:
   greys or removes one. A hand check ran a marker for each rule
   (G3.7c, #214).
 
-Next: G3.8, range and bearing (§G3.8, plan approved 2026-11-20); then
-G3.9, routes, dropping, editing and deleting points, and the layer
+G3.8 added range and bearing as ATAK 5.5 has it:
+
+- **The numbers are the engine's and the kernel's.** Range, bearing,
+  slant range and grid convergence are Swift ports of the engine's C++.
+  Magnetic north runs the engine's NOAA library on 5.5's own WMMHR-2025
+  model, built into the app. The text is a port of `AngleUtilities` and
+  `SpanUtilities`. A golden test holds all of it to the kernel's
+  answers (`make test-rab-golden`). Settings › Units has 5.5's R&B
+  preferences, and a contact's details show range and bearing from you
+  (G3.8a, #233).
+- **The map draws lines, and a click is a place or a marker.** Lines
+  have an arrow and a label along them, and a CI render gate checks
+  their pixels and the click round trip (G3.8b, #234). Routes and
+  dropped points will build on this.
+- **The R&B tool**: click a start and an end, a marker or a place.
+  5.5's red line and label follow the markers they join, and change
+  with the Units preferences. The sidebar lists and deletes the lines.
+  The owner checked it by hand (G3.8c, #235).
+- **Lines are shared as 5.5's `u-rb-a` CoT.** Send… goes to chosen
+  contacts or everyone, written field by field as 5.5's `toCot` writes
+  it. Others' lines import as 5.5 imports them, tied to the markers they
+  name when this Mac has them. A CI leg sends a line between two clients
+  (G3.8d, #236). Sending to chosen contacts awaits a hand check (#237).
+
+Not in G3.8: range circles, the bullseye, Bloodhound, the dynamic R&B
+tool, measuring along a path, keeping lines across launches, and a menu
+on the line itself.
+
+Next: G3.9, routes, dropping, editing and deleting points, and the layer
 manager.
 
 ## The plan (approved 2026-11-13)
@@ -1930,7 +1957,7 @@ and the map pans to it.
 - 5.5 imports geocoder files from data packages too. Here they are
   imported in Settings.
 - No `<__address>` is sent yet. 5.5 sends it with point markers, which
-  macTAK can't make until G3.8 (points). The self SA carries none, as
+  macTAK can't make until G3.9 (points). The self SA carries none, as
   in 5.5.
 - A received marker's address is kept, but there is no marker details
   view to show it yet.
@@ -2309,10 +2336,10 @@ lands with a small feature on top.
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/rab-math` | the numbers and text in Swift: Vincenty range and bearing, slant range and angle, grid convergence, `AngleUtilities`/`SpanUtilities`, magnetic from the engine's NOAA library and `wmm_cof` built into the app; the Units preferences under 5.5's keys; range and bearing from me in a contact's details | golden tests against the kernel's own Java (`make test-rab-golden` in CI's `jvm-tests`, as `test-coord-golden`); the label against 5.5's `updateLabel` by reading |
-| **b** | `g3/map-lines` | the engine side: lines (a line-string feature with a stroke and a label) beside the markers in `MapMarkers`; a click as a ground position (`InputBridge.groundAt`) or a marker (hit test); `EngineBridge` calls for both | a line's pixels where expected (CI render job, as the markers' gate); the click → position round trip in a test |
-| **c** | `g3/rab-tool` | the R&B tool: pick two ends (markers or places), the line and its label drawn and kept current as a marker moves; delete; the Units choices apply | hand check (owner); the label strings from **a**'s tests |
-| **d** | `g3/rab-cot` | sharing: a line sent as `u-rb-a` and others' lines drawn (`RangeAndBearingImporter`), stale and delete as markers | two clients: one's line on the other's map (CI comms leg); the event's details field by field against `toCot` |
+| **a** (#233) | `g3/rab-math` | the numbers and text in Swift: Vincenty range and bearing, slant range and angle, grid convergence, `AngleUtilities`/`SpanUtilities`, magnetic from the engine's NOAA library and `wmm_cof` built into the app; the Units preferences under 5.5's keys; range and bearing from me in a contact's details | golden tests against the kernel's own Java (`make test-rab-golden`, in CI's `native-engine` job: it needs the engine's natives); the label against 5.5's `updateLabel` by reading |
+| **b** (#234) | `g3/map-lines` | the engine side: lines (a line-string feature with a stroke and a label) beside the markers in `MapMarkers`; a click as a ground position (`InputBridge.groundAt`) or a marker (hit test); `EngineBridge` calls for both | a line's pixels where expected (CI render job, as the markers' gate); the click → position round trip in a test |
+| **c** (#235) | `g3/rab-tool` | the R&B tool: pick two ends (markers or places), the line and its label drawn and kept current as a marker moves; delete; the Units choices apply | hand check (owner); the label strings from **a**'s tests |
+| **d** (#236) | `g3/rab-cot` | sharing: a line sent as `u-rb-a` and others' lines drawn (`RangeAndBearingImporter`), stale and delete as markers | two clients: one's line on the other's map (CI comms leg); the event's details field by field against `toCot` |
 
 Then a docs PR, as after each milestone.
 
