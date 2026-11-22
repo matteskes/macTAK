@@ -1,0 +1,44 @@
+# The 2525D/E leg of the symbol golden test (dev/g3/test/SymbolOracle.java,
+# make test-symbol-golden): each code is rendered by the kernel's 2525D and
+# 2525E providers — what ATAK 5.5 dispatches to by code length — and the
+# app's renderer (mactak.engine.Symbols.render) must draw the same codes
+# with the same pixels. Nothing here feeds expected/renderable.tsv: the
+# kernel's CoT mapping never produces a 2525D/E code, so the Swift port has
+# nothing to answer about them (dev/g3/NOTES.md trap #22).
+#
+# The cases are the kernel's six civilian basic prefixes
+# (MilStd2525dSymbologyProviderBase, MIL-STD-2525D 5.3.3), one of them
+# across the identity digits and contexts, and two 2525E twins: a
+# civilian code fills purple, a hostile or suspect one stays red, and
+# the exercise context — the provider's Joker and Faker — fills purple,
+# as the provider does.
+#
+# A 2525D code is 20 digits: version "10", then context (0 reality,
+# 1 exercise, 2 simulation), affiliation (0 pending, 3 friend, 5 suspect,
+# 6 hostile), symbol set, and the entity code; a 2525E code is 30 digits,
+# version "13". The codes below are real symbols (the oracle refuses a
+# code mil-sym doesn't know) from the kernel's mil2525cd_csv and mil-sym's
+# msd.txt.
+
+# Land equipment, set 15, civilian vehicle (mil2525cd_csv S*GPEVCA): the family.
+10001500001601000000
+10031500001601000000
+10061500001601000000
+10051500001601000000
+10151500001601000000
+10161500001601000000
+10261500001601000000
+130315000016010000000000000000
+
+# Air, set 01, civilian aircraft: pending, friend and hostile.
+10000100001200000000
+10030100001200000000
+10060100001200000000
+
+# The remaining civilian prefixes: space (05), land civilian unit (11),
+# sea surface (30), sea subsurface (35).
+10030500001200000000
+10031100001100000000
+10033000001400000000
+10033500001200000000
+130335000012000000000000000000

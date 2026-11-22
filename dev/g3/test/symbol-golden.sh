@@ -6,7 +6,8 @@
 # (CotSymbols) is tested on (SymbolOracle.java). Its answers must match
 # dev/g3/test/symbol-golden/expected, which the Swift tests read; and the
 # app's renderer (mactak.engine.Symbols) must draw exactly the codes the
-# kernel's does.
+# kernel's does — the mapping's 2525C codes, and through its 2525D and
+# 2525E providers the 2525D/E codes of symbol-golden/des.txt (trap #22).
 #
 # usage: symbol-golden.sh [--write]   (--write regenerates expected/)
 # needs: dev/g1/kernel/build-kernel-jars.sh's patched takkernel, JDK 21
