@@ -7,10 +7,11 @@
 # nothing to answer about them (dev/g3/NOTES.md trap #22).
 #
 # The cases are the kernel's six civilian basic prefixes
-# (MilStd2525dSymbologyProviderBase, MIL-STD-2525D 5.3.3) across the
-# identity digits, and the 2525E twins: a civilian code fills purple,
-# a hostile or suspect one stays red, and the exercise context — the
-# provider's Joker and Faker — fills purple, as the provider does.
+# (MilStd2525dSymbologyProviderBase, MIL-STD-2525D 5.3.3), one of them
+# across the identity digits and contexts, and two 2525E twins: a
+# civilian code fills purple, a hostile or suspect one stays red, and
+# the exercise context — the provider's Joker and Faker — fills purple,
+# as the provider does.
 #
 # A 2525D code is 20 digits: version "10", then context (0 reality,
 # 1 exercise, 2 simulation), affiliation (0 pending, 3 friend, 5 suspect,
@@ -24,11 +25,12 @@
 10031500001601000000
 10061500001601000000
 10051500001601000000
+10151500001601000000
 10161500001601000000
 10261500001601000000
 130315000016010000000000000000
 
-# Air, set 01, civilian aircraft: the audit's hostile-air family.
+# Air, set 01, civilian aircraft: pending, friend and hostile.
 10000100001200000000
 10030100001200000000
 10060100001200000000

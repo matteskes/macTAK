@@ -15,7 +15,6 @@ import ArmyC2.C2SD.Utilities.SymbolUtilities;
 import ArmyC2.C2SD.Utilities.UnitDef;
 import ArmyC2.C2SD.Utilities.UnitDefTable;
 import com.atakmap.map.AtakMapView;
-import com.atakmap.map.opengl.GLRenderGlobals;
 import armyc2.c5isr.renderer.MilStdIconRenderer;
 import armyc2.c5isr.renderer.utilities.ImageInfo;
 import armyc2.c5isr.renderer.utilities.MSLookup;
@@ -36,8 +35,10 @@ import sec.web.renderer.utilities.PNGInfo;
  * renderer ({@code mil-sym-renderer}; 5.5's {@code MilStd2525cSymbologyProviderBase});
  * anything else is 2525D/E and goes to {@code mil-sym-java}
  * ({@code MilStd2525dSymbologyProviderBase});</li>
- * <li>32 pixels times a relative scaling — the GL scaling for 2525D/E, the
- * display's for 2525C; for 2525C, unit ratio off and not drawn as an icon;</li>
+ * <li>32 pixels times the display's relative scaling (both providers;
+ * the 2525D one reads it through {@code GLRenderGlobals}, which returns
+ * {@code DisplaySettings}'); for 2525C, unit ratio off and not drawn as an
+ * icon;</li>
  * <li>civilian units filled purple unless hostile or suspect, as the 2525D
  * provider reads them (the affiliation digit against the exercise context,
  * then the basic code's civilian prefixes);</li>
@@ -161,7 +162,7 @@ public final class Symbols {
         while (padded.length() < LENGTH_2525DE) padded.append('0');
         final String full = padded.toString();
         final Map<String, String> attrs = new HashMap<>();
-        attrs.put(MilStdAttributes.PixelSize, String.valueOf(iconSize2525D()));
+        attrs.put(MilStdAttributes.PixelSize, String.valueOf(iconSize()));
         if (civilian2525D(code)) attrs.put(MilStdAttributes.FillColor, PURPLE);
         // the interop's label font ({@code RenderContextWrapper.setLabelFontD}),
         // what 5.5's provider renders every icon under
@@ -169,15 +170,6 @@ public final class Symbols {
                 .setLabelFont(LABEL_FONT, LABEL_FONT_TYPE, AtakMapView.getDefaultTextFormat().getFontSize());
         final ImageInfo info = MilStdIconRenderer.getInstance().RenderIcon(full, new HashMap<>(), attrs);
         return info == null ? null : info.getSquareImageInfo().getImage();
-    }
-
-    /**
-     * The 2525D/E provider's icon size: 32 pixels times the GL scaling
-     * ({@code GLRenderGlobals}, unlike the 2525C provider's display
-     * scaling), its {@code iconSize} when no hints come.
-     */
-    private static int iconSize2525D() {
-        return (int) Math.ceil(ICON_SIZE * GLRenderGlobals.getRelativeScaling());
     }
 
     /**
