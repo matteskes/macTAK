@@ -2,35 +2,66 @@
 
 The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used across public safety and defense: offline maps, team tracking over the **Cursor-on-Target (CoT)** protocol, and interop with servers like **FreeTAKServer**. ATAK-CIV is the US Government's open-source Android client; WinTAK is its closed-source Windows sibling. There is no native macOS TAK client today — that is the gap macTAK fills.
 
-## Target features
+## Where it stands
 
-| Capability | Status |
+G0–G2 are closed: the engine builds natively, talks CoT headless, and renders the map in a native window at 60 fps. G3, the core client, is in progress — `MacTAK.app` is a SwiftUI app around the engine's live map that already works as a TAK client against real servers and on the local mesh, with ATAK 5.5's behaviour as the reference. The full plan is in [`docs/roadmap.md`](docs/roadmap.md); what shipped when is in [`CHANGELOG.md`](CHANGELOG.md).
+
+| Gate | Status |
 |---|---|
-| Offline map layers via the takkernel engine (GeoPackage, shapefile, …) | ✅ G1 M3 criterion met — `atak-headless --layer FILE` opens GeoJSON/GPKG/KML/SHP headless through the engine's native OGR provider and `FeatureDataStore2`; rendered layers land at G2 |
-| CoT in/out via commoncommo, interoperating with FreeTAKServer | ✅ G1 criterion met (M2–M4, 2026-11-04): `atak-headless --connect HOST:PORT` on the commoncommo JNI stack; two-client round-trip verified against FreeTAKServer and OpenTAKServer over TCP and SSL; `--datapackage FILE` (2026-11-05) resolves the connection from an ATAK data package |
-| Track persistence via the engine's tracking database | ✅ G1 M4 (2026-11-04): received CoT persists through the engine's `DatabaseImpl` JNI into a sqlite tracks DB (`--db`), hermetically in CI |
-| Native macOS map rendering — ANGLE-on-Metal as the GLES provider | 🔵 In progress — G2 M1–M3.1 (through 2026-11-06): ANGLE (EGL 1.5 / ES 3.0 on Metal) occupies the engine's GLES slot; a GeoJSON vector layer (polygons, lines, labels) over an offline MBTiles basemap renders through the engine into an EGL pbuffer from the JVM with zero GL errors (`make build-angle && make test-render` → PNG). The window surface is proven (M3.0): `eglCreateWindowSurface` takes a live `CAMetalLayer` — `make smoke-window` draws, reads back and presents it (manual on a GUI Mac); M3.1 adds the window natives + dynamic-size context, exercised headlessly as a CI gate (`make test-render-window` — resize mid-run through the host's `drawableSize`). H2 (native/ANGLE) chosen over H1 (JOGL). Next: M3.2–M3.4 (Swift shell → loop/resize → gestures) and G2.4 real imagery |
-| Core client subset and full ATAK-CIV parity | ⚪ Planned — G4–G6 |
+| **G0** — engine builds on macOS arm64 | ✅ Closed 2026-11-02 — `libtakengine.dylib` and the kernel jars build natively ([G0 spike](dev/spike/g0/NOTES.md)) |
+| **G1** — headless engine + CoT round-trip | ✅ Closed 2026-11-04 — `atak-headless` opens GeoJSON/GPKG/KML/SHP layers, round-trips CoT with FreeTAKServer and OpenTAKServer over TCP and SSL through commoncommo, persists tracks, and connects from an ATAK data package |
+| **G2** — map renders in a native macOS window | ✅ Closed 2026-11-19 — ANGLE-on-Metal (built from source at a pinned commit) in the engine's GLES slot; real imagery, vector and terrain in a Swift/AppKit window with the JVM in-process and Apple Maps gestures; the exit run passes 21 of 21 with no on-screen miss ([G2 notes](dev/g2/NOTES.md)) |
+| **G3** — core client skeleton | 🔵 In progress — G3.0–G3.8 done, G3.9 (points) under way; see below ([G3 notes](dev/g3/NOTES.md)) |
+| **G4–G6** — data/import parity, first deployable client, the parity ladder to full ATAK-CIV | ⚪ Planned |
+
+## Features in the app today (G3)
+
+- **Servers and identity** — TAK servers over TCP, TLS with client certificates, or QUIC; certificates in the macOS Keychain; ATAK data-package import; certificate enrollment by username and password with the device profile fetched; TAK Server Quick Connect. Every connection uses commo's OpenSSL 3.
+- **Mesh networking** — no server needed: SA and chat on ATAK's multicast groups and direct TCP, on every network interface, on by default as in ATAK.
+- **SA** — the self-SA goes out at ATAK 5.5's `ReportingRate` pace, from CoreLocation or a placed position; a Contacts sidebar lists everyone heard, stale-greyed on ATAK's timing; a My Details sheet sets callsign, team, role and the rest under ATAK's preference keys.
+- **GeoChat** — All Chat Rooms, team, role, user-made group and one-to-one rooms, delivered and read receipts, history in SQLite, in a Messages-style Chat window.
+- **Coordinates** — MGRS, UTM, DD, DM, DMS and ADDR, altitude in MSL (the engine's EGM96 grid) or HAE; a Units pane in Settings and a self readout over the map; address lookup through Apple Maps or an imported Nominatim geocoder.
+- **Markers with MIL-STD-2525 symbols** — contacts, the self arrow and CoT markers drawn as ATAK 5.5 draws them, with missioncommand's 2525C (and 2525D/E) renderers.
+- **Range and bearing** — the R&B Line tool with 5.5's numbers (magnetic north from the WMMHR-2025 model), lines that follow the markers they join, shared and received as 5.5's `u-rb-a` CoT.
+- **Map items kept across launches** — as 5.5's StateSaver (G3.9a).
+
+The CoT model, coordinates, range and bearing and the 2525 mapping are Swift ports held to the kernel's own answers by golden tests (`make test-cot-golden`, `test-coord-golden`, `test-rab-golden`, `test-symbol-golden`).
 
 ## How the port works
 
-- **The engine already builds natively.** `libtakengine.dylib` (9.6 MB Mach-O arm64, ~460 translation units) compiles and links on macOS, and all five kernel Java modules publish to mavenLocal on Zulu 8 arm64 — proven by the [G0 spike](dev/spike/g0/NOTES.md).
-- **The renderer is a substitution slot.** takkernel consumes OpenGL ES through an injectable provider, so macOS plugs in **ANGLE-on-Metal** — the same backend Chromium ships — rather than porting GL by hand.
-- **Comms are portable.** commoncommo is a C++ core with JNI and Objective-C bindings, alongside takproto (protobuf) and takcot (CoT schemas).
-- **Verification runs against real TAK.** A WinTAK golden VM ([Pathway A](docs/pathway-a.md)) plus a Mac-side FreeTAKServer provide the interop baseline; a WinTAK↔FTS CoT round-trip has already been witnessed at the protocol layer.
+- **The engine builds natively.** takkernel's C++ engine (`libtakengine.dylib`) and its Java modules build on macOS arm64 from a read-only pin of upstream ATAK-CIV 5.5.1.10; changes to upstream live as patch files, never in place.
+- **The renderer is a substitution slot.** takkernel consumes OpenGL ES through an injectable provider, so macOS plugs in **ANGLE-on-Metal** — the same backend Chromium ships — rather than porting GL by hand. macTAK builds ANGLE from source and carries its own small patch set (`dev/g2/angle-patches/`).
+- **The app layer is a Swift rewrite.** The SwiftUI/AppKit app boots the engine's JVM in-process and hosts the map in a `CAMetalLayer`; the client logic (CoT, SA, chat, coordinates, tools) is Swift, using ATAK 5.5 as the behavioural reference ([`docs/atak-feature-coverage.md`](docs/atak-feature-coverage.md)).
+- **Comms are portable.** commoncommo is a C++ core, reached from Swift through a C shim (`CCommoShim`), alongside takproto (protobuf) and takcot (CoT schemas).
+- **One TLS stack.** The bundle carries its own natives — macTAK's own minimal GDAL/PROJ/SpatiaLite build on OpenSSL 3 ([`dev/deps/README.md`](dev/deps/README.md)) — and every third-party component it ships is inventoried with its license.
+- **Verification runs against real TAK.** A WinTAK golden VM ([Pathway A](docs/pathway-a.md)), FreeTAKServer and OpenTAKServer provide the interop baseline.
+
+## Getting started
+
+macOS 27 on Apple silicon, Homebrew, and JDK 21 (arm64). The full setup — including populating `src/` with the upstream pin — is in [`CONTRIBUTING.md`](CONTRIBUTING.md#setup).
+
+```bash
+brew bundle install       # every Homebrew dependency, pinned by Brewfile.lock.json
+make hooks                # install the pre-commit gate
+make build-angle          # kernel jars + engine with ANGLE in the GLES slot + commo
+make app                  # build/MacTAK.app — open it to run the client
+make test-app             # the Swift package's tests: comms over TCP, mutual TLS, QUIC, mesh
+make help                 # every target, with what it checks
+```
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `docs/` | Program documents: feasibility study, architecture evidence, roadmap, CI/QA plan, Pathway A baseline |
-| `dev/` | Development workspace: `dev/g1/` native engine build harness (recipe + patch set), `dev/spike/` gate-spike records (`dev/spike/g0/` = G0 build recipe, wrapper, patch catalog; `dev/spike/g55/` = the 5.5 rebase: ported patch series, build harness, record), `dev/reference/` test rig — CoT client tools (committed); WinTAK-derived captures (`.gitignore`d — GOTS artifacts never enter this repo) |
-| `src/` | Read-only pinned sparse clone of upstream ATAK-CIV, `TAK-Product-Center/atak-civ` @ `9f6893d` (5.5.1.10; 4.6.0.5 @ `889eee2` until the 2026-11-11 re-pin) — changes to it are exported as patch files, never committed in place |
+| `app/` | The macOS app: a Swift package (`MacTAK` SwiftUI app, `MacTAKCore`, `MacTAKCot`, `MacTAKComms`, the `CCommoShim`/`CJavaBoot`/`CMagnetic` C modules, `mactak-shell`), its resources and `bundle.sh` |
+| `docs/` | Program documents: feasibility study, architecture, roadmap, CI/QA plan, Pathway A baseline, feature coverage, the 5.5 rebase study, the license audit |
+| `dev/` | Development workspace: `dev/g1/` native engine build harness (recipe, patch set, headless client), `dev/g2/` renderer, ANGLE build and window shell, `dev/g3/` G3 notes and golden fixtures, `dev/deps/` macTAK's own GDAL/PROJ/SpatiaLite build and the license tooling, `dev/docs-site/` the docs site, `dev/spike/` gate-spike records (`g0` build recipe, `g55` the 5.5 rebase), `dev/reference/` CoT client test tools (WinTAK-derived captures are `.gitignore`d — GOTS artifacts never enter this repo) |
+| `licenses/` | The record of every third-party component the app bundle carries: `inventory.csv` and each license text |
+| `src/` | Read-only pinned sparse clone of upstream ATAK-CIV, `TAK-Product-Center/atak-civ` @ `9f6893d` (5.5.1.10) — populated locally, never committed |
 
 ## Project documents
 
-All of these, plus the engineering notes under `dev/` (the G1 and G2
-records and the spike notes), are also published as one browsable site,
+All of these, plus the engineering notes under `dev/`, are also published as one browsable site,
 with a sidebar, search and a table of contents on every page:
 <https://matteskes.github.io/macTAK/>. It is built from these same files
 on every merge to `main` (`dev/docs-site/`, `make docs-site`).
@@ -40,21 +71,26 @@ on every merge to `main` (`dev/docs-site/`, `make docs-site`).
 | [`docs/feasibility-report.md`](docs/feasibility-report.md) | Founding feasibility study: measured effort, decisive findings, risk — start here for the numbers behind every claim |
 | [`docs/architecture.md`](docs/architecture.md) | Verified repo layout, LOC inventory, dependency graph, build/CI reality |
 | [`docs/pathway-c.md`](docs/pathway-c.md) | Host strategy (JVM vs native Swift), renderer mapping, risk register, prior art |
-| [`docs/roadmap.md`](docs/roadmap.md) | Gate-gated plan G0–G6 with exit criteria and fallback decision points |
+| [`docs/roadmap.md`](docs/roadmap.md) | Gate-gated plan G0–G6 with exit criteria, status and fallback decision points |
 | [`docs/ci-qa.md`](docs/ci-qa.md) | CI/QA plan: inherited test corpus, CI tiers, golden fixtures, runner strategy |
 | [`docs/pathway-a.md`](docs/pathway-a.md) | WinTAK golden VM: build record, FreeTAKServer round-trip verification, gotchas |
 | [`docs/atak-feature-coverage.md`](docs/atak-feature-coverage.md) | ATAK-CIV's feature set mapped to what macTAK supports today, and the app-layer decision (rewrite in Swift) |
 | [`docs/rebase-study-5.5.md`](docs/rebase-study-5.5.md) | Measured cost of moving the upstream baseline from 4.6.0.5 to 5.5.1.10; the staged rebase plan |
+| [`docs/license-audit.md`](docs/license-audit.md) | Full license audit of everything the app bundle redistributes: findings F1–F8 and the gates that keep the record current |
+| [`licenses/README.md`](licenses/README.md) · [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) | The license inventory and its machinery; the generated third-party notices |
+| [`dev/deps/README.md`](dev/deps/README.md) | Why and how macTAK builds its own GDAL, PROJ and libspatialite |
+| [`dev/g1/NOTES.md`](dev/g1/NOTES.md) · [`dev/g2/NOTES.md`](dev/g2/NOTES.md) · [`dev/g3/NOTES.md`](dev/g3/NOTES.md) | Engineering notes per gate: how each milestone went — plans, decisions, traps, gate logs |
+| [`dev/spike/g0/NOTES.md`](dev/spike/g0/NOTES.md) · [`dev/spike/g55/NOTES.md`](dev/spike/g55/NOTES.md) | The G0 build spike, and the move of the baseline from 4.6 to 5.5 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: setup, the gate ladder, where changes land (patches/shadows/shim), CI contract, house style |
-| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run (gate open) + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit; Unreleased: G2 closed, G3.4–G3.9 |
 
 ## Local gates
 
-Run `make hooks` once per clone to install the git hooks (`core.hooksPath .githooks`). The pre-commit hook then checks every staged file: `shellcheck` + `bash -n` on `*.sh`, `markdownlint-cli2` on `*.md`, `actionlint` on `.github/workflows/*.yml`, and SHA256 verification of jars under `dev/g1/transplants/` and `dev/spike/g0/transplants/` against their `SHA256SUMS` manifests. Optional tools that are not installed are skipped with a visible message. `make lint` runs the same checks across the whole `dev/` tree, sweeping the repo's own docs but skipping the read-only `src/` pin — CI's docs job likewise lints only PR-changed `*.md`.
+Run `make hooks` once per clone to install the git hooks (`core.hooksPath .githooks`). The pre-commit hook then checks every staged file: `shellcheck` + `bash -n` on `*.sh`, `markdownlint-cli2` on `*.md`, `actionlint` on `.github/workflows/*.yml`, and SHA256 verification of jars under `dev/g1/transplants/` and `dev/spike/g0/transplants/` against their `SHA256SUMS` manifests. Optional tools that are not installed are skipped with a visible message. `make lint` runs the same checks across the whole `dev/` tree, sweeping the repo's own docs but skipping the read-only `src/` pin — CI's docs job likewise lints only PR-changed `*.md`. The full table of gates, and which run in CI versus only on a dev Mac, is in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE). macTAK inherits the GNU GPL v3 obligation from upstream `deptofdefense/AndroidTacticalAssaultKit-CIV`.
+GPL-3.0 — see [LICENSE](LICENSE). macTAK inherits the GNU GPL v3 obligation from upstream ATAK-CIV (`TAK-Product-Center/atak-civ`, formerly `deptofdefense/AndroidTacticalAssaultKit-CIV`). Third-party components the app bundle carries are listed, with their licenses, in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
 This is an independent open-source project — not an official TAK product and not affiliated with the US Federal Government, the US Department of War, nor any other agent thereof.
 
