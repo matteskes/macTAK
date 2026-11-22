@@ -14,6 +14,7 @@ import java.awt.image.BufferedImage;
 
 import ArmyC2.C2SD.Utilities.RendererSettings;
 import ArmyC2.C2SD.Utilities.UnitDefTable;
+import armyc2.c5isr.renderer.utilities.MSLookup;
 import gov.tak.api.commons.graphics.Bitmap;
 import gov.tak.api.cot.CotUtils;
 import gov.tak.api.util.AttributeSet;
@@ -85,26 +86,59 @@ public final class SymbolOracle {
         for (Map.Entry<String, Bitmap> e : drawn.entrySet()) {
             final boolean kernel = e.getValue() != null;
             answers.append(e.getKey()).append('\t').append(kernel).append('\n');
-            final BufferedImage ours = Symbols.render(e.getKey());
-            if ((ours != null) != kernel) {
-                disagree.add(e.getKey() + ": kernel " + (kernel ? "draws it" : "doesn't") + ", Symbols " + (ours != null ? "does" : "doesn't"));
-            } else if (kernel) {
-                compared++;
-                final String diff = differ(e.getValue(), ours);
-                if (diff != null) disagree.add(e.getKey() + ": " + diff);
-            }
+            compared += judge(e.getKey(), e.getValue(), disagree);
+        }
+
+        // The D/E leg: the codes of symbol-golden/des.txt, rendered by the
+        // kernel's 2525D and 2525E providers and held to Symbols.render
+        // pixel for pixel. Nothing here feeds renderable.tsv: the kernel's
+        // CoT mapping never produces a 2525D/E code, so the Swift port has
+        // nothing to answer about them (trap #22).
+        final List<String> desCodes = desCodes(golden);
+        int compared2525DE = 0;
+        for (String code : desCodes) {
+            compared2525DE += judge(code, SymbologyProvider.renderSinglePointIcon(code, new AttributeSet(), null), disagree);
         }
 
         Files.createDirectories(out);
         Files.writeString(out.resolve("cot-to-2525c.tsv"), mapped, StandardCharsets.UTF_8);
         Files.writeString(out.resolve("renderable.tsv"), answers, StandardCharsets.UTF_8);
         System.out.println("[symbol-oracle] " + types.size() + " types, " + drawn.size() + " codes, "
-                + compared + " drawn and compared pixel for pixel");
+                + compared + " drawn and compared pixel for pixel; "
+                + desCodes.size() + " 2525D/E codes, " + compared2525DE + " compared");
         if (!disagree.isEmpty()) {
             System.out.println("[symbol-oracle] FAIL: mactak.engine.Symbols disagrees with the kernel on " + disagree.size() + " codes:");
             disagree.stream().limit(20).forEach(d -> System.out.println("  " + d));
             System.exit(1);
         }
+    }
+
+    /** Compares one code, kernel bitmap against Symbols, recording any disagreement; 1 when both drew it. */
+    private static int judge(String code, Bitmap kernel, List<String> disagree) {
+        final BufferedImage ours = Symbols.render(code);
+        if ((ours != null) != (kernel != null)) {
+            disagree.add(code + ": kernel " + (kernel != null ? "draws it" : "doesn't") + ", Symbols " + (ours != null ? "does" : "doesn't"));
+            return 0;
+        }
+        if (kernel == null) return 0;
+        final String diff = differ(kernel, ours);
+        if (diff != null) disagree.add(code + ": " + diff);
+        return 1;
+    }
+
+    /** The 2525D/E codes of des.txt, upper case; refuses one mil-sym doesn't know, so a typo can't pass as a vacuous fixture. */
+    private static List<String> desCodes(Path golden) throws IOException {
+        final List<String> codes = new ArrayList<>();
+        for (String line : Files.readAllLines(golden.resolve("des.txt"), StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) continue;
+            final String code = line.strip().toUpperCase();
+            if (MSLookup.getInstance().getMSLInfo(code) == null) {
+                System.out.println("[symbol-oracle] FAIL: des.txt code mil-sym doesn't know: " + code);
+                System.exit(1);
+            }
+            codes.add(code);
+        }
+        return codes;
     }
 
     /** null when the two images are the same size with the same ARGB pixels. */

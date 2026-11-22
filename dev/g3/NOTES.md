@@ -2316,6 +2316,37 @@ user icon sets.
   the cap with a usage error. CI's window step has a 4200 px leg resized
   to 4400 px.
 
+- **22 — `Symbols` drew 2525D/E unlike 5.5, and nothing checked it**
+  (2026-11-21, branch `g3/symbol-2525de-golden`). The golden test held
+  only the 2525C path to the kernel: the kernel's CoT mapping never
+  produces a 2525D/E code, so the Swift port has nothing to answer about
+  them and `renderable.tsv` stays 2525C only. `symbol-golden/des.txt`
+  now lists 15 2525D/E codes (the six civilian prefixes across identity
+  and context, and two 2525E twins), and the oracle holds `Symbols` to
+  the kernel's 2525D and 2525E providers, pixel for pixel. A/B: `main`'s
+  `Symbols` fails all 15, every one the wrong size (40×40 against the
+  kernel's 25×25); this branch passes all 15. What was wrong:
+  - **The size key.** The 2525D/E path passed the 2525C renderer's
+    `SIZE`; mil-sym-java's is `MilStdAttributes.PixelSize`
+    (`PIXELSIZE`), so the size was ignored and mil-sym's default drew.
+  - **The civilian prefix.** `full.substring(4, 8)` read the symbol set
+    and the status and HQ digits (`1500`), not the set and entity
+    (`1516`), so no 2525D code ever filled purple.
+  - **Two `SymbolUtilities`.** The provider's `getBasicSymbolID` is
+    mil-sym-java's (`armyc2.c5isr`); `Symbols` imports the 2525C
+    renderer's (`ArmyC2.C2SD`) for its 2525C path, and that one reads a
+    2525D code as 2525C and never matches. The 2525D call is fully
+    qualified.
+  - **Hostile and suspect** are now the provider's: mil-sym's
+    affiliation digit, simulated variants included, and the exercise
+    context (Joker, Faker) left to the civilian check, so it fills
+    purple.
+
+  The size is now 32 pixels times `GLRenderGlobals.getRelativeScaling()`
+  (the 2525D provider's; the 2525C one uses the display's), and the
+  label font is the interop's `serif`, both as the provider's source has
+  them. The A/B doesn't separate these two from the size key's fix.
+
 ## G3.8 — range and bearing (plan approved 2026-11-20)
 
 Asked for by the owner after ADDR (2026-11-20). Not in the 2026-11-13
