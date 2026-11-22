@@ -19,8 +19,8 @@
 # Needs: build/MacTAK.app (make app), JDK 21, the GDAL CLI (make-imagery.sh).
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/app/test
-ROOT="$(cd "$HERE/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <repo>/app
+ROOT="$(cd "$HERE/.." && pwd)"
 APP="$ROOT/build/MacTAK.app"
 FRAMEWORKS="$APP/Contents/Frameworks"
 ENGINE="$APP/Contents/Resources/engine"
@@ -31,7 +31,7 @@ log() { printf '[app-bundle] %s\n' "$*"; }
 die() { log "FAIL: $*" >&2; exit 1; }
 
 [[ -f "$FRAMEWORKS/libtakengine.dylib" ]] || die "no $APP — run make app"
-# shellcheck source=SCRIPTDIR/../../dev/jdk.sh
+# shellcheck source=SCRIPTDIR/../dev/jdk.sh
 source "$ROOT/dev/jdk.sh"
 JDK="$(mactak_jdk_home 21)" || die "JDK 21 not found (dev/jdk.sh)"
 JDK="$(cd "$JDK" && pwd -P)"

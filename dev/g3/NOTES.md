@@ -809,7 +809,7 @@ Decided with the plan (owner, 2026-11-16):
   (`CryptoUtil::staticInit`).
 - **`MacTAK --check-comms-runtime`**: starts commo as the app does,
   prints commo's own line about the legacy provider, and exits 0 when it
-  loaded. `app/test/bundle-runtime.sh` (`make test-app-bundle`) runs it as
+  loaded. `app/check-bundle-runtime.sh` (`make test-app-bundle`) runs it as
   its third leg. The leg requires `legacy.dylib` to come from the
   bundle's `Frameworks`, and its images join the "nothing from outside
   the bundle" check.
@@ -2037,7 +2037,7 @@ user icon sets.
   `CotSymbolsTests` holds the Swift port to the same files, answering
   its renderer's questions from `renderable.tsv`.
 - **`MacTAK --check-symbols`**: the bundle's JVM draws a 2525C and a
-  2525D code, and refuses nonsense; `bundle-runtime.sh` leg 4 runs it.
+  2525D code, and refuses nonsense; `check-bundle-runtime.sh` leg 4 runs it.
 - **G2's `android.graphics.Bitmap`** gains the private
   `(BufferedImage)` constructor and `getAwtBufferedImageImplementation`.
   takkernel's desktop `BitmapMarshal` reaches for both by reflection

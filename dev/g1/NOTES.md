@@ -2773,7 +2773,7 @@ rpath to `dev/deps/dist/lib`, the Homebrew libraries through
 | Guard | Where | Checks | A/B |
 |---|---|---|---|
 | `check-bundle.py` | end of `app/bundle.sh`; `make check-runtime` in CI's render job | every Mach-O file: no absolute dependency outside `/usr/lib` and `/System`, no absolute rpath, every `@rpath` reference resolves inside the bundle with the file's own rpaths | the bundle `make app` built before: FAIL (absolute rpaths into `dev/deps/dist`, `angle-dist` and `/opt/homebrew/lib`); now: PASS, 135 files |
-| `make test-app-bundle` (`app/test/bundle-runtime.sh`) | dev Mac (the app needs the macOS 27 SDK) | RenderSmoke from the bundle's classes, jars, Frameworks and data, with `DYLD_PRINT_LIBRARIES=1` and `dev/deps/dist` moved aside: the UTM GeoTIFF reprojected through the bundle's PROJ (three ground points), then the GeoJSON layer; dyld must load nothing from outside the bundle, `/usr/lib`, `/System` and the JDK | PASS: 33 Frameworks libraries, nothing outside |
+| `make test-app-bundle` (`app/check-bundle-runtime.sh`) | dev Mac (the app needs the macOS 27 SDK) | RenderSmoke from the bundle's classes, jars, Frameworks and data, with `DYLD_PRINT_LIBRARIES=1` and `dev/deps/dist` moved aside: the UTM GeoTIFF reprojected through the bundle's PROJ (three ground points), then the GeoJSON layer; dyld must load nothing from outside the bundle, `/usr/lib`, `/System` and the JDK | PASS: 33 Frameworks libraries, nothing outside |
 
 The app itself, launched from `build/MacTAK.app/Contents/MacOS/MacTAK`
 with `dev/deps/dist` moved aside, ran past 12 s, presented frames with no
