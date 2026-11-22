@@ -95,7 +95,7 @@ check-runtime:
 # #152: the app bundle runs on its own natives and data. Needs the Swift
 # package's macOS 27 SDK, so a dev-Mac gate (CI runs check-runtime instead).
 test-app-bundle: app
-	bash app/test/bundle-runtime.sh
+	bash app/check-bundle-runtime.sh
 
 gen-gles-shim:
 	python3 $(GLES_SHIM_GEN) $(GLES_SHIM_JAR) $(GLES_SHIM_GL3H) dev/g2/render/src/android/opengl \

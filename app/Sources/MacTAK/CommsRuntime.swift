@@ -22,7 +22,7 @@ enum CommsRuntime {
 
     /// `MacTAK --check-comms-runtime`: start commo the way the app does and
     /// report whether it loaded OpenSSL's legacy provider (app/test/
-    /// bundle-runtime.sh runs it). Exits 0 when it did, 1 when it didn't.
+    /// check-bundle-runtime.sh runs it). Exits 0 when it did, 1 when it didn't.
     static func checkAndExit() -> Never {
         configure()
         let done = DispatchSemaphore(value: 0)

@@ -4,7 +4,7 @@
 // Boots the JVM from the bundle's launch.json, as the map does, and asks
 // EngineBridge for a 2525C and a 2525D symbol (missioncommand's two
 // renderers, staged as engine jars), and for a code no renderer knows.
-// app/test/bundle-runtime.sh runs it, so a missing jar or a renderer that
+// app/check-bundle-runtime.sh runs it, so a missing jar or a renderer that
 // needs something the bundle lacks fails the bundle check, not a user's map.
 
 import Foundation
