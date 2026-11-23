@@ -2815,3 +2815,61 @@ hidden, gone to, deleted, sent or searched. Not in it: file overlays.
 | `MapItemStoreTests` (5), `CotMarkerStoreTests` (+2), `RangeBearingReceiveTests` (+3), `RangeBearingEventTests` | pass |
 | `make test-app` | 181 tests pass, 1 skipped (Apple's geocoder, network) |
 | `make lint` | passes |
+
+### G3.9b — the Point Dropper (2026-11-23, branch `g3/point-dropper`)
+
+#### What changed
+
+- **`PointNaming`** (MacTAKCot): 5.5's `genCallsign` (prefix by type,
+  then the day of the month and `HHmmss` in this Mac's time zone:
+  `R` for a-h (`civ_tgtPrefix`), `F`, `U`, `N`, `S` for Spot Map, `MED`;
+  else, or with `legacyPointDropNaming`, the device callsign),
+  `placePoint`'s `.count` de-duplication, and `getCount` (the lowest
+  unused n for "<prefix> n", with Java's `split(" ")` and `parseInt`).
+- **`PointKind` and `PlacedPoint`** (MacTAKCot): 2525C's four
+  affiliations with the default subtype Ground (`a-?-G`, iconsetpath
+  `COT_MAPPING_2525C/a-?/a-?-G`) and Spot Map's eleven colours
+  (`b-m-p-s-m`, iconsetpath `COT_MAPPING_SPOTMAP/b-m-p-s-m/<signed
+  colour>`); a placed point's CoT is MarkerCreator's (archive, readiness
+  true, how `h-g-i-g-o`, colour white unless Spot Map's, stale a year on)
+  with the details 5.5 reads back for its icon and name (`contact`,
+  `status`, `archive`, `color`, `usericon`). G3.9d writes it field by
+  field.
+- **`PointDropper`** (MacTAKComms, on `ServerConnections`): the tool.
+  It stays on, one point per click; a click on a marker, contact or the
+  self marker places the point at that item (`Tool.findPoint`); a click
+  on a point placed here since launch places nothing (5.5 opens its
+  radial there: G3.9c). Points go into the `CotMarkerStore` as their own
+  CoT, archived, so they draw and are kept as any archived marker.
+- **Names**: 2525C points are made unique among the same-type points
+  placed here since launch (5.5's User Objects groups; restored and
+  received points sit in its CoT groups and don't count). Spot Map dots
+  are "<abbr> n" by `getCount` over every Spot Map point, received
+  included, then made unique among them.
+- **`CotMarkerStore`** takes Spot Map points (`SpotMapImporter`), never
+  stale whether archived or not (`isAtakSpecialType`).
+  **`MarkerIcons`** draws one as `reference_point.png` in its `<color>`
+  (`SpotMapIconAdapter`), white when it has none.
+- **App**: a Point Dropper toolbar button with the 2525C and Spot Map
+  palettes; the prompt with Done (Esc) at the top of the map; clicks go
+  to the dropper while it runs, else to the R&B tool; starting one tool
+  ends the other. A change to the markers redraws at once, not at the
+  next tick.
+
+#### Not yet (5.5 has them)
+
+Long-press coordinate entry, double-click R&B entry, the recently-added
+list, custom naming, the 2525C subtypes and type picker, Spot Map's
+label-only and custom colours, a settings toggle for
+`legacyPointDropNaming` (the key is read from the settings suite).
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `PointNamingTests` (9) | genCallsign prefixes, legacy naming, time zone; `.n` de-duplication; getCount gaps, case, edited titles, word counts, empty prefix; Java split; palette types and paths; the placed point's CoT |
+| `PointDropperTests` (11) | tool off/on, archived and never stale, `.n` among points placed here only, Spot Map numbering over all Spot Map points, clicks on items, no point on a point placed here, a placed point survives a relaunch, the legacy key read from settings |
+| A/B: no de-duplication, unsorted getCount | the naming and dropper tests fail |
+| `make test-app` | MacTAKCommsTests 192 pass, 1 skipped (Apple's geocoder, network); MacTAKCotTests 72 pass |
+| `make lint` | passes |
+| Hand check (owner) | pending |

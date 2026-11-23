@@ -4,7 +4,8 @@
 // (teamToColor; CotMarkerRefresher for stale).
 //
 // The marker's <usericon iconsetpath> goes first: COT_MAPPING_SPOTMAP draws
-// an atom as a dot in its affiliation's colour, a base64:// path is the icon
+// a Spot Map point as a dot in its colour (G3.9b) and an atom as a dot in
+// its affiliation's colour, a base64:// path is the icon
 // itself, and anything else (2525C, a user icon set) goes on to 5.5's 2525C
 // adapter, its default mapping:
 //   1. readiness=false: the "damaged" icon for its affiliation;
@@ -151,12 +152,17 @@ public enum MarkerIcons {
         return nil
     }
 
-    /// SpotMapIconAdapter for an atom: reference_point.png in its
-    /// affiliation's colour (Color.BLUE, RED, GREEN, else YELLOW).
+    /// SpotMapIconAdapter: a Spot Map point is reference_point.png in its
+    /// <color> (white when it has none); an atom is the dot in its
+    /// affiliation's colour (Color.BLUE, RED, GREEN, else YELLOW). 5.5's
+    /// label-only Spot Map point (a label, no icon) draws as a dot here.
     private static func spotMapIcon(_ m: MarkerTraits) -> MarkerIcon? {
-        guard m.type.hasPrefix("a-") else { return nil }
         let color: UInt32
-        if m.type.hasPrefix("a-f") {
+        if m.type.hasPrefix(PointKind.spotMapType) {
+            color = m.color ?? white
+        } else if !m.type.hasPrefix("a-") {
+            return nil
+        } else if m.type.hasPrefix("a-f") {
             color = 0xFF00_00FF
         } else if m.type.hasPrefix("a-h") {
             color = 0xFFFF_0000
@@ -193,7 +199,7 @@ public enum MarkerIcons {
     }
 
     /// The iconsetpath prefix of 5.5's Spot Map mapping (SpotMapPallet).
-    public static let spotMapMapping = "COT_MAPPING_SPOTMAP"
+    public static let spotMapMapping = PointKind.mappingSpotMap
 
     /// 5.5's icon for a type no symbol draws, by affiliation.
     public static func unknownTypeIcon(_ type: String) -> String {
