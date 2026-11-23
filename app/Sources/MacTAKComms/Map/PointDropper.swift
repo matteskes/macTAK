@@ -7,7 +7,8 @@
 //   contact or the self marker places it at that item's point (Tool.findPoint).
 //   A click on a point placed here since launch places nothing: 5.5 opens
 //   that point's radial menu instead, the app its inspector (G3.9c).
-// - the point is MarkerCreator's (PlacedPoint), named as PointNaming says:
+// - the point is MarkerCreator's (PlacedPoint), with where its place came
+//   from and who placed it (setAuthorInformation), named as PointNaming says:
 //   2525C's by genCallsign, made unique among the same-type points placed
 //   here since launch (5.5's User Objects groups; points it takes back at
 //   launch go to the CoT groups, so they don't count); Spot Map's "<abbr> n"
@@ -28,7 +29,8 @@ public final class PointDropper: ObservableObject {
     @Published public private(set) var selected: PointKind?
 
     private let markers: CotMarkerStore
-    private let place: (String) -> CotPoint?
+    private let locate: (MapPick) -> SourcedPoint?
+    private let author: (Date) -> Author?
     private let deviceCallsign: () -> String
     private let legacyNaming: () -> Bool
     private let newID: () -> String
@@ -36,13 +38,16 @@ public final class PointDropper: ObservableObject {
     /// The uids of the points placed here since launch, in order.
     private var placedHere: [String] = []
 
-    /// `place` says where a clicked item (marker, contact, self) is;
+    /// `locate` says where a click is: the ground's place, or the clicked
+    /// item's (marker, contact, self); `author` is this client at a time;
     /// `legacyNaming` is 5.5's legacyPointDropNaming preference.
-    public init(markers: CotMarkerStore, place: @escaping (String) -> CotPoint?,
+    public init(markers: CotMarkerStore, locate: @escaping (MapPick) -> SourcedPoint?,
+                author: @escaping (Date) -> Author? = { _ in nil },
                 deviceCallsign: @escaping () -> String, legacyNaming: @escaping () -> Bool = { false },
                 newID: @escaping () -> String = { UUID().uuidString }, timeZone: TimeZone = .current) {
         self.markers = markers
-        self.place = place
+        self.locate = locate
+        self.author = author
         self.deviceCallsign = deviceCallsign
         self.legacyNaming = legacyNaming
         self.newID = newID
@@ -66,19 +71,11 @@ public final class PointDropper: ObservableObject {
     @discardableResult
     public func click(_ pick: MapPick, at now: Date = Date()) -> CotMarker? {
         guard let kind = selected else { return nil }
-        let point: CotPoint
-        switch pick {
-        case .ground(let p):
-            point = p
-        case .item(let uid):
-            if isPlacedHere(uid) { return nil }
-            guard let p = place(uid) else { return nil }
-            point = p
-        }
-        guard point.isValid else { return nil }
+        if case .item(let uid) = pick, isPlacedHere(uid) { return nil }
+        guard let place = locate(pick), place.point.isValid else { return nil }
         let uid = newID()
-        let event = PlacedPoint.event(uid: uid, kind: kind, callsign: callsign(for: kind, at: now), point: point,
-                                      at: now)
+        let event = PlacedPoint.event(uid: uid, kind: kind, callsign: callsign(for: kind, at: now), at: place,
+                                      author: author(now), now: now)
         guard markers.receive(event.xml(), at: now) else { return nil }
         placedHere.append(uid)
         return markers[uid]

@@ -69,6 +69,9 @@ public final class ServerConnections: ObservableObject {
     public let pointDropper: PointDropper
     /// Editing the CoT markers (G3.9c).
     public let pointEditor: PointEditor
+    /// Where the map's elevation data comes from, which a clicked place's
+    /// altitude is sent with (G3.9d); the app sets it from the engine.
+    public let elevation: ElevationSource
     /// Keeps the archived items across launches, when a store was given.
     private let archive: MapItemArchive?
     private var archiving = false
@@ -102,20 +105,33 @@ public final class ServerConnections: ObservableObject {
         self.contacts = contacts
         let markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
         self.markers = markers
-        let place: (String) -> CotPoint? = { uid in
-            markers[uid]?.point ?? contacts[uid]?.point ?? (uid == me.details.uid ? me.location?.point : nil)
+        let elevation = ElevationSource()
+        self.elevation = elevation
+        let locate: (MapPick) -> SourcedPoint? = { pick in
+            switch pick {
+            case .ground(let p):
+                return .clicked(p, altitudeSource: p.hae == CotPoint.unknown ? nil : elevation.source?(p))
+            case .item(let uid):
+                if let m = markers[uid] {
+                    return SourcedPoint(m.point, precision: PrecisionLocation(m.event.detail(PrecisionLocation.elementName)))
+                }
+                if let c = contacts[uid] { return SourcedPoint(c.point, precision: c.precision) }
+                guard uid == me.details.uid, let l = me.location else { return nil }
+                return SourcedPoint(l.point, precision: l.precision)
+            }
+        }
+        // setAuthorInformation: production_time is a CoordinatedTime, milliseconds
+        let author: (Date) -> Author = { now in
+            let ms = (now.timeIntervalSince1970 * 1000).rounded(.down) / 1000
+            return Author(uid: me.details.uid, type: me.details.unitType, callsign: me.details.callsign,
+                          time: Date(timeIntervalSince1970: ms))
         }
         pointDropper = PointDropper(
-            markers: markers, place: place,
+            markers: markers, locate: locate, author: author,
             deviceCallsign: { me.details.callsign },
             legacyNaming: { ["1", "true"].contains(settings.string(forKey: PointNaming.legacyPointDropNamingKey)?.lowercased()) })
-        pointEditor = PointEditor(markers: markers, place: place)
-        // setAuthorInformation: production_time is a CoordinatedTime, milliseconds
-        rangeBearing.author = {
-            let ms = (Date().timeIntervalSince1970 * 1000).rounded(.down) / 1000
-            return RangeBearingEvent.Creator(uid: me.details.uid, type: me.details.unitType,
-                                             callsign: me.details.callsign, time: Date(timeIntervalSince1970: ms))
-        }
+        pointEditor = PointEditor(markers: markers, locate: locate)
+        rangeBearing.author = { author(Date()) }
         let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
         self.chat = chat
         archive = mapItemStore.map { MapItemArchive(store: $0, selfUID: me.details.uid) }
@@ -334,11 +350,19 @@ public final class ServerConnections: ObservableObject {
         }
     }
 
+    /// The source of the altitude at a place (5.5's ElevationManager result
+    /// type, "DTED1" say), or nil where no elevation data covers it.
+    public final class ElevationSource {
+        public var source: ((CotPoint) -> String?)?
+    }
+
     public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace, noMarker }
 
     /// Send the CoT marker `uid` as it is now, edits included (5.5's Send
     /// from its menu or details): to the contacts in `contacts`, or to
-    /// everyone when it is nil. G3.9d writes it field by field as 5.5 does.
+    /// everyone when it is nil. A point placed here is written field by field
+    /// as 5.5 writes it (PlacedPoint); a received one goes as it was heard,
+    /// with the edits made here.
     public func share(marker uid: String, to contacts: [String]? = nil, at now: Date = Date()) throws {
         guard let client else { throw ShareError.notRunning }
         guard let marker = markers[uid] else { throw ShareError.noMarker }

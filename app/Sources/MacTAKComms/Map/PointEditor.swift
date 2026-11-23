@@ -4,8 +4,8 @@
 //
 // - a click on a marker shows it in the inspector (5.5's details), a click
 //   on the map closes it;
-// - the inspector edits its name, affiliation, colour and remarks
-//   (PointEdits says what each changes);
+// - the inspector edits its name, affiliation, colour and remarks, and
+//   looks up its address (PointEdits says what each changes);
 // - Move (5.5's fine adjust): the next click places it there, or it is
 //   dragged; a machine-generated marker (how "m-g") doesn't move;
 // - Delete removes it here (5.5 asks first; the app does).
@@ -26,12 +26,13 @@ public final class PointEditor: ObservableObject {
     @Published public private(set) var moving: String?
 
     private let markers: CotMarkerStore
-    private let place: (String) -> CotPoint?
+    private let locate: (MapPick) -> SourcedPoint?
 
-    /// `place` says where a clicked item (marker, contact, self) is.
-    public init(markers: CotMarkerStore, place: @escaping (String) -> CotPoint?) {
+    /// `locate` says where a click is: the ground's place, or the clicked
+    /// item's (marker, contact, self).
+    public init(markers: CotMarkerStore, locate: @escaping (MapPick) -> SourcedPoint?) {
         self.markers = markers
-        self.place = place
+        self.locate = locate
     }
 
     /// Whether `uid` is a marker this edits.
@@ -62,21 +63,16 @@ public final class PointEditor: ObservableObject {
     /// the item clicked, and the move ends. Returns whether it moved.
     @discardableResult
     public func click(_ pick: MapPick) -> Bool {
-        guard let uid = moving else { return false }
-        let point: CotPoint?
-        switch pick {
-        case .ground(let p): point = p
-        case .item(let other): point = other == uid ? nil : place(other)
-        }
-        guard let point else { return false }
+        guard let uid = moving, pick != .item(uid), locate(pick) != nil else { return false }
         moving = nil
-        return move(uid, to: point)
+        return move(uid, to: pick)
     }
 
-    /// Moves `uid` to `point` (a drag, or a move's click).
+    /// Moves `uid` to where `pick` is (a drag, or a move's click).
     @discardableResult
-    public func move(_ uid: String, to point: CotPoint) -> Bool {
-        markers.edit(uid) { $0.move(to: point) }
+    public func move(_ uid: String, to pick: MapPick) -> Bool {
+        guard let place = locate(pick) else { return false }
+        return markers.edit(uid) { $0.move(to: place) }
     }
 
     // ---- the inspector's fields --------------------------------------------
@@ -95,6 +91,14 @@ public final class PointEditor: ObservableObject {
 
     public func setAffiliation(_ uid: String, _ a: PointKind.Affiliation) {
         markers.edit(uid) { $0.setAffiliation(a) }
+    }
+
+    /// Keeps `address` when it was looked up for where `uid` still is
+    /// (`at`); returns whether it was kept.
+    @discardableResult
+    public func setAddress(_ uid: String, _ address: AddressDetail, lookedUpAt at: CotPoint) -> Bool {
+        guard let m = markers[uid], AddressDetail.sameLocation(m.point, at) else { return false }
+        return markers.edit(uid) { $0.setAddress(address) }
     }
 
     /// Removes `uid` here; the inspector and a move of it end.

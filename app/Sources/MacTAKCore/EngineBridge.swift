@@ -61,7 +61,7 @@ public final class EngineBridge {
     private let midStart, midPoll, midExit, midStop, midResize, midVisible, midInput, midPanTo: jmethodID
     private let midSymbolPng, midCanRenderSymbol: jmethodID
     private let midPutMarker, midRemoveMarker, midMarkersReady, midSelfIconUri: jmethodID
-    private let midPutLine, midGroundAt, midMarkerAt: jmethodID
+    private let midPutLine, midGroundAt, midMarkerAt, midAltitudeSource: jmethodID
     /// Called when a call across JNI raises; defaults to printing and exit(2).
     public var onFailure: (String) -> Never = { msg in
         fputs("EngineBridge: \(msg)\n", stderr)
@@ -91,6 +91,7 @@ public final class EngineBridge {
         midPutLine = try jni.staticMethod(cls, "putLine", "(Ljava/lang/String;[DIFZLjava/lang/String;)V")
         midGroundAt = try jni.staticMethod(cls, "groundAt", "(FF)[D")
         midMarkerAt = try jni.staticMethod(cls, "markerAt", "(FFF)Ljava/lang/String;")
+        midAltitudeSource = try jni.staticMethod(cls, "altitudeSource", "(DD)Ljava/lang/String;")
     }
 
     /// Start the render thread on `layer` (w x h pixels at dpi) and return.
@@ -227,6 +228,16 @@ public final class EngineBridge {
             a[0].f = jfloat(x); a[1].f = jfloat(y)
             guard let v = try jni.callStaticDoubles(cls, midGroundAt, a), v.count == 3 else { return nil }
             return (v[0], v[1], v[2].isNaN ? nil : v[2])
+        }
+    }
+
+    /// Where the altitude at (lat, lon) comes from: the elevation data's
+    /// type ("DTED1", say), "???" where none covers it (G3.9d).
+    public func altitudeSource(lat: Double, lon: Double) -> String? {
+        call {
+            var a = [jvalue](repeating: jvalue(), count: 2)
+            a[0].d = lat; a[1].d = lon
+            return try jni.callStaticString(cls, midAltitudeSource, a)
         }
     }
 

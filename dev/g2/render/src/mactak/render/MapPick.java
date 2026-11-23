@@ -1,6 +1,7 @@
 package mactak.render;
 
 import com.atakmap.coremap.maps.coords.GeoPoint;
+import com.atakmap.coremap.maps.coords.GeoPointMetaData;
 import com.atakmap.map.MapSceneModel;
 import com.atakmap.map.elevation.ElevationManager;
 import android.graphics.PointF;
@@ -26,5 +27,17 @@ final class MapPick {
         if (at == null || !at.isValid()) return null;
         final double hae = ElevationManager.getElevation(at.getLatitude(), at.getLongitude(), null);
         return new double[] { at.getLatitude(), at.getLongitude(), hae };
+    }
+
+    /**
+     * Where the altitude at a place comes from, as 5.5's inverseWithElevation
+     * leaves it in the point's metadata (ElevationManager's result type, "???"
+     * where no elevation data covers it); sent with a placed point (G3.9d).
+     */
+    static String altitudeSource(double lat, double lon) {
+        final GeoPointMetaData result = new GeoPointMetaData();
+        ElevationManager.getElevation(lat, lon, null, result);
+        final Object source = result.getMetaData(GeoPointMetaData.ALTITUDE_SOURCE);
+        return source == null ? GeoPointMetaData.UNKNOWN : source.toString();
     }
 }

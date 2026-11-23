@@ -78,6 +78,12 @@ final class EngineHost: ObservableObject {
         engine?.panTo(lat: lat, lon: lon)
     }
 
+    /// Where the altitude at a place comes from; nil until the map runs.
+    func altitudeSource(at p: CotPoint) -> String? {
+        guard state == .running else { return nil }
+        return engine?.altitudeSource(lat: p.lat, lon: p.lon)
+    }
+
     /// Half a 32-point marker icon: a click this near a marker's point picks it.
     static let markerHitPoints: Float = 16
 

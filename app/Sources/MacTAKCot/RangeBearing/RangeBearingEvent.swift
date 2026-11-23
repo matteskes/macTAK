@@ -42,22 +42,13 @@ public enum RangeBearingEvent {
     /// toCot's stroke weight.
     public static let strokeWeight = 3.0
 
-    /// Who made a line: setAuthorInformation's parent_* and production_time.
-    public struct Creator: Sendable, Equatable {
-        public var uid, type, callsign: String
-        public var time: Date
-        public init(uid: String, type: String, callsign: String, time: Date) {
-            self.uid = uid; self.type = type; self.callsign = callsign; self.time = time
-        }
-    }
-
     /// The line `uid` from `start` to `end` as 5.5's toCot writes it.
     /// `startUID` and `endUID` name an end's marker when 5.5 would;
     /// `archive` marks a line kept across launches.
     public static func make(uid: String, title: String, start: CotPoint, end: CotPoint,
                             startUID: String?, endUID: String?, style: RangeBearing.Style,
                             color: Int32 = red, weight: Double = strokeWeight, archive: Bool = false,
-                            creator: Creator?, now: Date) -> CotEvent {
+                            creator: Author?, now: Date) -> CotEvent {
         let rab = RangeBearing(from: start, to: end)
         var detail = CotDetail("detail")
         func value(_ name: String, _ v: String) {
@@ -82,14 +73,7 @@ public enum RangeBearingEvent {
         value("strokeStyle", "solid")
         value("color", String(color))
         if archive { detail.add(CotDetail("archive")) }
-        if let creator {
-            var c = CotDetail("creator")
-            c["uid"] = creator.uid
-            c["type"] = creator.type
-            c["callsign"] = creator.callsign
-            c["time"] = Cot.time(creator.time)
-            detail.add(c)
-        }
+        if let creator { detail.add(creator.creatorDetail) }
         return CotEvent(uid: uid, type: type, time: now, stale: now.addingTimeInterval(24 * 3600), how: how,
                         point: start, detail: detail)
     }
@@ -114,7 +98,7 @@ public enum RangeBearingEvent {
         /// <strokeWeight value>, 6.0 when it doesn't parse; nil when absent.
         public var weight: Double?
         /// <creator>, as CreatorDetailHandler keeps it; nil when absent.
-        public var creator: Creator?
+        public var creator: Author?
         /// <archive/>: kept across launches (ArchiveDetailHandler).
         public var archive = false
 
@@ -142,11 +126,7 @@ public enum RangeBearingEvent {
         var color = value("color").flatMap { Int32($0) } ?? red
         if let stroke = event.detail("strokeColor") { color = stroke["value"].flatMap { Int32($0) } ?? white }
         let weight = event.detail("strokeWeight").map { $0["value"].flatMap { Double($0) } ?? 6.0 }
-        var creator: Creator?
-        if let c = event.detail("creator"), let uid = c["uid"], !uid.isEmpty {
-            creator = Creator(uid: uid, type: c["type"] ?? "", callsign: c["callsign"] ?? "",
-                              time: c["time"].flatMap(Cot.parseTime) ?? event.time)
-        }
+        let creator = Author(creator: event.detail("creator"), orTime: event.time)
         return Received(uid: event.uid,
                         title: callsign?.isEmpty == false ? callsign : nil,
                         anchor: event.point,

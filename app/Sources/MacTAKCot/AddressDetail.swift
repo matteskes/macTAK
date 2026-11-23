@@ -43,4 +43,9 @@ public struct AddressDetail: Sendable, Equatable, Codable {
         func round5(_ v: Double) -> Double { (v * 100_000 + 0.5).rounded(.down) / 100_000 }
         return "\(round5(lat)),\(round5(lon))"
     }
+
+    /// Whether an address looked up at `a` still holds at `b`.
+    public static func sameLocation(_ a: CotPoint, _ b: CotPoint) -> Bool {
+        locationHash(lat: a.lat, lon: a.lon) == locationHash(lat: b.lat, lon: b.lon)
+    }
 }

@@ -56,13 +56,13 @@ public struct RangeBearingLine: Identifiable, Equatable, Sendable {
     public var weight = RangeBearingEvent.strokeWeight
     /// Who made it and when: this client at the tool's second click
     /// (setAuthorInformation), or a received line's <creator>.
-    public var creator: RangeBearingEvent.Creator?
+    public var creator: Author?
     /// Kept across launches (5.5's archive meta value).
     public var archived: Bool
 
     public init(id: String, title: String, start: RangeBearingEnd, end: RangeBearingEnd,
                 color: Int32 = RangeBearingEvent.red, received: Bool = false,
-                weight: Double = RangeBearingEvent.strokeWeight, creator: RangeBearingEvent.Creator? = nil,
+                weight: Double = RangeBearingEvent.strokeWeight, creator: Author? = nil,
                 archived: Bool = true) {
         self.id = id; self.title = title; self.start = start; self.end = end
         self.color = color; self.received = received; self.weight = weight; self.creator = creator
@@ -94,7 +94,7 @@ public final class RangeBearingLines: ObservableObject {
 
     /// This client as a line's author, at the moment asked
     /// (setAuthorInformation); nil leaves lines made here without one.
-    public var author: (() -> RangeBearingEvent.Creator)?
+    public var author: (() -> Author)?
 
     public init(newID: @escaping () -> String = { UUID().uuidString }) {
         self.newID = newID

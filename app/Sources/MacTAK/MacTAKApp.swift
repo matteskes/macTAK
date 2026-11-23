@@ -147,8 +147,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.canDrag = { uid in
             pointDropper.selected == nil && rangeBearing.tool == .off && editor.moving == nil && editor.canMove(uid)
         }
-        host.onDrag = { uid, point in editor.move(uid, to: point) }
+        host.onDrag = { uid, point in editor.move(uid, to: .ground(point)) }
         host.markerMenu = { uid in pointActions.menu(for: uid) }
+        // a placed or moved point says where its altitude came from
+        connections.elevation.source = { [host] p in host.altitudeSource(at: p) }
         // a click, a delete, a placed point or a tool starting shows at once, not at the next tick
         let refresh: (()) -> Void = { _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { markers.refresh() } }

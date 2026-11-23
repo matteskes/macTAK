@@ -90,20 +90,39 @@ final class PointNamingTests: XCTestCase {
         XCTAssertEqual(PointKind.Affiliation.paletteOrder, [.unknown, .neutral, .hostile, .friendly])
     }
 
-    func testAPlacedPointsCoT() throws {
+    func testAPlacedPointsCoTFieldByField() throws {
         let p = CotPoint(lat: 37.8, lon: -122.4, hae: 12)
-        let event = PlacedPoint.event(uid: "pt-1", kind: .spotMap(.red), callsign: "R 1", point: p, at: t)
+        let author = Author(uid: "MACTAK-1", type: "a-f-G-U-C", callsign: "VIPER", time: t)
+        let event = PlacedPoint.event(uid: "pt-1", kind: .spotMap(.red), callsign: "R 1",
+                                      at: .clicked(p, altitudeSource: "DTED1"), author: author, now: t)
         let parsed = try CotEvent.parse(event.xml())
         XCTAssertEqual(parsed.type, "b-m-p-s-m")
         XCTAssertEqual(parsed.how, "h-g-i-g-o")
         XCTAssertEqual(parsed.stale.timeIntervalSince(parsed.time), 31_536_000, "a year")
         XCTAssertEqual(parsed.point.hae, 12)
+        XCTAssertEqual(parsed.detail?.children.map(\.name),
+                       ["status", "archive", "contact", "precisionlocation", "link", "archive", "creator",
+                        "usericon", "color"])
         XCTAssertEqual(parsed.detail("status")?["readiness"], "true")
-        XCTAssertNotNil(parsed.detail("archive"))
+        XCTAssertEqual(parsed.detail("contact")?["callsign"], "R 1")
+        XCTAssertEqual(parsed.detail("precisionlocation")?.attributes.map(\.name), ["altsrc"], "no geopointsrc for a click")
+        XCTAssertEqual(parsed.detail("precisionlocation")?["altsrc"], "DTED1")
+        let link = try XCTUnwrap(parsed.detail("link"))
+        XCTAssertEqual([link["uid"], link["type"], link["relation"], link["parent_callsign"], link["production_time"]],
+                       ["MACTAK-1", "a-f-G-U-C", "p-p", "VIPER", "2026-11-03T14:32:05.000Z"])
+        let creator = try XCTUnwrap(parsed.detail("creator"))
+        XCTAssertEqual([creator["uid"], creator["type"], creator["callsign"], creator["time"]],
+                       ["MACTAK-1", "a-f-G-U-C", "VIPER", "2026-11-03T14:32:05.000Z"])
+        XCTAssertEqual(Author(creator: creator, orTime: .distantPast), author)
         XCTAssertEqual(parsed.detail("color")?["argb"], "-65536")
         XCTAssertEqual(parsed.detail("usericon")?["iconsetpath"], "COT_MAPPING_SPOTMAP/b-m-p-s-m/-65536")
-        XCTAssertEqual(parsed.detail("contact")?["callsign"], "R 1")
-        let hostile = PlacedPoint.event(uid: "pt-2", kind: .affiliation(.hostile), callsign: "R.3.143205", point: p, at: t)
+
+        let hostile = PlacedPoint.event(uid: "pt-2", kind: .affiliation(.hostile), callsign: "R.3.143205",
+                                        at: .clicked(CotPoint(lat: 37.8, lon: -122.4), altitudeSource: nil),
+                                        author: nil, now: t)
         XCTAssertEqual(hostile.detail("color")?["argb"], "-1", "MarkerCreator's white")
+        XCTAssertEqual(hostile.detail("precisionlocation")?["altsrc"], "???", "no elevation data")
+        XCTAssertNil(hostile.detail("link"))
+        XCTAssertNil(hostile.detail("creator"))
     }
 }
