@@ -2872,4 +2872,4 @@ label-only and custom colours, a settings toggle for
 | A/B: no de-duplication, unsorted getCount | the naming and dropper tests fail |
 | `make test-app` | MacTAKCommsTests 192 pass, 1 skipped (Apple's geocoder, network); MacTAKCotTests 72 pass |
 | `make lint` | passes |
-| Hand check (owner) | pending |
+| Hand check (owner, 2026-11-23) | passes: palettes, names (`R.<day>.<HHmmss>`, `.1` in the same second, `W 1`/`W 2`), drop on an item, one tool at a time, points back after a relaunch |
