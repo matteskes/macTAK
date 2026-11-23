@@ -26,6 +26,12 @@
 // before it reads forceStale). Once archived it stays so, as the meta
 // value stays when an update leaves the detail out. A Spot Map point is one
 // of 5.5's special types too: never stale, archived or not.
+//
+// Edits made here (G3.9c: the inspector, a move, a delete) change the
+// marker's last event, which the marker is read from again; it keeps when
+// it was heard and when it goes stale, and stays archived when it was. A
+// newer event heard for it replaces the edit, as in 5.5. A delete removes
+// it here only (RemoveBroadcastReceiver: nothing is sent).
 
 import Foundation
 import MacTAKCot
@@ -50,8 +56,16 @@ public struct CotMarker: Sendable, Equatable, Identifiable {
     /// The CoT it is kept as across launches, <archive/> included; nil
     /// when it isn't kept.
     public var archivedEvent: String?
+    /// Its last event, with the edits made here since.
+    public var event: CotEvent
 
     public var archived: Bool { archivedEvent != nil }
+
+    /// <remarks>.
+    public var remarks: String? { event.remarks }
+
+    /// Whether it can be moved (not machine generated).
+    public var movable: Bool { event.isMovable }
 
     public var type: String { traits.type }
 
@@ -93,12 +107,36 @@ public final class CotMarkerStore: ObservableObject {
         let archivedEvent = Self.archivedEvent(event, xml: xml, wasArchived: byUID[event.uid]?.archived == true)
         let staleAt = archivedEvent != nil || Self.isSpotMap(event.type) ? .distantFuture
             : now.addingTimeInterval(max(0, event.stale.timeIntervalSince(event.start) * 1.5))
-        byUID[event.uid] = CotMarker(
-            uid: event.uid, traits: Self.traits(event), label: Self.label(event), point: event.point,
-            address: AddressDetail(event.detail(AddressDetail.elementName)), lastHeard: now, staleAt: staleAt,
-            removeAt: staleAt.addingTimeInterval(ContactStore.removeAfterStale), archivedEvent: archivedEvent)
+        byUID[event.uid] = Self.marker(event, archivedEvent: archivedEvent, lastHeard: now, staleAt: staleAt)
         publish()
         return true
+    }
+
+    /// Edits the marker `uid` here: `change` edits its event, which the
+    /// marker is read from again. Returns whether it changed.
+    @discardableResult
+    public func edit(_ uid: String, _ change: (inout CotEvent) -> Void) -> Bool {
+        guard let old = byUID[uid] else { return false }
+        var event = old.event
+        change(&event)
+        guard event != old.event else { return false }
+        let archivedEvent = old.archived ? Self.archivedEvent(event, xml: event.xml(), wasArchived: true) : nil
+        var marker = Self.marker(event, archivedEvent: archivedEvent, lastHeard: old.lastHeard, staleAt: old.staleAt)
+        marker.removeAt = old.removeAt
+        byUID[uid] = marker
+        publish()
+        return true
+    }
+
+    /// Removes the marker `uid` here; returns whether it was here.
+    @discardableResult
+    public func remove(uid: String) -> Bool { remove(uid) }
+
+    private static func marker(_ event: CotEvent, archivedEvent: String?, lastHeard: Date, staleAt: Date) -> CotMarker {
+        CotMarker(uid: event.uid, traits: traits(event), label: label(event), point: event.point,
+                  address: AddressDetail(event.detail(AddressDetail.elementName)), lastHeard: lastHeard,
+                  staleAt: staleAt, removeAt: staleAt.addingTimeInterval(ContactStore.removeAfterStale),
+                  archivedEvent: archivedEvent, event: event)
     }
 
     /// Drops what has been stale long enough; the app calls it every few

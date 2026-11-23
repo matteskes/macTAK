@@ -2873,3 +2873,61 @@ label-only and custom colours, a settings toggle for
 | `make test-app` | MacTAKCommsTests 192 pass, 1 skipped (Apple's geocoder, network); MacTAKCotTests 72 pass |
 | `make lint` | passes |
 | Hand check (owner, 2026-11-23) | passes: palettes, names (`R.<day>.<HHmmss>`, `.1` in the same second, `W 1`/`W 2`), drop on an item, one tool at a time, points back after a relaunch |
+
+### G3.9c — editing points (2026-11-23, branch `g3/point-edit`)
+
+#### What changed
+
+- **A right-click menu** (or control-click) on a CoT marker stands in for
+  5.5's radial (`menus/a-?.xml`, `b-m-p-s-m.xml`): Details, Send…, Range &
+  Bearing from Here (5.5's pairing line), Move, Delete…. Move is off for
+  a machine-generated marker (`how` `m-g`, MarkerImporter's movable).
+  Delete asks first, as `RemoveBroadcastReceiver` does, and removes the
+  marker here only; nothing is sent.
+- **The inspector** beside the map stands in for the details drop-down
+  (`CoTInfoView`, `SpotMapPointDetailsView`): a click on a marker opens
+  it, a click on the map closes it. It edits the name (`<contact
+  callsign>`; empty or the uid is ignored), the affiliation (an atom that
+  isn't `m-g`: the type's second letter, the iconset path left as 5.5
+  leaves it), the colour (5.5's `ColorPalette`, shown when the marker has
+  an iconset path) and the remarks (`<remarks>`, trimmed; empty removes
+  it), and shows where it is in the Units format, its altitude and
+  address. Its buttons are the menu's.
+- **Move**: the next click places the marker (on the map, or at another
+  item's point); a marker also drags to move while no tool runs. A press
+  that doesn't drag is still a click.
+- **Every CoT marker edits**, received ones too, as 5.5's MarkerImporter
+  makes them editable and removable; contacts and the self marker have
+  menus of their own in 5.5 and get none here yet.
+- **`CotMarkerStore`** keeps each marker's last event; `edit` changes it
+  and reads the marker back from it, keeping its timing and, when it was
+  archived, the kept copy (so edits survive a relaunch). A newer event
+  heard for it replaces the edit, as in 5.5.
+- **`ServerConnections.share(marker:)`** sends a marker as it is now,
+  edits included, timed now with its stale as long after as it was; G3.9d
+  writes it field by field.
+- **One tool at a time**: the R&B tool, the Point Dropper and Move each end
+  the others. With the dropper on, a click on a point placed here opens
+  its inspector (5.5 opens its radial).
+- **`MetalView`**: `grabsItem`/`onItemDrag` (a press on a marker that
+  drags moves it, not the map) and `contextMenu` (right-click and
+  control-click).
+
+#### Not yet (5.5 has them)
+
+Coordinate entry for Move (`mgrs_entry_submenu`), the radial's other
+buttons (breadcrumbs, 9-line, tasking, compass, polar coordinates, label
+toggle, danger close), the 2525C type picker, Spot Map's label-only
+switch, attachments, menus for contacts and the self marker, sending a
+delete for a removed point.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `PointEditorTests` (11) | the inspector's edits change the kept CoT; empty and uid names ignored; Move takes the next click (not onto itself); a drag moves; `m-g` doesn't move or change affiliation; received markers edit until a newer event; delete closes the inspector and a move; only CoT markers inspect; R&B from a point; a sent point timed now with its edits; edits and deletes survive a relaunch |
+| A/B: no kept copy on edit, `m-g` moves | the editor tests fail |
+| `make test-app` | MacTAKCommsTests 203 pass, 1 skipped (Apple's geocoder, network) |
+| `make lint` | passes |
+| `make app` | builds; brew pins, bundle and licence checks pass |
+| Hand check (owner, 2026-11-23) | passes: the right-click menu and each action (Delete asks first), the inspector's name, affiliation, colour and remarks, Move by click and by drag (the map still pans), R&B from a point, edits and deletes kept after a relaunch |

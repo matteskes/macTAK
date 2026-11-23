@@ -17,6 +17,16 @@ public final class MetalView: NSView {
     /// left (G3.8b): a press and release that didn't drag the map. The
     /// first click of a double-click comes here too.
     public var onClick: ((Float, Float) -> Void)?
+    /// Asked at each press, surface pixels: whether a drag from there
+    /// moves an item instead of the map (G3.9c). The press is still a
+    /// click when it doesn't drag.
+    public var grabsItem: ((Float, Float) -> Bool)?
+    /// The grabbed item dragged to a surface pixel.
+    public var onItemDrag: ((Float, Float) -> Void)?
+    /// The menu for a right-click (or control-click) at a surface pixel,
+    /// or nil for none (G3.9c).
+    public var contextMenu: (@MainActor (Float, Float) -> NSMenu?)?
+    private var grabbing = false
     /// Called once, when the view is first in a window with a non-empty size:
     /// the moment a host can start the engine on it. SwiftUI adds the view to
     /// its window before laying it out, so joining the window alone is too
@@ -122,9 +132,11 @@ public final class MetalView: NSView {
     }
 
     public override func mouseDown(with e: NSEvent) {
+        if e.modifierFlags.contains(.control) { return rightMouseDown(with: e) }
         let p = pixels(e)
         lastDrag = p
         press.down(at: p, scale: backingScale)
+        grabbing = e.clickCount == 1 && grabsItem?(Float(p.x), Float(p.y)) == true
         if e.clickCount == 2 { send(.doubleClick, p) }
     }
 
@@ -132,15 +144,26 @@ public final class MetalView: NSView {
         let p = pixels(e)
         press.moved(to: p)
         defer { lastDrag = p }
+        if grabbing {
+            if press.isDrag { onItemDrag?(Float(p.x), Float(p.y)) }
+            return
+        }
         guard let last = lastDrag else { return }
         send(e.modifierFlags.contains(.option) ? .optionDrag : .drag, p, dx: p.x - last.x, dy: p.y - last.y)
     }
 
     public override func mouseUp(with e: NSEvent) {
         lastDrag = nil
+        grabbing = false
         let p = pixels(e)
         press.moved(to: p)
         if press.up(), e.clickCount <= 1 { onClick?(Float(p.x), Float(p.y)) }
+    }
+
+    public override func rightMouseDown(with e: NSEvent) {
+        let p = pixels(e)
+        guard let menu = contextMenu?(Float(p.x), Float(p.y)) else { return }
+        NSMenu.popUpContextMenu(menu, with: e, for: self)
     }
 
     /// Trackpad or Magic Mouse surface: pan, the content following the
@@ -204,6 +227,9 @@ struct ClickTracker {
         guard let s = start, !dragged else { return }
         dragged = hypot(p.x - s.x, p.y - s.y) > limit
     }
+
+    /// Whether the press has moved past the slop.
+    var isDrag: Bool { start != nil && dragged }
 
     /// The button came up: whether the press was a click.
     mutating func up() -> Bool {

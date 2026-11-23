@@ -25,7 +25,8 @@
 // `start` takes them back again.
 //
 // The Point Dropper (G3.9b) places its points into the markers, archived, so
-// they are kept the same way.
+// they are kept the same way. The PointEditor (G3.9c) edits them, and any
+// other CoT marker, in place; `share(marker:)` sends one as it is now.
 
 import Combine
 import Foundation
@@ -66,6 +67,8 @@ public final class ServerConnections: ObservableObject {
     public let rangeBearing = RangeBearingLines()
     /// The Point Dropper tool (G3.9b).
     public let pointDropper: PointDropper
+    /// Editing the CoT markers (G3.9c).
+    public let pointEditor: PointEditor
     /// Keeps the archived items across launches, when a store was given.
     private let archive: MapItemArchive?
     private var archiving = false
@@ -99,11 +102,14 @@ public final class ServerConnections: ObservableObject {
         self.contacts = contacts
         let markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
         self.markers = markers
+        let place: (String) -> CotPoint? = { uid in
+            markers[uid]?.point ?? contacts[uid]?.point ?? (uid == me.details.uid ? me.location?.point : nil)
+        }
         pointDropper = PointDropper(
-            markers: markers,
-            place: { uid in markers[uid]?.point ?? contacts[uid]?.point ?? (uid == me.details.uid ? me.location?.point : nil) },
+            markers: markers, place: place,
             deviceCallsign: { me.details.callsign },
             legacyNaming: { ["1", "true"].contains(settings.string(forKey: PointNaming.legacyPointDropNamingKey)?.lowercased()) })
+        pointEditor = PointEditor(markers: markers, place: place)
         // setAuthorInformation: production_time is a CoordinatedTime, milliseconds
         rangeBearing.author = {
             let ms = (Date().timeIntervalSince1970 * 1000).rounded(.down) / 1000
@@ -328,7 +334,28 @@ public final class ServerConnections: ObservableObject {
         }
     }
 
-    public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace }
+    public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace, noMarker }
+
+    /// Send the CoT marker `uid` as it is now, edits included (5.5's Send
+    /// from its menu or details): to the contacts in `contacts`, or to
+    /// everyone when it is nil. G3.9d writes it field by field as 5.5 does.
+    public func share(marker uid: String, to contacts: [String]? = nil, at now: Date = Date()) throws {
+        guard let client else { throw ShareError.notRunning }
+        guard let marker = markers[uid] else { throw ShareError.noMarker }
+        let xml = Self.outgoing(marker.event, at: now).xml()
+        Task {
+            if let contacts { try? await client.send(xml, to: contacts) } else { try? await client.broadcast(xml, via: .any) }
+        }
+    }
+
+    /// A marker's event as sent now: timed now, stale as long after as it was.
+    static func outgoing(_ event: CotEvent, at now: Date) -> CotEvent {
+        var e = event
+        e.stale = now.addingTimeInterval(max(0, event.stale.timeIntervalSince(event.start)))
+        e.time = now
+        e.start = now
+        return e
+    }
 
     /// Where an end is now: its place, or its marker's, contact's or this client's.
     private func place(_ end: RangeBearingEnd) -> CotPoint? {

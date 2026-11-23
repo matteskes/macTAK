@@ -83,7 +83,7 @@ struct RangeBearingSection: View {
             }
         }
         .sheet(item: $sending) { line in
-            SendLineSheet(line: line, contacts: connections.contacts) { choice in
+            SendItemSheet(title: line.title, contacts: connections.contacts) { choice in
                 sending = nil
                 switch choice {
                 case .everyone: send(line, to: nil)
@@ -115,17 +115,17 @@ struct RangeBearingSection: View {
 }
 
 /// 5.5's Send for a map item: pick contacts, or broadcast to everyone.
-private struct SendLineSheet: View {
+struct SendItemSheet: View {
     enum Choice { case everyone, contacts([String]), cancel }
 
-    let line: RangeBearingLine
+    let title: String
     @ObservedObject var contacts: ContactStore
     let done: (Choice) -> Void
     @State private var chosen: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Send \(line.title)").font(.headline)
+            Text("Send \(title)").font(.headline)
             if contacts.contacts.isEmpty {
                 Text("No contacts heard yet: Broadcast sends it to everyone connected.")
                     .foregroundStyle(.secondary)

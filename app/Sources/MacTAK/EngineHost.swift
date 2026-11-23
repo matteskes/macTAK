@@ -23,6 +23,13 @@ final class EngineHost: ObservableObject {
     /// (G3.8b/c); markers in `unclickable` are looked through.
     var onMapClick: ((MapPick) -> Void)?
     var unclickable: Set<String> = []
+    /// Whether a press on the marker `uid` drags it (G3.9c).
+    var canDrag: ((String) -> Bool)?
+    /// The dragged marker over the ground at a point.
+    var onDrag: ((String, CotPoint) -> Void)?
+    /// The menu for a right-click on the marker `uid`, or nil (G3.9c).
+    var markerMenu: ((String) -> NSMenu?)?
+    private var dragged: String?
 
     /// Start the engine on `view` (once per process: a process gets one JVM).
     func attach(_ view: MetalView) {
@@ -45,6 +52,17 @@ final class EngineHost: ObservableObject {
                 guard let self, let view else { return }
                 MainActor.assumeIsolated { self.clicked(x: x, y: y, scale: Float(view.backingScale)) }
             }
+            view.grabsItem = { [weak self, weak view] x, y in
+                guard let self, let view else { return false }
+                return MainActor.assumeIsolated { self.grab(x: x, y: y, scale: Float(view.backingScale)) }
+            }
+            view.onItemDrag = { [weak self] x, y in
+                MainActor.assumeIsolated { self?.drag(x: x, y: y) }
+            }
+            view.contextMenu = { [weak self, weak view] x, y in
+                guard let self, let view else { return nil }
+                return self.menu(x: x, y: y, scale: Float(view.backingScale))
+            }
             self.engine = engine
             self.view = view
             watchOcclusion(of: view.window)
@@ -65,11 +83,37 @@ final class EngineHost: ObservableObject {
 
     private func clicked(x: Float, y: Float, scale: Float) {
         guard let onMapClick, let engine = markerEngine else { return }
-        if let uid = engine.markerAt(x: x, y: y, radius: Self.markerHitPoints * scale), !unclickable.contains(uid) {
+        if let uid = marker(x: x, y: y, scale: scale) {
             onMapClick(.item(uid))
-        } else if let g = engine.groundAt(x: x, y: y) {
-            onMapClick(.ground(CotPoint(lat: g.lat, lon: g.lon, hae: g.hae ?? CotPoint.unknown)))
+        } else if let g = ground(engine, x: x, y: y) {
+            onMapClick(.ground(g))
         }
+    }
+
+    /// The clickable marker under a surface pixel.
+    private func marker(x: Float, y: Float, scale: Float) -> String? {
+        guard let uid = markerEngine?.markerAt(x: x, y: y, radius: Self.markerHitPoints * scale),
+              !unclickable.contains(uid) else { return nil }
+        return uid
+    }
+
+    private func ground(_ engine: EngineBridge, x: Float, y: Float) -> CotPoint? {
+        engine.groundAt(x: x, y: y).map { CotPoint(lat: $0.lat, lon: $0.lon, hae: $0.hae ?? CotPoint.unknown) }
+    }
+
+    /// A press: whether it is on a marker that drags.
+    private func grab(x: Float, y: Float, scale: Float) -> Bool {
+        dragged = marker(x: x, y: y, scale: scale).flatMap { canDrag?($0) == true ? $0 : nil }
+        return dragged != nil
+    }
+
+    private func drag(x: Float, y: Float) {
+        guard let uid = dragged, let engine = markerEngine, let g = ground(engine, x: x, y: y) else { return }
+        onDrag?(uid, g)
+    }
+
+    private func menu(x: Float, y: Float, scale: Float) -> NSMenu? {
+        marker(x: x, y: y, scale: scale).flatMap { markerMenu?($0) }
     }
 
     /// The engine, once the map runs and takes markers (G3.7b); nil before.
