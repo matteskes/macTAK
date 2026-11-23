@@ -2930,4 +2930,4 @@ delete for a removed point.
 | `make test-app` | MacTAKCommsTests 203 pass, 1 skipped (Apple's geocoder, network) |
 | `make lint` | passes |
 | `make app` | builds; brew pins, bundle and licence checks pass |
-| Hand check (owner) | pending |
+| Hand check (owner, 2026-11-23) | passes: the right-click menu and each action (Delete asks first), the inspector's name, affiliation, colour and remarks, Move by click and by drag (the map still pans), R&B from a point, edits and deletes kept after a relaunch |
