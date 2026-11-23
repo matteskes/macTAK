@@ -1,7 +1,8 @@
 // CotMarkerStore.swift — the CoT markers this client hears that aren't
 // contacts (G3.7c): an atom ("a-…") event with no <contact endpoint>, which
 // ATAK 5.5's marker importers (MarkerImporter: "a-h", "a-f", "a-n", "a-u"
-// and the "Other" fallback) put on the map. A contact's SA belongs to the
+// and the "Other" fallback) put on the map, and a Spot Map point
+// (b-m-p-s-m, SpotMapImporter; G3.9b). A contact's SA belongs to the
 // ContactStore: when one arrives under a marker's uid, the marker goes, and
 // a uid the contacts hold is never a marker. Its own uid is dropped.
 //
@@ -23,7 +24,8 @@
 // stale and isn't removed by time; a delete task without <__forcedelete>
 // leaves it alone (the refresher skips a marker with no autoStaleDuration
 // before it reads forceStale). Once archived it stays so, as the meta
-// value stays when an update leaves the detail out.
+// value stays when an update leaves the detail out. A Spot Map point is one
+// of 5.5's special types too: never stale, archived or not.
 
 import Foundation
 import MacTAKCot
@@ -84,12 +86,12 @@ public final class CotMarkerStore: ObservableObject {
         if event.type == Self.deleteType {
             return delete(event, at: now)
         }
-        guard event.type.hasPrefix("a-") else { return false }
+        guard event.type.hasPrefix("a-") || Self.isSpotMap(event.type) else { return false }
         if ContactStore.isContactSA(event) || isContact(event.uid) {
             return remove(event.uid)
         }
         let archivedEvent = Self.archivedEvent(event, xml: xml, wasArchived: byUID[event.uid]?.archived == true)
-        let staleAt = archivedEvent != nil ? .distantFuture
+        let staleAt = archivedEvent != nil || Self.isSpotMap(event.type) ? .distantFuture
             : now.addingTimeInterval(max(0, event.stale.timeIntervalSince(event.start) * 1.5))
         byUID[event.uid] = CotMarker(
             uid: event.uid, traits: Self.traits(event), label: Self.label(event), point: event.point,
@@ -134,6 +136,9 @@ public final class CotMarkerStore: ObservableObject {
         publish()
         return true
     }
+
+    /// SpotMapImporter's types (prefix only).
+    static func isSpotMap(_ type: String) -> Bool { type.hasPrefix(PointKind.spotMapType) }
 
     /// What an archived marker is kept as: the event as it came when it
     /// carries <archive/>, else (an update to a marker already archived)

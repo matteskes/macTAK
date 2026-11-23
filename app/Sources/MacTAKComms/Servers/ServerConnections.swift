@@ -23,6 +23,9 @@
 // self position, as a line's ends follow them), and written once more by
 // `stop` before it clears the markers, which then stops the writing until
 // `start` takes them back again.
+//
+// The Point Dropper (G3.9b) places its points into the markers, archived, so
+// they are kept the same way.
 
 import Combine
 import Foundation
@@ -61,6 +64,8 @@ public final class ServerConnections: ObservableObject {
     public let chat: ChatService?
     /// Range and bearing lines, made here or heard (G3.8c/d).
     public let rangeBearing = RangeBearingLines()
+    /// The Point Dropper tool (G3.9b).
+    public let pointDropper: PointDropper
     /// Keeps the archived items across launches, when a store was given.
     private let archive: MapItemArchive?
     private var archiving = false
@@ -92,7 +97,13 @@ public final class ServerConnections: ObservableObject {
         self.mesh = mesh
         let contacts = ContactStore(selfUID: me.details.uid)
         self.contacts = contacts
-        markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
+        let markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
+        self.markers = markers
+        pointDropper = PointDropper(
+            markers: markers,
+            place: { uid in markers[uid]?.point ?? contacts[uid]?.point ?? (uid == me.details.uid ? me.location?.point : nil) },
+            deviceCallsign: { me.details.callsign },
+            legacyNaming: { ["1", "true"].contains(settings.string(forKey: PointNaming.legacyPointDropNamingKey)?.lowercased()) })
         // setAuthorInformation: production_time is a CoordinatedTime, milliseconds
         rangeBearing.author = {
             let ms = (Date().timeIntervalSince1970 * 1000).rounded(.down) / 1000

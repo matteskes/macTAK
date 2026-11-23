@@ -4,7 +4,8 @@
 // - what is kept: every item marked archive, as its CoT (StateSaverListener
 //   on ITEM_PERSIST); this client's own uid never is. Today that is the
 //   range and bearing lines (RangeBearingLines) and the received markers
-//   that came with <archive/> (CotMarkerStore); points join in G3.9b.
+//   that came with <archive/> (CotMarkerStore), and the points placed here
+//   (PointDropper, G3.9b), which are archived markers.
 // - when: 5.5 writes an item whenever it persists (made, changed, moved);
 //   here the owner calls `sync` with every archived item as it is now, and
 //   only what changed is written, as one transaction would batch it.

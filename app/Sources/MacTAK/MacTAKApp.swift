@@ -1,8 +1,8 @@
 // MacTAKApp.swift — the macTAK app (G3): a SwiftUI window around the
 // engine's map, beside a sidebar the milestones fill: the TAK servers
 // (G3.2d), the mesh (G3.3b), contacts (G3.4), chat (G3.5), coordinates
-// (G3.6: the Units settings and the self readout over the map), then
-// markers and layers.
+// (G3.6: the Units settings and the self readout over the map), markers
+// (G3.7), range and bearing (G3.8) and points (G3.9).
 //
 // `--settings-suite NAME` keeps this copy's settings (self details,
 // servers, mesh) in the defaults suite NAME instead of the app's own, its
@@ -35,6 +35,7 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.units)
                 .environmentObject(delegate.geocoders)
                 .environmentObject(delegate.rangeBearing)
+                .environmentObject(delegate.pointDropper)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -81,7 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let geocoders: GeocoderRegistry
     /// Range and bearing lines and their tool (G3.8c), shared over CoT (G3.8d).
     var rangeBearing: RangeBearingLines { connections.rangeBearing }
-    private var rangeBearingChanges: AnyCancellable?
+    /// The Point Dropper (G3.9b); one map tool runs at a time.
+    var pointDropper: PointDropper { connections.pointDropper }
+    private var mapChanges: [AnyCancellable] = []
     private let watcher: InterfaceWatcher
     /// The map's markers: the contacts and the self position (G3.7b).
     private let markers: MapMarkerSync
@@ -117,12 +120,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
                                 me: me, rangeBearing: connections.rangeBearing, units: units)
         super.init()
-        let rangeBearing = rangeBearing, markers = markers
-        host.onMapClick = { pick in rangeBearing.click(pick) }
-        // a click, a delete or the tool starting shows at once, not at the next tick
-        rangeBearingChanges = rangeBearing.objectWillChange.sink { _ in
+        let rangeBearing = rangeBearing, pointDropper = pointDropper, markers = markers
+        host.onMapClick = { pick in
+            if pointDropper.selected != nil { pointDropper.click(pick) } else { rangeBearing.click(pick) }
+        }
+        // a click, a delete, a placed point or a tool starting shows at once, not at the next tick
+        let refresh: (()) -> Void = { _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { markers.refresh() } }
         }
+        mapChanges = [
+            rangeBearing.objectWillChange.sink(receiveValue: refresh),
+            connections.markers.objectWillChange.sink(receiveValue: refresh),
+            // starting one map tool ends the other
+            rangeBearing.$tool.sink { if $0 != .off { pointDropper.end() } },
+            pointDropper.$selected.sink { if $0 != nil { rangeBearing.endTool() } },
+        ]
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -166,6 +178,7 @@ struct ContentView: View {
     @EnvironmentObject private var me: SelfReporter
     @EnvironmentObject private var units: UnitPreferences
     @EnvironmentObject private var rangeBearing: RangeBearingLines
+    @EnvironmentObject private var pointDropper: PointDropper
 
     var body: some View {
         NavigationSplitView {
@@ -180,8 +193,11 @@ struct ContentView: View {
         } detail: {
             ZStack(alignment: .bottom) {
                 MapView(host: host)
-                RangeBearingPrompt(lines: rangeBearing)
-                    .frame(maxHeight: .infinity, alignment: .top)
+                VStack {
+                    RangeBearingPrompt(lines: rangeBearing)
+                    PointDropperPrompt(dropper: pointDropper)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
                 status
                 if host.state == .running && units.selfCoordDisplay != .none {
                     SelfReadoutView(me: me, details: me.details, units: units, host: host)
@@ -189,6 +205,7 @@ struct ContentView: View {
                 }
             }
             .toolbar {
+                PointDropperToolButton(dropper: pointDropper, mapRunning: host.state == .running)
                 RangeBearingToolButton(lines: rangeBearing, mapRunning: host.state == .running)
             }
         }
