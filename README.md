@@ -11,7 +11,7 @@ G0–G2 are closed: the engine builds natively, talks CoT headless, and renders 
 | **G0** — engine builds on macOS arm64 | ✅ Closed 2026-11-02 — `libtakengine.dylib` and the kernel jars build natively ([G0 spike](dev/spike/g0/NOTES.md)) |
 | **G1** — headless engine + CoT round-trip | ✅ Closed 2026-11-04 — `atak-headless` opens GeoJSON/GPKG/KML/SHP layers, round-trips CoT with FreeTAKServer and OpenTAKServer over TCP and SSL through commoncommo, persists tracks, and connects from an ATAK data package |
 | **G2** — map renders in a native macOS window | ✅ Closed 2026-11-19 — ANGLE-on-Metal (built from source at a pinned commit) in the engine's GLES slot; real imagery, vector and terrain in a Swift/AppKit window with the JVM in-process and Apple Maps gestures; the exit run passes 21 of 21 with no on-screen miss ([G2 notes](dev/g2/NOTES.md)) |
-| **G3** — core client skeleton | 🔵 In progress — G3.0–G3.8 done, G3.9 (points) under way; see below ([G3 notes](dev/g3/NOTES.md)) |
+| **G3** — core client skeleton | 🔵 In progress — G3.0–G3.9 done, G3.10 (routes) next; see below ([G3 notes](dev/g3/NOTES.md)) |
 | **G4–G6** — data/import parity, first deployable client, the parity ladder to full ATAK-CIV | ⚪ Planned |
 
 ## Features in the app today (G3)
@@ -23,7 +23,8 @@ G0–G2 are closed: the engine builds natively, talks CoT headless, and renders 
 - **Coordinates** — MGRS, UTM, DD, DM, DMS and ADDR, altitude in MSL (the engine's EGM96 grid) or HAE; a Units pane in Settings and a self readout over the map; address lookup through Apple Maps or an imported Nominatim geocoder.
 - **Markers with MIL-STD-2525 symbols** — contacts, the self arrow and CoT markers drawn as ATAK 5.5 draws them, with missioncommand's 2525C (and 2525D/E) renderers.
 - **Range and bearing** — the R&B Line tool with 5.5's numbers (magnetic north from the WMMHR-2025 model), lines that follow the markers they join, shared and received as 5.5's `u-rb-a` CoT.
-- **Map items kept across launches** — as 5.5's StateSaver (G3.9a).
+- **Points** — drop 2525C's four affiliations and Spot Map dots with a click, named as 5.5 names them; a right-click menu and an inspector to rename, recolour, change affiliation, add remarks, look up the address, move (or drag), send and delete; sent as 5.5's marker CoT, field by field.
+- **Map items kept across launches** — points, R&B lines and archived markers, as 5.5's StateSaver keeps them.
 
 The CoT model, coordinates, range and bearing and the 2525 mapping are Swift ports held to the kernel's own answers by golden tests (`make test-cot-golden`, `test-coord-golden`, `test-rab-golden`, `test-symbol-golden`).
 
