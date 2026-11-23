@@ -2,7 +2,8 @@
 // engine's map, beside a sidebar the milestones fill: the TAK servers
 // (G3.2d), the mesh (G3.3b), contacts (G3.4), chat (G3.5), coordinates
 // (G3.6: the Units settings and the self readout over the map), markers
-// (G3.7), range and bearing (G3.8) and points (G3.9).
+// (G3.7), range and bearing (G3.8) and points (G3.9: dropped, then edited
+// from a right-click menu and an inspector beside the map).
 //
 // `--settings-suite NAME` keeps this copy's settings (self details,
 // servers, mesh) in the defaults suite NAME instead of the app's own, its
@@ -36,6 +37,8 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.geocoders)
                 .environmentObject(delegate.rangeBearing)
                 .environmentObject(delegate.pointDropper)
+                .environmentObject(delegate.pointEditor)
+                .environmentObject(delegate.pointActions)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -84,6 +87,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var rangeBearing: RangeBearingLines { connections.rangeBearing }
     /// The Point Dropper (G3.9b); one map tool runs at a time.
     var pointDropper: PointDropper { connections.pointDropper }
+    /// Editing points (G3.9c), and what its menu asks the windows for.
+    var pointEditor: PointEditor { connections.pointEditor }
+    let pointActions: PointActions
     private var mapChanges: [AnyCancellable] = []
     private let watcher: InterfaceWatcher
     /// The map's markers: the contacts and the self position (G3.7b).
@@ -119,11 +125,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watcher = InterfaceWatcher { mesh.refresh() }
         markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
                                 me: me, rangeBearing: connections.rangeBearing, units: units)
+        pointActions = PointActions(editor: connections.pointEditor, rangeBearing: connections.rangeBearing)
         super.init()
-        let rangeBearing = rangeBearing, pointDropper = pointDropper, markers = markers
+        let rangeBearing = rangeBearing, pointDropper = pointDropper, editor = pointEditor, markers = markers
+        let pointActions = pointActions
+        // a running tool takes the click; else a click on a marker shows it, on the map closes it
         host.onMapClick = { pick in
-            if pointDropper.selected != nil { pointDropper.click(pick) } else { rangeBearing.click(pick) }
+            if pointDropper.selected != nil {
+                if case .item(let uid) = pick, pointDropper.isPlacedHere(uid) { editor.inspect(uid) } else { pointDropper.click(pick) }
+            } else if rangeBearing.tool != .off {
+                rangeBearing.click(pick)
+            } else if editor.moving != nil {
+                editor.click(pick)
+            } else if case .item(let uid) = pick {
+                editor.inspect(uid)
+            } else {
+                editor.inspect(nil)
+            }
         }
+        // a marker drags to move while no tool runs
+        host.canDrag = { uid in
+            pointDropper.selected == nil && rangeBearing.tool == .off && editor.moving == nil && editor.canMove(uid)
+        }
+        host.onDrag = { uid, point in editor.move(uid, to: point) }
+        host.markerMenu = { uid in pointActions.menu(for: uid) }
         // a click, a delete, a placed point or a tool starting shows at once, not at the next tick
         let refresh: (()) -> Void = { _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { markers.refresh() } }
@@ -131,9 +156,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mapChanges = [
             rangeBearing.objectWillChange.sink(receiveValue: refresh),
             connections.markers.objectWillChange.sink(receiveValue: refresh),
-            // starting one map tool ends the other
-            rangeBearing.$tool.sink { if $0 != .off { pointDropper.end() } },
-            pointDropper.$selected.sink { if $0 != nil { rangeBearing.endTool() } },
+            // starting one map tool ends the others
+            rangeBearing.$tool.sink { if $0 != .off { pointDropper.end(); editor.endMove() } },
+            pointDropper.$selected.sink { if $0 != nil { rangeBearing.endTool(); editor.endMove() } },
+            editor.$moving.sink { if $0 != nil { rangeBearing.endTool(); pointDropper.end() } },
         ]
     }
 
@@ -179,6 +205,9 @@ struct ContentView: View {
     @EnvironmentObject private var units: UnitPreferences
     @EnvironmentObject private var rangeBearing: RangeBearingLines
     @EnvironmentObject private var pointDropper: PointDropper
+    @EnvironmentObject private var pointEditor: PointEditor
+    @EnvironmentObject private var pointActions: PointActions
+    @EnvironmentObject private var connections: ServerConnections
 
     var body: some View {
         NavigationSplitView {
@@ -196,6 +225,7 @@ struct ContentView: View {
                 VStack {
                     RangeBearingPrompt(lines: rangeBearing)
                     PointDropperPrompt(dropper: pointDropper)
+                    PointMovePrompt(editor: pointEditor)
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
                 status
@@ -204,10 +234,17 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
+            .inspector(isPresented: Binding(get: { pointEditor.inspected != nil },
+                                            set: { if !$0 { pointEditor.inspect(nil) } })) {
+                PointInspector(editor: pointEditor, markers: connections.markers, actions: pointActions)
+                    .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+            }
             .toolbar {
                 PointDropperToolButton(dropper: pointDropper, mapRunning: host.state == .running)
                 RangeBearingToolButton(lines: rangeBearing, mapRunning: host.state == .running)
             }
+            .modifier(PointActionPresenter(actions: pointActions, markers: connections.markers,
+                                           connections: connections))
         }
     }
 

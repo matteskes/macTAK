@@ -6,7 +6,7 @@
 // - a click on the map places the point there; a click on a marker, a
 //   contact or the self marker places it at that item's point (Tool.findPoint).
 //   A click on a point placed here since launch places nothing: 5.5 opens
-//   that point's radial menu instead (G3.9c).
+//   that point's radial menu instead, the app its inspector (G3.9c).
 // - the point is MarkerCreator's (PlacedPoint), named as PointNaming says:
 //   2525C's by genCallsign, made unique among the same-type points placed
 //   here since launch (5.5's User Objects groups; points it takes back at
@@ -53,6 +53,10 @@ public final class PointDropper: ObservableObject {
 
     public func end() { selected = nil }
 
+    /// Whether `uid` is a point placed here since launch (a click on one
+    /// shows it instead: G3.9c).
+    public func isPlacedHere(_ uid: String) -> Bool { placedHere.contains(uid) && markers[uid] != nil }
+
     /// The tool's prompt (5.5's location_prompt, for a mouse); nil while off.
     public var prompt: String? {
         selected.map { "Click the map to place \($0.name) points." }
@@ -67,7 +71,7 @@ public final class PointDropper: ObservableObject {
         case .ground(let p):
             point = p
         case .item(let uid):
-            if placedHere.contains(uid), markers[uid] != nil { return nil }
+            if isPlacedHere(uid) { return nil }
             guard let p = place(uid) else { return nil }
             point = p
         }

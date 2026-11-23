@@ -104,6 +104,10 @@ public final class RangeBearingLines: ObservableObject {
 
     public func beginTool() { tool = .pickingStart }
 
+    /// Starts the tool from a marker (5.5's pairing line from a point's
+    /// menu): the next click is the end.
+    public func beginTool(from uid: String) { tool = .pickingEnd(.item(uid)) }
+
     /// Cancel: nothing is made.
     public func endTool() { tool = .off }
 
