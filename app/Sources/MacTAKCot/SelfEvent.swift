@@ -62,19 +62,8 @@ public struct SelfEvent: Sendable, Equatable {
         }
     }
 
-    /// The self point's precisionlocation: GPS from a provider, USER when
-    /// placed (its altitude USER only when one was given).
-    public var precision: PrecisionLocation? {
-        guard let location else { return nil }
-        switch location.source {
-        case .provider:
-            return PrecisionLocation(geopointSource: PrecisionLocation.gps, altitudeSource: PrecisionLocation.gps)
-        case .manual:
-            let altitudeKnown = location.point.hae != CotPoint.unknown
-            return PrecisionLocation(geopointSource: PrecisionLocation.user,
-                                     altitudeSource: altitudeKnown ? PrecisionLocation.user : PrecisionLocation.unknown)
-        }
-    }
+    /// The self point's precisionlocation (Location.precision).
+    public var precision: PrecisionLocation? { location?.precision }
 
     /// The event, valid from now until now + stale.
     public func event(at now: Date = Date(), stale: TimeInterval) -> CotEvent {
@@ -100,5 +89,20 @@ public struct SelfEvent: Sendable, Equatable {
         detail.add(track.detail)
         return CotEvent(uid: uid, type: type, time: now, stale: now.addingTimeInterval(stale),
                         how: how, point: location?.point ?? .zero, detail: detail)
+    }
+}
+
+extension SelfEvent.Location {
+    /// Its precisionlocation: GPS from a provider, USER when placed (its
+    /// altitude USER only when one was given).
+    public var precision: PrecisionLocation {
+        switch source {
+        case .provider:
+            return PrecisionLocation(geopointSource: PrecisionLocation.gps, altitudeSource: PrecisionLocation.gps)
+        case .manual:
+            let altitudeKnown = point.hae != CotPoint.unknown
+            return PrecisionLocation(geopointSource: PrecisionLocation.user,
+                                     altitudeSource: altitudeKnown ? PrecisionLocation.user : PrecisionLocation.unknown)
+        }
     }
 }

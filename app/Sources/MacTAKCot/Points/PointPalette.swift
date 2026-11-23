@@ -8,12 +8,7 @@
 //   the colour as <color>, iconsetpath COT_MAPPING_SPOTMAP/b-m-p-s-m/<colour
 //   as a signed int>, named "<abbreviation> n" by getCount.
 //
-// A placed point is what PlacePointTool.MarkerCreator makes: archive on,
-// readiness true, how h-g-i-g-o, a random uid, the colour white unless the
-// palette says, a CoT stale a year on (CotEventFactory's default). Its CoT
-// here carries the details 5.5's handlers read back for the icon and the
-// name (contact, status, archive, color, usericon); G3.9d writes it field
-// by field as 5.5 sends it.
+// What a placed point's CoT says is PlacedPoint's.
 //
 // Not here (5.5 has them): the 2525C subtypes and type picker, Spot Map's
 // label-only drop and custom colours, the Mission Specific, user icon set
@@ -27,6 +22,11 @@ public enum PointKind: Hashable, Sendable, Identifiable {
     case spotMap(SpotMapColor)
 
     public var id: String { iconsetPath }
+
+    /// Every entry of both palettes.
+    public static var all: [PointKind] {
+        Affiliation.allCases.map { .affiliation($0) } + SpotMapColor.allCases.map { .spotMap($0) }
+    }
 
     public enum Affiliation: String, CaseIterable, Sendable {
         case hostile = "a-h", friendly = "a-f", neutral = "a-n", unknown = "a-u"
@@ -121,33 +121,5 @@ public enum PointKind: Hashable, Sendable, Identifiable {
         case .affiliation(let a): a.name
         case .spotMap(let c): c.name
         }
-    }
-}
-
-/// A point placed here, as its CoT.
-public enum PlacedPoint {
-    /// MarkerCreator's how.
-    public static let how = "h-g-i-g-o"
-    /// CotEventFactory's stale for a marker: a year.
-    public static let staleSeconds: TimeInterval = 31_536_000
-
-    public static func event(uid: String, kind: PointKind, callsign: String, point: CotPoint,
-                             at now: Date) -> CotEvent {
-        var detail = CotDetail("detail")
-        var status = CotDetail("status")
-        status["readiness"] = "true"
-        detail.add(status)
-        detail.add(CotDetail("archive"))
-        var color = CotDetail("color")
-        color["argb"] = String(Int32(bitPattern: kind.argb))
-        detail.add(color)
-        var usericon = CotDetail("usericon")
-        usericon["iconsetpath"] = kind.iconsetPath
-        detail.add(usericon)
-        var contact = CotDetail("contact")
-        contact["callsign"] = callsign
-        detail.add(contact)
-        return CotEvent(uid: uid, type: kind.type, time: now, stale: now.addingTimeInterval(staleSeconds),
-                        how: how, point: point, detail: detail)
     }
 }

@@ -17,11 +17,11 @@ final class PointEditorTests: XCTestCase {
     private let there = CotPoint(lat: 37.8044, lon: -122.4194)
 
     private func setUp(_ markers: CotMarkerStore) -> (PointDropper, PointEditor) {
-        let place: (String) -> CotPoint? = { markers[$0]?.point }
-        let dropper = PointDropper(markers: markers, place: place, deviceCallsign: { "VIPER" },
+        let locate = locating(markers)
+        let dropper = PointDropper(markers: markers, locate: locate, deviceCallsign: { "VIPER" },
                                    newID: { "pt-\(markers.markers.count + 1)" },
                                    timeZone: TimeZone(identifier: "UTC")!)
-        return (dropper, PointEditor(markers: markers, place: place))
+        return (dropper, PointEditor(markers: markers, locate: locate))
     }
 
     private func received(_ uid: String, how: String = "h-g-i-g-o", callsign: String, at p: CotPoint,
@@ -100,7 +100,7 @@ final class PointEditorTests: XCTestCase {
         let markers = CotMarkerStore(selfUID: "me") { _ in false }
         let (editor, uid) = try placed(markers, .spotMap(.red))
         XCTAssertTrue(editor.canMove(uid))
-        XCTAssertTrue(editor.move(uid, to: there))
+        XCTAssertTrue(editor.move(uid, to: .ground(there)))
         XCTAssertEqual(markers[uid]?.point, there)
     }
 
@@ -112,7 +112,7 @@ final class PointEditorTests: XCTestCase {
         XCTAssertFalse(editor.canMove("sensor"))
         editor.beginMove("sensor")
         XCTAssertNil(editor.moving)
-        XCTAssertFalse(editor.move("sensor", to: there))
+        XCTAssertFalse(editor.move("sensor", to: .ground(there)))
         editor.setAffiliation("sensor", .friendly)
         XCTAssertEqual(markers["sensor"]?.type, "a-h-G")
         editor.rename("sensor", to: "Gate")
@@ -194,7 +194,7 @@ final class PointEditorTests: XCTestCase {
             gone = try XCTUnwrap(c.pointDropper.click(.ground(there))).uid
             c.pointEditor.rename(kept, to: "Rally")
             c.pointEditor.setRemarks(kept, "north gate")
-            c.pointEditor.move(kept, to: there)
+            c.pointEditor.move(kept, to: .ground(there))
             c.pointEditor.delete(gone)
             c.syncArchive()
         }

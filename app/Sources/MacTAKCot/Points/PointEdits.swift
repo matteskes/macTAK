@@ -10,7 +10,12 @@
 // - the colour is <color argb>, from 5.5's ColorPalette, for a 2525C
 //   point and a Spot Map dot alike;
 // - the remarks are <remarks>' text, trimmed;
-// - a move sets the point; a machine-generated marker isn't movable.
+// - the address is <__address> (AddressDetailHandler), looked up for where
+//   the point is;
+// - a move sets the point and where it came from (<precisionlocation>, as
+//   the marker's GeoPointMetaData is replaced); a machine-generated marker
+//   isn't movable. An address looked up for somewhere else is no longer
+//   sent (AddressDetailHandler's locationHash), so it goes.
 
 import Foundation
 
@@ -53,10 +58,7 @@ extension CotEvent {
     /// <remarks>: the text trimmed; empty removes it.
     public mutating func setRemarks(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            detail?.children.removeAll { $0.name == "remarks" }
-            return
-        }
+        guard !text.isEmpty else { return removeDetails("remarks") }
         var remarks = detail("remarks") ?? CotDetail("remarks")
         remarks.innerText = text
         replaceDetail(remarks)
@@ -79,10 +81,26 @@ extension CotEvent {
         type = a.rawValue + type.dropFirst(3)
     }
 
-    /// The point, for a marker that moves.
-    public mutating func move(to p: CotPoint) {
-        guard isMovable, p.isValid else { return }
-        point = p
+    /// <__address>, looked up for where the point is now.
+    public mutating func setAddress(_ address: AddressDetail) {
+        replaceDetail(address.detail)
+    }
+
+    /// The <__address>, if any.
+    public var address: AddressDetail? { AddressDetail(detail(AddressDetail.elementName)) }
+
+    /// The point and its <precisionlocation>, for a marker that moves.
+    public mutating func move(to place: SourcedPoint) {
+        guard isMovable, place.point.isValid else { return }
+        if !AddressDetail.sameLocation(point, place.point) { removeDetails(AddressDetail.elementName) }
+        point = place.point
+        removeDetails(PrecisionLocation.elementName)
+        if let precision = place.precision?.detail { replaceDetail(precision) }
+    }
+
+    /// Takes out every detail named `name`.
+    mutating func removeDetails(_ name: String) {
+        detail?.children.removeAll { $0.name == name }
     }
 
     /// Puts `child` in place of the detail with its name, or adds it.

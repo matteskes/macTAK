@@ -2931,3 +2931,82 @@ delete for a removed point.
 | `make lint` | passes |
 | `make app` | builds; brew pins, bundle and licence checks pass |
 | Hand check (owner, 2026-11-23) | passes: the right-click menu and each action (Delete asks first), the inspector's name, affiliation, colour and remarks, Move by click and by drag (the map still pans), R&B from a point, edits and deletes kept after a relaunch |
+
+### G3.9d — points as 5.5's CoT (2026-11-23, branch `g3/point-cot`)
+
+#### What 5.5 does (read at the pin)
+
+- **A placed point is written by `CotEventFactory.createDefaultEvent`**
+  (a `Marker` exports only KML, KMZ, packages, GPX and OGR itself): the
+  point, type, uid, the `how` meta, access from `AccessUtils` (Undefined),
+  version 2.0, stale a year on; `<status readiness>` and `<archive/>`; then
+  `CotDetailManager.addDetails`: the kernel's handlers (nothing for a point:
+  no group, no `milsym` on a palette drop), then the app's, held in a
+  `HashSet` and so run in no set order, then the marker handlers (`uid` only
+  for self) and `OpaqueHandler`.
+- **What those handlers write for a dropped point:** `<contact callsign>`;
+  `<precisionlocation>` from the point's `GeoPointMetaData`
+  (`inverseWithElevation`: altsrc is `ElevationManager`'s result type, or
+  `???`; no geopointsrc); the parent `<link uid type relation="p-p"
+  production_time parent_callsign>` and `<creator uid type callsign time>`
+  from `setAuthorInformation` (the device type, not the self type);
+  `<archive/>` a second time (`ArchiveDetailHandler`); `<usericon
+  iconsetpath>`; `<color argb>`. `<remarks>` once it has remarks,
+  `<__address>` while it is where its address was looked up.
+- **`MarkerImporter` on an update:** point, type and `how` replace the
+  marker's; each detail present goes through its handler; a detail left out
+  leaves the metadata it set, so it is kept. `setPoint` replaces the
+  `GeoPointMetaData`, so the old precisionlocation goes; an address stays
+  in the metadata but isn't shown or sent once the point has left its
+  `locationHash`. Late events are only dropped with a developer option
+  (`mapitemimporter.ignore-late-cot`, off).
+
+#### What changed
+
+- **`PlacedPoint`** (MacTAKCot, now its own file) writes a dropped point
+  field by field: `status`, `archive`, `contact`, `precisionlocation`, the
+  parent `link`, `archive` again, `creator`, `usericon`, `color` (the
+  handlers in their registration order). **`SourcedPoint`** is a place with
+  its precisionlocation; `.clicked` is a map click's (altsrc from the
+  elevation data, else `???`).
+- **`Author`** (MacTAKCot): `setAuthorInformation`'s values with
+  `creatorDetail` and `parentLink`; it replaces `RangeBearingEvent.Creator`.
+- **`PointEdits`**: a move sets the point's precisionlocation too and drops
+  an `<__address>` it has left (`AddressDetail.sameLocation`, the
+  `locationHash`); `setAddress` and `address`.
+- **`CotMarkerStore`**: an update keeps the details it leaves out, but not
+  the old precisionlocation, nor an address for a place the marker has left
+  (MarkerImporter); an archived marker is kept with them.
+- **One `locate`** in `ServerConnections` for the Point Dropper and Move: the
+  ground with its altitude source (`ServerConnections.elevation`, set by the
+  app from the engine: `EngineBridge.altitudeSource`, `MapPick.altitudeSource`
+  in Java), a marker, contact or the self marker with its own
+  precisionlocation. Dropped points carry this client as author.
+- **The inspector's Address** has Look Up: the chosen geocoder's address for
+  the point, kept only if the point hasn't moved meanwhile (5.5's address
+  pane does this for a point with no text).
+
+#### Not as 5.5
+
+- **A received marker is sent on as it was heard**, with the edits made
+  here. 5.5 rebuilds its CoT from the metadata its handlers kept, so it drops
+  what they don't keep (a `<remarks>` source or time, say) and adds what
+  they write (a parent link to the first author).
+- **Cleared remarks remove `<remarks>`**; 5.5 keeps an empty remarks meta and
+  sends `<remarks/>`.
+- **A moved point loses its address for good**; 5.5 keeps it and sends it
+  again if the point goes back within 1.1 m.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-cot-golden` | the kernel writes all 20 fixtures as expected, 2 new: a hostile point with no elevation data, and a Spot Map dot on DTED1 with remarks and an address (`cot-golden/point`) |
+| `GoldenTests.testPlacedPointsAreWhatTheKernelBuilds` | the Swift leg holds `PlacedPoint` and the edits to the same files, and the palette to each spec's type and colour |
+| A/B: `parent_callsign` changed in an expected file | both legs fail (the kernel's: "FAIL: 1 of 20") |
+| `PointCommsTests` (1, new) | two `ServerConnections` on `fake-cot-server.py`: A's dropped point reaches B with its name, type, icon, colour, altitude, remarks, address, altsrc and author, archived, every detail A sent; moved and sent again, B moves it, keeps its remarks and drops the address. Passed 4 of 4 |
+| `PointCotTests` (5, new) | an update keeps what it leaves out (not the old precisionlocation, nor an address it has left); an archived one is kept so; a move says where its place came from and drops an address it has left; an address is kept only for where the point is; a dropped point's altsrc, author and parent link, and the self marker's precision when dropped on it |
+| A/B: no update rule, a move keeping the address | the store and comms tests fail |
+| `make test-app` | MacTAKCotTests 73, MacTAKCoreTests 14, MacTAKCommsTests 209 pass (1 skipped, Apple's geocoder, network) |
+| `make lint` | passes |
+| `make app`, `make test-app-bundle` | builds; brew pins, bundle and licence checks pass; the bundle's JVM finds `altitudeSource` |

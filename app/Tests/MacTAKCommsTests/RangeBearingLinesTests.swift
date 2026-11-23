@@ -120,7 +120,7 @@ final class RangeBearingReceiveTests: XCTestCase {
 
     private func xml(uid: String = "remote-1", title: String = "R&B 7", startUID: String? = nil,
                      endUID: String? = nil, color: Int32 = RangeBearingEvent.red, archive: Bool = false,
-                     creator: RangeBearingEvent.Creator? = nil) -> String {
+                     creator: Author? = nil) -> String {
         RangeBearingEvent.make(uid: uid, title: title, start: here, end: there, startUID: startUID, endUID: endUID,
                                style: .atak, color: color, archive: archive, creator: creator, now: now).xml()
     }
@@ -191,7 +191,7 @@ final class RangeBearingReceiveTests: XCTestCase {
 
     func testColourWeightAndCreatorComeWithIt() {
         let rab = RangeBearingLines()
-        let creator = RangeBearingEvent.Creator(uid: "ANDROID-1", type: "a-f-G-U-C", callsign: "VIPER",
+        let creator = Author(uid: "ANDROID-1", type: "a-f-G-U-C", callsign: "VIPER",
                                                 time: Date(timeIntervalSince1970: 1_794_999_000))
         let event = RangeBearingEvent.make(uid: "remote-2", title: "R&B 9", start: here, end: there, startUID: nil,
                                            endUID: nil, style: .atak, color: -16_776_961, weight: 5,
@@ -204,7 +204,7 @@ final class RangeBearingReceiveTests: XCTestCase {
 
     func testALineMadeHereHasThisClientAsCreator() {
         let rab = RangeBearingLines()
-        let me = RangeBearingEvent.Creator(uid: "MACTAK-1", type: "a-f-G-U-C", callsign: "ME", time: now)
+        let me = Author(uid: "MACTAK-1", type: "a-f-G-U-C", callsign: "ME", time: now)
         rab.author = { me }
         XCTAssertEqual(rab.add(start: .point(here), end: .point(there)).creator, me)
     }
@@ -243,8 +243,8 @@ final class RangeBearingReceiveTests: XCTestCase {
 
     func testARestoredLineIsThisClientsWhenItMadeIt() {
         let rab = RangeBearingLines()
-        let mine = RangeBearingEvent.Creator(uid: "me", type: "a-f-G-U-C", callsign: "ME", time: now)
-        let theirs = RangeBearingEvent.Creator(uid: "peer", type: "a-f-G-U-C", callsign: "PEER", time: now)
+        let mine = Author(uid: "me", type: "a-f-G-U-C", callsign: "ME", time: now)
+        let theirs = Author(uid: "peer", type: "a-f-G-U-C", callsign: "PEER", time: now)
         rab.restore(xml(uid: "a", archive: true, creator: mine), isMarker: { _ in false }, selfUID: "me")
         rab.restore(xml(uid: "b", archive: true, creator: theirs), isMarker: { _ in false }, selfUID: "me")
         XCTAssertEqual(rab["a"]?.received, false)

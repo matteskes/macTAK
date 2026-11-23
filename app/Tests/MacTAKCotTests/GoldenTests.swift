@@ -1,6 +1,7 @@
 // GoldenTests.swift — the Swift leg of the golden test (G3.4): a peer's
-// event parsed and written back, and each self spec's self-SA, equal the
-// expected files the kernel's leg also checks (Golden.swift).
+// event parsed and written back, each self spec's self-SA, and each point
+// spec's placed point (G3.9d) equal the expected files the kernel's leg also
+// checks (Golden.swift).
 
 import Foundation
 import XCTest
@@ -23,6 +24,20 @@ final class GoldenTests: XCTestCase {
             let event = try Golden.selfEvent(Golden.properties(spec))
             XCTAssertTrue(event.isValid, spec.lastPathComponent)
             try check(event.xml(), against: Golden.expectedURL("self", spec))
+        }
+    }
+
+    func testPlacedPointsAreWhatTheKernelBuilds() throws {
+        let specs = try Golden.inputs("point", "properties")
+        XCTAssertFalse(specs.isEmpty, "no point fixtures in \(Golden.root.path)")
+        for spec in specs {
+            let properties = try Golden.properties(spec)
+            let (kind, event) = try Golden.placedPoint(properties)
+            XCTAssertEqual(kind.type, properties["type"], "the palette's type: \(spec.lastPathComponent)")
+            XCTAssertEqual(String(Int32(bitPattern: kind.argb)), properties["color"],
+                           "the palette's colour: \(spec.lastPathComponent)")
+            XCTAssertTrue(event.isValid, spec.lastPathComponent)
+            try check(event.xml(), against: Golden.expectedURL("point", spec))
         }
     }
 

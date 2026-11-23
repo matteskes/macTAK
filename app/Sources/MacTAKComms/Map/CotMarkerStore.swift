@@ -6,8 +6,12 @@
 // ContactStore: when one arrives under a marker's uid, the marker goes, and
 // a uid the contacts hold is never a marker. Its own uid is dropped.
 //
-// What each event says replaces what the last one said, detail by detail
-// (5.5 keeps a detail an update leaves out; senders resend them all).
+// An update is read as MarkerImporter reads one (G3.9d): its point, type
+// and how replace the marker's, and each detail it carries replaces the
+// one of that name; a detail it leaves out is kept, as 5.5's handlers
+// keep the metadata they set, except <precisionlocation>, which goes with
+// the old point (setPoint), and an <__address> looked up for a place the
+// marker has left (AddressDetailHandler's locationHash).
 //
 // Stale and removal follow 5.5 (MarkerImporter, CotMarkerRefresher), timed
 // by this Mac's clock from when the event arrived, as contacts are:
@@ -96,15 +100,17 @@ public final class CotMarkerStore: ObservableObject {
     /// task for one is ignored. Returns whether the markers changed.
     @discardableResult
     public func receive(_ xml: String, at now: Date = Date()) -> Bool {
-        guard let event = try? CotEvent.parse(xml, now: now), event.uid != selfUID else { return false }
-        if event.type == Self.deleteType {
-            return delete(event, at: now)
+        guard let heard = try? CotEvent.parse(xml, now: now), heard.uid != selfUID else { return false }
+        if heard.type == Self.deleteType {
+            return delete(heard, at: now)
         }
-        guard event.type.hasPrefix("a-") || Self.isSpotMap(event.type) else { return false }
-        if ContactStore.isContactSA(event) || isContact(event.uid) {
-            return remove(event.uid)
+        guard heard.type.hasPrefix("a-") || Self.isSpotMap(heard.type) else { return false }
+        if ContactStore.isContactSA(heard) || isContact(heard.uid) {
+            return remove(heard.uid)
         }
-        let archivedEvent = Self.archivedEvent(event, xml: xml, wasArchived: byUID[event.uid]?.archived == true)
+        let event = Self.update(byUID[heard.uid]?.event, with: heard)
+        let archivedEvent = Self.archivedEvent(event, xml: event == heard ? xml : event.xml(),
+                                               wasArchived: byUID[event.uid]?.archived == true)
         let staleAt = archivedEvent != nil || Self.isSpotMap(event.type) ? .distantFuture
             : now.addingTimeInterval(max(0, event.stale.timeIntervalSince(event.start) * 1.5))
         byUID[event.uid] = Self.marker(event, archivedEvent: archivedEvent, lastHeard: now, staleAt: staleAt)
@@ -173,6 +179,24 @@ public final class CotMarkerStore: ObservableObject {
         byUID[uid] = marker
         publish()
         return true
+    }
+
+    /// MarkerImporter's update: `heard`, with the details it leaves out
+    /// kept from `old` (see the header).
+    static func update(_ old: CotEvent?, with heard: CotEvent) -> CotEvent {
+        guard let old, let oldDetails = old.detail?.children, !oldDetails.isEmpty else { return heard }
+        var detail = heard.detail ?? CotDetail("detail")
+        let carried = Set(detail.children.map(\.name))
+        let moved = !AddressDetail.sameLocation(old.point, heard.point)
+        let kept = oldDetails.filter { d in
+            !carried.contains(d.name) && d.name != PrecisionLocation.elementName
+                && !(moved && d.name == AddressDetail.elementName)
+        }
+        guard !kept.isEmpty else { return heard }
+        for d in kept { detail.add(d) }
+        var event = heard
+        event.detail = detail
+        return event
     }
 
     /// SpotMapImporter's types (prefix only).

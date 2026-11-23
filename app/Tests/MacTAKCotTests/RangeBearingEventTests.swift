@@ -11,7 +11,7 @@ final class RangeBearingEventTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_795_000_000)
     private let start = CotPoint(lat: 37.7749, lon: -122.4194, hae: 10)
     private let end = CotPoint(lat: 37.8044, lon: -122.2712, hae: 50)
-    private let creator = RangeBearingEvent.Creator(uid: "ANDROID-1", type: "a-f-G-U-C", callsign: "VIPER",
+    private let creator = Author(uid: "ANDROID-1", type: "a-f-G-U-C", callsign: "VIPER",
                                                     time: Date(timeIntervalSince1970: 1_794_999_000))
 
     private func values(_ e: CotEvent) -> [String] {

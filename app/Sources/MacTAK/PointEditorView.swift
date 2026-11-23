@@ -5,7 +5,8 @@
 //   Details, Send…, Range & Bearing from Here, Move, Delete…;
 // - a click on one opens the inspector beside the map: name, affiliation,
 //   colour (5.5's ColorPalette, when it has an icon set path), remarks,
-//   where it is, and the menu's actions as buttons;
+//   where it is with its address (Look Up asks the chosen geocoder, as 5.5's
+//   address pane does for a point), and the menu's actions as buttons;
 // - Move shows a prompt at the top of the map; the next click places it.
 //   A marker also drags to move;
 // - Delete asks first, as 5.5's RemoveBroadcastReceiver does.
@@ -80,8 +81,11 @@ struct PointInspector: View {
     @ObservedObject var markers: CotMarkerStore
     @ObservedObject var actions: PointActions
     @EnvironmentObject private var units: UnitPreferences
+    @EnvironmentObject private var geocoders: GeocoderRegistry
     @State private var name = ""
     @State private var remarks = ""
+    @State private var lookingUp = false
+    @State private var addressProblem: String?
 
     var body: some View {
         if let uid = editor.inspected, let m = markers[uid] {
@@ -121,7 +125,14 @@ struct PointInspector: View {
             Section("Location") {
                 Text(units.position(m.point)).font(.body.monospacedDigit()).textSelection(.enabled)
                 LabeledContent("Altitude", value: units.altitude(m.point))
-                if let address = m.address { LabeledContent("Address", value: address.text) }
+                LabeledContent("Address") {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if let address = m.address { Text(address.text).textSelection(.enabled) }
+                        Button(lookingUp ? "Looking Up…" : "Look Up") { lookUpAddress(uid, at: m.point) }
+                            .disabled(lookingUp)
+                    }
+                }
+                if let addressProblem { Text(addressProblem).font(.caption).foregroundStyle(.secondary) }
             }
             Section("Remarks") {
                 TextEditor(text: $remarks)
@@ -141,6 +152,27 @@ struct PointInspector: View {
     private func load(_ m: CotMarker) {
         name = m.label ?? ""
         remarks = m.remarks ?? ""
+        addressProblem = nil
+    }
+
+    /// The address where the point is, kept if it hasn't moved meanwhile.
+    private func lookUpAddress(_ uid: String, at p: CotPoint) {
+        let geocoder = geocoders.selected
+        lookingUp = true
+        addressProblem = nil
+        Task {
+            do {
+                if let found = try await geocoder.address(lat: p.lat, lon: p.lon) {
+                    let address = AddressDetail(text: found.address, geocoder: geocoder.title, time: Cot.time(Date()))
+                    editor.setAddress(uid, address, lookedUpAt: p)
+                } else {
+                    addressProblem = "\(geocoder.title) has no address here."
+                }
+            } catch {
+                addressProblem = "\(geocoder.title): \(error)"
+            }
+            lookingUp = false
+        }
     }
 }
 

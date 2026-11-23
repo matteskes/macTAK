@@ -87,6 +87,9 @@ public final class EngineBridge {
     /** The ground under a pixel (upper-left origin): {lat, lon, hae (NaN if unknown)}, or null. */
     public static double[] groundAt(float x, float y) { return WindowApp.groundAt(x, y); }
 
+    /** Where the altitude at (lat, lon) comes from: "DTED1", say, or "???" without elevation data. */
+    public static String altitudeSource(double lat, double lon) { return WindowApp.altitudeSource(lat, lon); }
+
     /** The marker within {@code radius} pixels of a pixel (upper-left origin), or null. */
     public static String markerAt(float x, float y, float radius) { return WindowApp.markerAt(x, y, radius); }
 

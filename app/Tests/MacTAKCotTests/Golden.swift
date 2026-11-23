@@ -90,4 +90,26 @@ enum Golden {
         let time = Cot.parseTime(spec["time"]!)!
         return s.event(at: time, stale: number("staleSeconds")!)
     }
+
+    /// A point spec: the palette entry its iconsetpath names, placed where
+    /// and by whom the spec says, then given its remarks and address as the
+    /// inspector gives them.
+    static func placedPoint(_ spec: [String: String]) throws -> (PointKind, CotEvent) {
+        guard let kind = PointKind.all.first(where: { $0.iconsetPath == spec["iconsetpath"] }) else {
+            throw CotParseError.notAnEvent(root: spec["iconsetpath"] ?? "")
+        }
+        func number(_ key: String) -> Double? { spec[key].flatMap(Double.init) }
+        let time = Cot.parseTime(spec["time"]!)!
+        let point = CotPoint(lat: number("lat")!, lon: number("lon")!, hae: number("hae") ?? CotPoint.unknown)
+        let author = Author(uid: spec["author.uid"]!, type: spec["author.type"]!, callsign: spec["author.callsign"]!,
+                            time: time)
+        var event = PlacedPoint.event(uid: spec["uid"]!, kind: kind, callsign: spec["callsign"]!,
+                                      at: .clicked(point, altitudeSource: spec["altsrc"]), author: author, now: time)
+        if let remarks = spec["remarks"] { event.setRemarks(remarks) }
+        if let text = spec["address.text"] {
+            event.setAddress(AddressDetail(text: text, geocoder: spec["address.geocoder"] ?? "unknown",
+                                           time: spec["address.time"]))
+        }
+        return (kind, event)
+    }
 }

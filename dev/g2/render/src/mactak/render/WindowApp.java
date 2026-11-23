@@ -250,6 +250,11 @@ public final class WindowApp {
         return sm == null ? null : MapPick.ground(sm, x, y);
     }
 
+    /** Where the altitude at a place comes from (G3.9d). Any thread. */
+    public static String altitudeSource(double lat, double lon) {
+        return MapPick.altitudeSource(lat, lon);
+    }
+
     /** The marker within {@code radius} pixels of a surface pixel, nearest first; null for none (G3.8b). */
     public static String markerAt(float x, float y, float radius) {
         final com.atakmap.map.MapSceneModel sm = scene;

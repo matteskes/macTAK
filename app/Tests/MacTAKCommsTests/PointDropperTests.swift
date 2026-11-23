@@ -21,7 +21,7 @@ final class PointDropperTests: XCTestCase {
     private func dropper(_ markers: CotMarkerStore, places: [String: CotPoint] = [:], legacy: Bool = false)
         -> PointDropper {
         var n = 0
-        return PointDropper(markers: markers, place: { markers[$0]?.point ?? places[$0] },
+        return PointDropper(markers: markers, locate: locating(markers, places: places),
                             deviceCallsign: { "VIPER" }, legacyNaming: { legacy },
                             newID: { n += 1; return "pt-\(n)" }, timeZone: utc)
     }
