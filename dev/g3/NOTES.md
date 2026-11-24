@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.8 done — 2026-11-20): servers, identity, mesh, SA, GeoChat, coordinates, markers, and range and bearing
+## State (G3.9 done — 2026-11-23): servers, identity, mesh, SA, GeoChat, coordinates, markers, range and bearing, and points
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -125,11 +125,38 @@ G3.8 added range and bearing as ATAK 5.5 has it:
   (G3.8d, #236). Sending to chosen contacts awaits a hand check (#237).
 
 Not in G3.8: range circles, the bullseye, Bloodhound, the dynamic R&B
-tool, measuring along a path, keeping lines across launches, and a menu
-on the line itself.
+tool, measuring along a path, and a menu on the line itself. Lines are
+kept across launches since G3.9a.
 
-Next: G3.9, points kept across launches (plan approved 2026-11-20,
-§G3.9); then G3.10 routes and G3.11 the Overlay Manager.
+G3.9 added points as ATAK 5.5 has them:
+
+- **Map items are kept across launches**, as 5.5's StateSaver keeps
+  them: archived items' CoT in SQLite, taken back through the importers
+  at launch, deferred ones retried last. R&B lines and dropped points are
+  kept, and so is a received marker that came with `<archive/>`
+  (G3.9a, #242).
+- **The Point Dropper** drops 2525C's four affiliations and Spot Map's
+  eleven colours with a click, named as 5.5's `genCallsign` and
+  `getCount` name them. The owner checked it by hand (G3.9b, #246).
+- **Editing**: a right-click menu stands in for 5.5's radial (Details,
+  Send…, Range & Bearing from Here, Move, Delete…), and an inspector
+  beside the map for its details drop-down (name, affiliation, colour,
+  remarks, location). A point drags to move. The owner checked it by hand
+  (G3.9c, #247).
+- **Points are 5.5's CoT.** A dropped point is written field by field as
+  `createDefaultEvent` and the detail handlers write it, with where its
+  altitude came from, its author and, once looked up in the inspector,
+  its `<__address>`; the kernel's golden test holds it. Others' points
+  update as `MarkerImporter` updates them, and a CI leg sends a point
+  between two clients (G3.9d, #248).
+
+Not in G3.9: the Mission Specific, user icon set and vehicle palettes,
+2525D/E points and the type picker, coordinate entry for placing or
+moving, the radial's other tools, menus for contacts and the self
+marker, and sending a delete for a removed point.
+
+Next: G3.10, routes (§G3.9, plan approved 2026-11-20); then G3.11 the
+Overlay Manager.
 
 ## The plan (approved 2026-11-13)
 
@@ -1958,11 +1985,11 @@ and the map pans to it.
   position.
 - 5.5 imports geocoder files from data packages too. Here they are
   imported in Settings.
-- No `<__address>` is sent yet. 5.5 sends it with point markers, which
-  macTAK can't make until G3.9 (points). The self SA carries none, as
-  in 5.5.
-- A received marker's address is kept, but there is no marker details
-  view to show it yet.
+- No `<__address>` was sent here. 5.5 sends it with point markers; since
+  G3.9d a point's address is looked up in its inspector and sent with it.
+  The self SA carries none, as in 5.5.
+- A received marker's address is kept; since G3.9c the point inspector
+  shows it.
 
 ## G3.7 — markers with 2525 symbols (plan approved 2026-11-18)
 
@@ -2728,10 +2755,10 @@ Manager**. Each closes with its own docs PR.
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/map-items-store` | 5.5's StateSaver: archived items' CoT XML in SQLite, one store per settings suite (as the chat history), reloaded through the importers at launch with deferred ones retried; R&B lines join it | store and reload tests; an R&B line tied to a marker survives a relaunch |
-| **b** | `g3/point-dropper` | dropping a point with a click: 2525C's four affiliations and Spot Map's colours, named by `genCallsign` | the naming rules in tests against 5.5's; hand check (owner) |
-| **c** | `g3/point-edit` | a right-click menu in place of the radial (move, delete, send, R&B from here); a click opens an inspector beside the map (name, type, colour, remarks); drag to move | hand check (owner) |
-| **d** | `g3/point-cot` | points as 5.5's marker CoT, field by field, with `__address` (waiting since G3.6c); others' points through `MarkerImporter`'s rules | golden test against the kernel; **a dropped point reaches the other client** (CI comms leg) |
+| **a** (#242) | `g3/map-items-store` | 5.5's StateSaver: archived items' CoT XML in SQLite, one store per settings suite (as the chat history), reloaded through the importers at launch with deferred ones retried; R&B lines join it | store and reload tests; an R&B line tied to a marker survives a relaunch |
+| **b** (#246) | `g3/point-dropper` | dropping a point with a click: 2525C's four affiliations and Spot Map's colours, named by `genCallsign` | the naming rules in tests against 5.5's; hand check (owner) |
+| **c** (#247) | `g3/point-edit` | a right-click menu in place of the radial (move, delete, send, R&B from here); a click opens an inspector beside the map (name, type, colour, remarks); drag to move | hand check (owner) |
+| **d** (#248) | `g3/point-cot` | points as 5.5's marker CoT, field by field, with `__address` (waiting since G3.6c); others' points through `MarkerImporter`'s rules | golden test against the kernel; **a dropped point reaches the other client** (CI comms leg) |
 
 Then a docs PR, as after each milestone.
 

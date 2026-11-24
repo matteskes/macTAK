@@ -9,6 +9,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.9d, points as ATAK 5.5's CoT, which completes G3.9, points
+  (`dev/g3/NOTES.md` §G3.9d):
+  - A dropped point is sent as 5.5 sends it, field by field: where its
+    altitude came from, who placed it, its remarks and its address.
+  - Look Up in a point's inspector finds its address with the chosen
+    geocoder.
+  - Others' points update as 5.5's `MarkerImporter` updates them: what an
+    update leaves out is kept.
+  - The kernel's golden test holds the point's CoT, and a CI leg sends a
+    point between two clients.
+
+- G3.9c, editing points (`dev/g3/NOTES.md` §G3.9c): a right-click menu on
+  a CoT marker stands in for 5.5's radial (Details, Send…, Range &
+  Bearing from Here, Move, Delete…), and a click opens an inspector
+  beside the map to change its name, affiliation, colour and remarks. A
+  point drags to move. Edits are kept across launches.
+
+- G3.9b, the Point Dropper (`dev/g3/NOTES.md` §G3.9b): drop 2525C's four
+  affiliations and Spot Map's eleven colours with a click, named as 5.5's
+  `genCallsign` and `getCount` name them.
+
+- G3.9a, map items kept across launches (`dev/g3/NOTES.md` §G3.9a): as
+  5.5's StateSaver, archived items are kept as CoT in SQLite and taken
+  back at launch: R&B lines, dropped points, and received markers that
+  came with `<archive/>`.
+
 - G3.8d, sharing range and bearing lines, which completes G3.8, range
   and bearing (`dev/g3/NOTES.md` §G3.8d):
   Send… sends a line as ATAK 5.5's `u-rb-a` CoT to chosen contacts or
