@@ -13,6 +13,7 @@
 #include <cstring>
 #include <exception>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <mutex>
 #include <string>
@@ -377,12 +378,17 @@ extern "C" int mactak_commo_send(mactak_commo *shim, const char *const *uids, si
         return -1;
     }
     try {
-        std::vector<ContactUID *> owned;
+        // Owned here so a throw (a push_back, sendCoT) can't leak them;
+        // ContactList and commo only borrow them.
+        std::vector<std::unique_ptr<ContactUID>> owned;
+        std::vector<const ContactUID *> contacts;
         owned.reserve(count);
-        for (size_t i = 0; i < count; i++)
-            owned.push_back(new ContactUID(reinterpret_cast<const uint8_t *>(uids[i]),
-                                           std::strlen(uids[i])));
-        std::vector<const ContactUID *> contacts(owned.begin(), owned.end());
+        contacts.reserve(count);
+        for (size_t i = 0; i < count; i++) {
+            owned.push_back(std::make_unique<ContactUID>(reinterpret_cast<const uint8_t *>(uids[i]),
+                                                         std::strlen(uids[i])));
+            contacts.push_back(owned.back().get());
+        }
         ContactList list(count, contacts.data());
         CommoResult rc = shim->commo->sendCoT(&list, xml);
         std::string gone;
@@ -390,8 +396,6 @@ extern "C" int mactak_commo_send(mactak_commo *shim, const char *const *uids, si
             for (size_t i = 0; i < list.nContacts; i++)
                 gone += (i ? ", " : "") + uidString(list.contacts[i]);
         }
-        for (ContactUID *c : owned)
-            delete c;
         if (rc == COMMO_SUCCESS)
             return 0;
         setError(err, errlen, std::string("sendCoT: ") + resultName(rc)
