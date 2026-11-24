@@ -73,10 +73,7 @@ public final class ServerConnections: ObservableObject {
     /// the app gives it the engine's altitude source.
     public let mapLocator: MapLocator
     /// Keeps the archived items across launches, when a store was given.
-    private let archive: MapItemArchive?
-    private var archiving = false
-    private var archiveSyncPending = false
-    private var archiveWatch: [AnyCancellable] = []
+    private var mapItems: MapItemSync?
     private var detailsWatch: AnyCancellable?
     private let settings: SettingsStore
     private let identities: IdentityStore
@@ -122,7 +119,6 @@ public final class ServerConnections: ObservableObject {
         rangeBearing.author = { author(Date()) }
         let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
         self.chat = chat
-        archive = mapItemStore.map { MapItemArchive(store: $0, selfUID: me.details.uid) }
         // A new team or role changes which rooms take messages.
         detailsWatch = me.details.objectWillChange.sink { _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { chat?.refresh() } }
@@ -133,16 +129,21 @@ public final class ServerConnections: ObservableObject {
             servers = decoded
         }
         for server in servers { status[server.id] = .off }
-        restoreMapItems()
-        let changes: [ObservableObjectPublisher] = [markers.objectWillChange, rangeBearing.objectWillChange,
-                                                    contacts.objectWillChange, me.objectWillChange]
-        archiveWatch = changes.map { $0.sink { [weak self] _ in self?.scheduleArchiveSync() } }
+        // a line's ends follow its markers, contacts and this client
+        mapItems = mapItemStore.map { store in
+            MapItemSync(archive: MapItemArchive(store: store, selfUID: me.details.uid),
+                        importer: { [unowned self] xml in importKept(xml) },
+                        items: { [unowned self] in archivedItems() },
+                        changes: [markers.objectWillChange, rangeBearing.objectWillChange,
+                                  contacts.objectWillChange, me.objectWillChange])
+        }
+        mapItems?.restore()
     }
 
     /// Starts commo, connects every enabled server, and starts the mesh.
     public func start() throws {
         guard client == nil else { return }
-        if !archiving { restoreMapItems() }
+        if mapItems?.isKeeping == false { mapItems?.restore() }
         let client = try CommoClient(uid: uid, callsign: callsign)
         self.client = client
         listener = Task { [weak self] in
@@ -162,8 +163,7 @@ public final class ServerConnections: ObservableObject {
     }
 
     public func stop() async {
-        syncArchive()
-        archiving = false
+        mapItems?.suspend()
         await mesh?.detach()
         me.detach()
         chat?.detach()
@@ -327,15 +327,8 @@ public final class ServerConnections: ObservableObject {
                       at now: Date = Date()) throws {
         guard let client else { throw ShareError.notRunning }
         guard let line = rangeBearing[id] else { throw ShareError.noLine }
-        guard let start = place(line.start), let end = place(line.end) else { throw ShareError.noPlace }
-        let event = RangeBearingEvent.make(uid: line.id, title: line.title, start: start, end: end,
-                                           startUID: namedUID(line.start), endUID: namedUID(line.end), style: style,
-                                           color: line.color, weight: line.weight, archive: line.archived,
-                                           creator: line.creator, now: now)
-        let xml = event.xml()
-        Task {
-            if let contacts { try? await client.send(xml, to: contacts) } else { try? await client.broadcast(xml, via: .any) }
-        }
+        guard let event = lineEvent(line) else { throw ShareError.noPlace }
+        send(event(style, now).xml(), to: contacts, on: client)
     }
 
     public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace, noMarker }
@@ -348,9 +341,32 @@ public final class ServerConnections: ObservableObject {
     public func share(marker uid: String, to contacts: [String]? = nil, at now: Date = Date()) throws {
         guard let client else { throw ShareError.notRunning }
         guard let marker = markers[uid] else { throw ShareError.noMarker }
-        let xml = Self.outgoing(marker.event, at: now).xml()
+        send(Self.outgoing(marker.event, at: now).xml(), to: contacts, on: client)
+    }
+
+    /// Sends `xml` to `contacts`, or to everyone when it is nil. A send
+    /// commo refuses is logged: the share has already returned.
+    private func send(_ xml: String, to contacts: [String]?, on client: CommoClient) {
         Task {
-            if let contacts { try? await client.send(xml, to: contacts) } else { try? await client.broadcast(xml, via: .any) }
+            do {
+                if let contacts { try await client.send(xml, to: contacts) } else { try await client.broadcast(xml, via: .any) }
+            } catch {
+                NSLog("macTAK: a share wasn't sent: \(error)")
+            }
+        }
+    }
+
+    /// The line as 5.5 writes it (u-rb-a, RangeBearingEvent), its ends
+    /// where they are now, for a style and a time; nil when an end has no
+    /// place here (its contact just went).
+    private func lineEvent(_ line: RangeBearingLine) -> ((RangeBearing.Style, Date) -> CotEvent)? {
+        guard let start = place(line.start), let end = place(line.end) else { return nil }
+        let startUID = namedUID(line.start), endUID = namedUID(line.end)
+        return { style, now in
+            RangeBearingEvent.make(uid: line.id, title: line.title, start: start, end: end,
+                                   startUID: startUID, endUID: endUID, style: style,
+                                   color: line.color, weight: line.weight, archive: line.archived,
+                                   creator: line.creator, now: now)
         }
     }
 
@@ -386,38 +402,19 @@ public final class ServerConnections: ObservableObject {
 
     // MARK: - kept map items
 
-    /// Takes the kept items back through the importers (the markers, then
-    /// the lines, which defer while a marker they name isn't in yet).
-    private func restoreMapItems() {
-        guard let archive else { return }
-        archive.restore({ xml in
-            let marker = markers.receive(xml)
-            switch rangeBearing.restore(xml, isMarker: isMarker, selfUID: uid) {
-            case .restored: return .taken
-            case .deferred: return .deferred
-            case .ignored: return marker ? .taken : .ignored
-            }
-        }, current: archivedItems)
-        archiving = true
-    }
-
-    private func scheduleArchiveSync() {
-        guard archiving, !archiveSyncPending else { return }
-        archiveSyncPending = true
-        // after the change: objectWillChange fires before it lands
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                self?.archiveSyncPending = false
-                self?.syncArchive()
-            }
+    /// Takes one kept item back through the importers: the markers, then
+    /// the lines, which defer while a marker they name isn't in yet.
+    private func importKept(_ xml: String) -> MapItemArchive.Import {
+        let marker = markers.receive(xml)
+        switch rangeBearing.restore(xml, isMarker: isMarker, selfUID: uid) {
+        case .restored: return .taken
+        case .deferred: return .deferred
+        case .ignored: return marker ? .taken : .ignored
         }
     }
 
     /// Writes the archived items that changed now.
-    func syncArchive() {
-        guard archiving, let archive else { return }
-        archive.sync(archivedItems())
-    }
+    func syncArchive() { mapItems?.sync() }
 
     /// The archived markers as they came, and the archived lines as 5.5
     /// stores them (u-rb-a, units as 5.5's defaults: a line keeps none of
@@ -428,18 +425,11 @@ public final class ServerConnections: ObservableObject {
             m.archivedEvent.map { xml in ArchivedItem(uid: m.uid, type: m.type, signature: xml) { xml } }
         }
         let lines = rangeBearing.lines.filter(\.archived).map { line -> ArchivedItem in
-            guard let start = place(line.start), let end = place(line.end) else {
+            guard let event = lineEvent(line) else {
                 return ArchivedItem(uid: line.id, type: RangeBearingEvent.type, signature: nil) { "" }
             }
-            let startUID = namedUID(line.start), endUID = namedUID(line.end)
-            func event(_ now: Date) -> String {
-                RangeBearingEvent.make(uid: line.id, title: line.title, start: start, end: end,
-                                       startUID: startUID, endUID: endUID, style: .atak,
-                                       color: line.color, weight: line.weight, archive: true,
-                                       creator: line.creator, now: now).xml()
-            }
             return ArchivedItem(uid: line.id, type: RangeBearingEvent.type,
-                                signature: event(Date(timeIntervalSince1970: 0))) { event(Date()) }
+                                signature: event(.atak, Date(timeIntervalSince1970: 0)).xml()) { event(.atak, Date()).xml() }
         }
         return kept + lines
     }

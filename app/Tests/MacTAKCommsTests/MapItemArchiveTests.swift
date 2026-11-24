@@ -143,6 +143,9 @@ final class MapItemArchiveTests: XCTestCase {
         await c.stop()
         XCTAssertNil(c.markers["hostile-1"], "stop clears the map")
         XCTAssertEqual(try MapItemStore(url: url).items().map(\.uid), ["hostile-1"], "written before it cleared")
+        // a sync the clearing scheduled runs on the main queue's next turn
+        await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
+        XCTAssertEqual(try MapItemStore(url: url).items().map(\.uid), ["hostile-1"], "the clearing isn't written")
         let again = try launch()
         XCTAssertNotNil(again.markers["hostile-1"])
     }
