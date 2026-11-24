@@ -191,6 +191,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `ServerConnections` tidied before routes (G3 clean-code audit,
+  finding e):
+  - Sharing and archiving an R&B line build its event in one place.
+  - Sending a point or a line goes through one helper, which logs a
+    send commo refuses instead of dropping the error silently.
+  - When the archived map items are written (the coalesced sync, and
+    suspending it at stop) moved into its own type, `MapItemSync`.
+  - `MapItemArchiveTests` now also checks that clearing the map at stop
+    is never written to the store. No test caught that before.
+
+  Behaviour is unchanged.
 - G2 is closed (2026-11-19). The exit run's gate now counts on-screen
   misses, two shown frames more than 1.5 refreshes apart, from each
   drawable's `presentedTime` through an ANGLE patch. It used to count
