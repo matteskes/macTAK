@@ -62,7 +62,8 @@ final class RangeBearingCommsTests: XCTestCase {
 
         // tied to a marker both have
         let tied = a.rangeBearing.add(start: .point(here), end: .item(markerUID))
-        try await share(tied.id, from: a, until: "B has the tied line") { b.rangeBearing[tied.id] != nil }
+        try await resend("B has the tied line", { try a.share(line: tied.id, style: .atak) },
+                         until: { b.rangeBearing[tied.id] != nil })
         let got = try XCTUnwrap(b.rangeBearing[tied.id])
         XCTAssertEqual(got.title, "R&B 1")
         XCTAssertEqual(got.end, .item(markerUID), "the end follows B's own copy of the marker")
@@ -77,7 +78,8 @@ final class RangeBearingCommsTests: XCTestCase {
 
         // between two places: B puts the far end range along bearing
         let free = a.rangeBearing.add(start: .point(here), end: .point(there))
-        try await share(free.id, from: a, until: "B has the second line") { b.rangeBearing[free.id] != nil }
+        try await resend("B has the second line", { try a.share(line: free.id, style: .atak) },
+                         until: { b.rangeBearing[free.id] != nil })
         let second = try XCTUnwrap(b.rangeBearing[free.id])
         XCTAssertEqual(second.title, "R&B 2")
         guard case .point(let end) = second.end else { return XCTFail("the end is a place: \(second.end)") }
@@ -102,27 +104,6 @@ final class RangeBearingCommsTests: XCTestCase {
         let line = c.rangeBearing.add(start: .point(here), end: .item("nobody"))
         XCTAssertThrowsError(try c.share(line: line.id, style: .atak)) {
             XCTAssertEqual($0 as? ServerConnections.ShareError, .noPlace)
-        }
-    }
-
-    /// Send the line once a second until `arrived`: commo reports a
-    /// connection up before it can send on it (CommoClient's notes), so the
-    /// first send can go nowhere. A resend replaces the line, as 5.5's does.
-    private func share(_ id: String, from c: ServerConnections, until what: String,
-                       _ arrived: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(15)
-        while !arrived() {
-            guard Date() < deadline else { throw CommoError(description: "timed out waiting for \(what)") }
-            try c.share(line: id, style: .atak)
-            for _ in 0..<10 where !arrived() { try await Task.sleep(for: .milliseconds(100)) }
-        }
-    }
-
-    private func waitFor(_ what: String, timeout: TimeInterval = 15, _ done: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done() {
-            guard Date() < deadline else { throw CommoError(description: "timed out waiting for \(what)") }
-            try await Task.sleep(for: .milliseconds(100))
         }
     }
 }

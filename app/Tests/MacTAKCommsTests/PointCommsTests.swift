@@ -61,7 +61,7 @@ final class PointCommsTests: XCTestCase {
         let address = AddressDetail(text: "Palace of Fine Arts", geocoder: "Apple Maps", time: Cot.time(Date()))
         XCTAssertTrue(a.pointEditor.setAddress(placed.uid, address, lookedUpAt: here))
 
-        try await share(placed.uid, from: a, until: "B has the point") { b.markers[placed.uid] != nil }
+        try await resend("B has the point", { try a.share(marker: placed.uid) }, until: { b.markers[placed.uid] != nil })
         let got = try XCTUnwrap(b.markers[placed.uid])
         let sent = try XCTUnwrap(a.markers[placed.uid])
         XCTAssertEqual(got.label, "R 1")
@@ -83,33 +83,12 @@ final class PointCommsTests: XCTestCase {
 
         // moved and sent again: B moves it, keeps its remarks, drops the address
         XCTAssertTrue(a.pointEditor.move(placed.uid, to: .ground(there)))
-        try await share(placed.uid, from: a, until: "B has it moved") {
+        try await resend("B has it moved", { try a.share(marker: placed.uid) }, until: {
             b.markers[placed.uid].map { abs($0.point.lat - there.lat) < 1e-7 } == true
-        }
+        })
         let moved = try XCTUnwrap(b.markers[placed.uid])
         XCTAssertEqual(moved.remarks, "north gate")
         XCTAssertNil(moved.address)
         XCTAssertEqual(moved.event.detail("precisionlocation")?["altsrc"], "???", "no altitude at the new place")
-    }
-
-    /// Send the point once a second until `arrived`: commo reports a
-    /// connection up before it can send on it (CommoClient's notes), so the
-    /// first send can go nowhere. A resend replaces the point.
-    private func share(_ uid: String, from c: ServerConnections, until what: String,
-                       _ arrived: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(15)
-        while !arrived() {
-            guard Date() < deadline else { throw CommoError(description: "timed out waiting for \(what)") }
-            try c.share(marker: uid)
-            for _ in 0..<10 where !arrived() { try await Task.sleep(for: .milliseconds(100)) }
-        }
-    }
-
-    private func waitFor(_ what: String, timeout: TimeInterval = 15, _ done: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done() {
-            guard Date() < deadline else { throw CommoError(description: "timed out waiting for \(what)") }
-            try await Task.sleep(for: .milliseconds(100))
-        }
     }
 }

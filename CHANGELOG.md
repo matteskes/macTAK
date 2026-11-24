@@ -202,6 +202,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     is never written to the store. No test caught that before.
 
   Behaviour is unchanged.
+- The comms tests share one bounded wait, `waitFor`, and one
+  resend-until-it-arrives, `resend`, in
+  `app/Tests/MacTAKCommsTests/Support/Waiting.swift`. Before, seven
+  test files each had their own copy, and routes' comms leg would have
+  added another (G3 clean-code audit, finding h).
 - G2 is closed (2026-11-19). The exit run's gate now counts on-screen
   misses, two shown frames more than 1.5 refreshes apart, from each
   drawable's `presentedTime` through an ANGLE patch. It used to count

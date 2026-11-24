@@ -83,13 +83,6 @@ final class ServerConnectionsTests: XCTestCase {
         await connections.stop()
     }
 
-    private func waitFor(_ what: String, timeout: TimeInterval = 15, _ done: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done() {
-            guard Date() < deadline else { throw CommoError(description: "timed out waiting for \(what)") }
-            try await Task.sleep(for: .milliseconds(100))
-        }
-    }
 }
 
 extension SelfReporter {

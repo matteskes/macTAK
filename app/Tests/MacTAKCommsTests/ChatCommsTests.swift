@@ -68,13 +68,10 @@ final class ChatCommsTests: XCTestCase {
         /// Waits until `check` holds for this client, its rooms refreshed.
         func waitFor(_ what: String, timeout: TimeInterval = 15,
                      _ check: @MainActor () -> Bool) async throws {
-            let deadline = Date().addingTimeInterval(timeout)
-            while Date() < deadline {
+            try await MacTAKCommsTests.waitFor(what, timeout: timeout) {
                 chat.refresh()
-                if check() { return }
-                try await Task.sleep(for: .milliseconds(100))
+                return check()
             }
-            throw CommoError(description: "timed out after \(Int(timeout)) s waiting for: \(what)")
         }
 
         func close() async {

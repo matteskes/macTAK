@@ -157,12 +157,4 @@ final class MapItemArchiveTests: XCTestCase {
         try await waitFor("the line is written") { (try? MapItemStore(url: self.url).items().count) == 1 }
         XCTAssertNotNil(c)
     }
-
-    private func waitFor(_ what: String, timeout: TimeInterval = 5, _ done: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done() {
-            guard Date() < deadline else { throw CommoError(description: "timed out waiting for \(what)") }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-    }
 }
