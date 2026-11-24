@@ -84,8 +84,10 @@ struct PointInspector: View {
     @EnvironmentObject private var geocoders: GeocoderRegistry
     @State private var name = ""
     @State private var remarks = ""
-    @State private var lookingUp = false
-    @State private var addressProblem: String?
+    /// The point whose address is being looked up: a lookup belongs to
+    /// its point, not to whichever the inspector shows when it ends.
+    @State private var lookingUp: String?
+    @State private var addressProblem: (uid: String, text: String)?
 
     var body: some View {
         if let uid = editor.inspected, let m = markers[uid] {
@@ -128,11 +130,13 @@ struct PointInspector: View {
                 LabeledContent("Address") {
                     VStack(alignment: .trailing, spacing: 4) {
                         if let address = m.address { Text(address.text).textSelection(.enabled) }
-                        Button(lookingUp ? "Looking Up…" : "Look Up") { lookUpAddress(uid, at: m.point) }
-                            .disabled(lookingUp)
+                        Button(lookingUp == uid ? "Looking Up…" : "Look Up") { lookUpAddress(uid, at: m.point) }
+                            .disabled(lookingUp == uid)
                     }
                 }
-                if let addressProblem { Text(addressProblem).font(.caption).foregroundStyle(.secondary) }
+                if let problem = addressProblem, problem.uid == uid {
+                    Text(problem.text).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Remarks") {
                 TextEditor(text: $remarks)
@@ -158,7 +162,7 @@ struct PointInspector: View {
     /// The address where the point is, kept if it hasn't moved meanwhile.
     private func lookUpAddress(_ uid: String, at p: CotPoint) {
         let geocoder = geocoders.selected
-        lookingUp = true
+        lookingUp = uid
         addressProblem = nil
         Task {
             do {
@@ -166,12 +170,12 @@ struct PointInspector: View {
                     let address = AddressDetail(text: found.address, geocoder: geocoder.title, time: Cot.time(Date()))
                     editor.setAddress(uid, address, lookedUpAt: p)
                 } else {
-                    addressProblem = "\(geocoder.title) has no address here."
+                    addressProblem = (uid, "\(geocoder.title) has no address here.")
                 }
             } catch {
-                addressProblem = "\(geocoder.title): \(error)"
+                addressProblem = (uid, "\(geocoder.title): \(error)")
             }
-            lookingUp = false
+            if lookingUp == uid { lookingUp = nil }
         }
     }
 }

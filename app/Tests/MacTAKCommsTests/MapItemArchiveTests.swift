@@ -76,6 +76,24 @@ final class MapItemArchiveTests: XCTestCase {
         XCTAssertEqual(c.rangeBearing["line-1"]?.end, .item("late-1"), "tied on the deferred try")
     }
 
+    func testRestoreCountsOnlyWhatWasTaken() throws {
+        let store = try MapItemStore(url: url)
+        for uid in ["taken-1", "late-1", "never-1"] {
+            try store.save(StoredMapItem(uid: uid, type: "a-h-G", event: uid, lastUpdateTime: Date()))
+        }
+        var tries: [String: Int] = [:]
+        let taken = MapItemArchive(store: store, selfUID: "me").restore({ event in
+            tries[event, default: 0] += 1
+            switch event {
+            case "taken-1": return .taken
+            case "late-1": return tries[event] == 1 ? .deferred : .taken
+            default: return .deferred
+            }
+        }, current: { [] })
+        XCTAssertEqual(taken, 2, "one deferred twice isn't taken")
+        XCTAssertEqual(tries, ["taken-1": 1, "late-1": 2, "never-1": 2])
+    }
+
     func testWhatIsNotArchivedIsNotKept() throws {
         do {
             let c = try launch()

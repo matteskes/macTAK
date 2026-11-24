@@ -102,7 +102,7 @@ final class PointCotTests: XCTestCase {
         let c = ServerConnections(settings: settings, identities: keychain.store,
                                   me: .testing(settings, uid: "MACTAK-ME"))
         c.me.details.callsign = "VIPER"
-        c.elevation.source = { _ in "DTED1" }
+        c.mapLocator.altitudeSource = { _ in "DTED1" }
         c.pointDropper.begin(.affiliation(.hostile))
         let high = CotPoint(lat: here.lat, lon: here.lon, hae: 15)
         let onTerrain = try XCTUnwrap(c.pointDropper.click(.ground(high), at: t))

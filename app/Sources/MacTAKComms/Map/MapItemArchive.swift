@@ -65,7 +65,7 @@ public final class MapItemArchive {
             case .ignored: break
             }
         }
-        for event in deferred where importer(event) != .ignored { taken += 1 }
+        for event in deferred where importer(event) == .taken { taken += 1 }
         written = Dictionary(current().compactMap { item in item.signature.map { (item.uid, $0) } },
                              uniquingKeysWith: { a, _ in a })
         return taken

@@ -70,7 +70,7 @@ extension CotEvent {
     /// <color argb>, as Android's signed int.
     public mutating func setColor(_ argb: UInt32) {
         var color = detail("color") ?? CotDetail("color")
-        color["argb"] = String(Int32(bitPattern: argb))
+        color["argb"] = String(argb.androidColor)
         color["value"] = nil
         replaceDetail(color)
     }

@@ -3006,7 +3006,7 @@ delete for a removed point.
   (MarkerImporter); an archived marker is kept with them.
 - **One `locate`** in `ServerConnections` for the Point Dropper and Move: the
   ground with its altitude source (`ServerConnections.elevation`, set by the
-  app from the engine: `EngineBridge.altitudeSource`, `MapPick.altitudeSource`
+  app from the engine; `MapLocator` since the gate audit: `EngineBridge.altitudeSource`, `MapPick.altitudeSource`
   in Java), a marker, contact or the self marker with its own
   precisionlocation. Dropped points carry this client as author.
 - **The inspector's Address** has Look Up: the chosen geocoder's address for
@@ -3037,3 +3037,54 @@ delete for a removed point.
 | `make test-app` | MacTAKCotTests 73, MacTAKCoreTests 14, MacTAKCommsTests 209 pass (1 skipped, Apple's geocoder, network) |
 | `make lint` | passes |
 | `make app`, `make test-app-bundle` | builds; brew pins, bundle and licence checks pass; the bundle's JVM finds `altitudeSource` |
+
+### G3.9's gate audit (2026-11-23, branch `g3/points-cleanup`)
+
+The owner asked for a clean-code audit of the G3.9 gate. Both gates hold
+and run in CI's shell-compile job (`make test-app`): an R&B line survives
+a relaunch (`MapItemArchiveTests`; placed points in `PointDropperTests`
+and `PointEditorTests`), and a dropped point reaches the other client
+(`PointCommsTests`). Each was A/B'd in its PR.
+
+#### What the audit found, and what changed
+
+- **The kernel leg of the point golden is not an independent oracle for
+  the detail list.** `CotOracle.pointEvent` writes the details in Java in
+  the handlers' order, as `PlacedPoint` does: 5.5's handlers
+  (`CotDetailManager`) need a `MapView`, so they don't run headless. The
+  leg holds the envelope, serialisation, escaping and time format to the
+  kernel's `CotEvent`; which details a point carries is one reading of
+  5.5, written twice. `selfEvent` has the same limit. Recorded here; no
+  code change.
+- **`locate` had no test of its own.** It was a closure in
+  `ServerConnections.init`, and the tools' tests use a stand-in
+  (`Locating.swift`), so a marker's own precisionlocation and a contact's
+  were never checked. It is now **`MapLocator`** (MacTAKComms,
+  `ServerConnections.mapLocator`), which also holds the engine's
+  `altitudeSource` in place of the `ElevationSource` box.
+  `MapLocatorTests` (6) cover every branch; A/B: a marker or contact
+  located without its precision fails two of them.
+- **The inspector's Look Up belonged to the view, not the point.**
+  Switching points during a lookup left the new point's button on
+  "Looking Up…" and showed the old lookup's failure under it (the address
+  itself was safe: `setAddress` checks the uid and the place). The lookup
+  and its problem now carry the uid they are for. A SwiftUI view, so no
+  test; owner hand check.
+- **`MapItemArchive.restore` counted an event deferred twice as taken.**
+  It now counts only `.taken`, as its doc says
+  (`testRestoreCountsOnlyWhatWasTaken`, which fails with the old count, 3
+  for 2). The app doesn't use the count.
+- **The colour as Android's signed int** was spelled out at three sites;
+  it is `UInt32.androidColor` (MacTAKCot).
+- **`PointEditor.click`** located the click twice; it now locates once.
+
+Not changed: `hae == CotPoint.unknown` is spelled out at six sites, five
+of them older than G3.9; it goes with the G3 clean-code audit.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-app` | MacTAKCommsTests 216 pass (1 skipped, Apple's geocoder, network); 7 new |
+| A/B: restore's old count; a marker and a contact without precision | 3 tests fail |
+| `make lint` | passes |

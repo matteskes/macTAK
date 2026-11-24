@@ -68,7 +68,7 @@ public enum PlacedPoint {
         usericon["iconsetpath"] = kind.iconsetPath
         detail.add(usericon)
         var color = CotDetail("color")
-        color["argb"] = String(Int32(bitPattern: kind.argb))
+        color["argb"] = String(kind.argb.androidColor)
         detail.add(color)
         return CotEvent(uid: uid, type: kind.type, time: now, stale: now.addingTimeInterval(staleSeconds),
                         how: how, point: place.point, detail: detail)
