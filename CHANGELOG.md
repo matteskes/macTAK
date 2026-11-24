@@ -218,6 +218,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Sending CoT to chosen contacts (a chat message, a shared line or
+  point) no longer leaks their uids if commo throws partway: the commo shim's `mactak_commo_send` now owns
+  them with `std::unique_ptr` (G3 clean-code audit, finding a).
 - In a point's inspector, a Look Up still running when you switch points
   no longer leaves the new point's button on "Looking Up…" or shows the
   old lookup's failure under it (G3.9's gate audit).
