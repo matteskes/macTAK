@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.9's gate audit (`dev/g3/NOTES.md` §G3.9's gate audit): where a
+  click is (`MapLocator`) is now one type with its own tests; the
+  restore count is right; NOTES says what the point golden's kernel leg
+  does and doesn't check.
+
 - G3.9d, points as ATAK 5.5's CoT, which completes G3.9, points
   (`dev/g3/NOTES.md` §G3.9d):
   - A dropped point is sent as 5.5 sends it, field by field: where its
@@ -202,6 +207,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- In a point's inspector, a Look Up still running when you switch points
+  no longer leaves the new point's button on "Looking Up…" or shows the
+  old lookup's failure under it (G3.9's gate audit).
 - The map no longer fails to start (exit 3) when its window is wider
   or taller than 2048 points on a Retina display: EGL started on a
   pbuffer the window's size, and ANGLE caps pbuffers at 4096 pixels

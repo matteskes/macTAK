@@ -104,7 +104,7 @@ public enum PointKind: Hashable, Sendable, Identifiable {
     public var iconsetPath: String {
         switch self {
         case .affiliation(let a): "\(Self.mapping2525C)/\(a.rawValue)/\(type)"
-        case .spotMap(let c): "\(Self.mappingSpotMap)/\(Self.spotMapType)/\(Int32(bitPattern: c.argb))"
+        case .spotMap(let c): "\(Self.mappingSpotMap)/\(Self.spotMapType)/\(c.argb.androidColor)"
         }
     }
 
@@ -122,4 +122,10 @@ public enum PointKind: Hashable, Sendable, Identifiable {
         case .spotMap(let c): c.name
         }
     }
+}
+
+extension UInt32 {
+    /// An ARGB colour as Android's Color int, signed: how <color argb> and
+    /// an icon set path carry it.
+    var androidColor: Int32 { Int32(bitPattern: self) }
 }

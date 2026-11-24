@@ -63,16 +63,20 @@ public final class PointEditor: ObservableObject {
     /// the item clicked, and the move ends. Returns whether it moved.
     @discardableResult
     public func click(_ pick: MapPick) -> Bool {
-        guard let uid = moving, pick != .item(uid), locate(pick) != nil else { return false }
+        guard let uid = moving, pick != .item(uid), let place = locate(pick) else { return false }
         moving = nil
-        return move(uid, to: pick)
+        return move(uid, to: place)
     }
 
     /// Moves `uid` to where `pick` is (a drag, or a move's click).
     @discardableResult
     public func move(_ uid: String, to pick: MapPick) -> Bool {
         guard let place = locate(pick) else { return false }
-        return markers.edit(uid) { $0.move(to: place) }
+        return move(uid, to: place)
+    }
+
+    private func move(_ uid: String, to place: SourcedPoint) -> Bool {
+        markers.edit(uid) { $0.move(to: place) }
     }
 
     // ---- the inspector's fields --------------------------------------------

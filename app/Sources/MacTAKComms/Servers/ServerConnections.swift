@@ -69,9 +69,9 @@ public final class ServerConnections: ObservableObject {
     public let pointDropper: PointDropper
     /// Editing the CoT markers (G3.9c).
     public let pointEditor: PointEditor
-    /// Where the map's elevation data comes from, which a clicked place's
-    /// altitude is sent with (G3.9d); the app sets it from the engine.
-    public let elevation: ElevationSource
+    /// Where a click on the map is, for the Point Dropper and Move (G3.9d);
+    /// the app gives it the engine's altitude source.
+    public let mapLocator: MapLocator
     /// Keeps the archived items across launches, when a store was given.
     private let archive: MapItemArchive?
     private var archiving = false
@@ -105,21 +105,9 @@ public final class ServerConnections: ObservableObject {
         self.contacts = contacts
         let markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
         self.markers = markers
-        let elevation = ElevationSource()
-        self.elevation = elevation
-        let locate: (MapPick) -> SourcedPoint? = { pick in
-            switch pick {
-            case .ground(let p):
-                return .clicked(p, altitudeSource: p.hae == CotPoint.unknown ? nil : elevation.source?(p))
-            case .item(let uid):
-                if let m = markers[uid] {
-                    return SourcedPoint(m.point, precision: PrecisionLocation(m.event.detail(PrecisionLocation.elementName)))
-                }
-                if let c = contacts[uid] { return SourcedPoint(c.point, precision: c.precision) }
-                guard uid == me.details.uid, let l = me.location else { return nil }
-                return SourcedPoint(l.point, precision: l.precision)
-            }
-        }
+        let mapLocator = MapLocator(markers: markers, contacts: contacts, me: me)
+        self.mapLocator = mapLocator
+        let locate = { [mapLocator] (pick: MapPick) in mapLocator.locate(pick) }
         // setAuthorInformation: production_time is a CoordinatedTime, milliseconds
         let author: (Date) -> Author = { now in
             let ms = (now.timeIntervalSince1970 * 1000).rounded(.down) / 1000
@@ -348,12 +336,6 @@ public final class ServerConnections: ObservableObject {
         Task {
             if let contacts { try? await client.send(xml, to: contacts) } else { try? await client.broadcast(xml, via: .any) }
         }
-    }
-
-    /// The source of the altitude at a place (5.5's ElevationManager result
-    /// type, "DTED1" say), or nil where no elevation data covers it.
-    public final class ElevationSource {
-        public var source: ((CotPoint) -> String?)?
     }
 
     public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace, noMarker }

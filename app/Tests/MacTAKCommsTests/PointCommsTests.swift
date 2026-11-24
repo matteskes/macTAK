@@ -52,7 +52,7 @@ final class PointCommsTests: XCTestCase {
         let port = try freePort()
         server = try FakeServer.cot(port: port)
         let a = try await client("a", port: port), b = try await client("b", port: port)
-        a.elevation.source = { _ in "DTED1" }
+        a.mapLocator.altitudeSource = { _ in "DTED1" }
 
         a.pointDropper.begin(.spotMap(.red))
         let placed = try XCTUnwrap(a.pointDropper.click(.ground(here)))
