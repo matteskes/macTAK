@@ -49,9 +49,13 @@ record PixelExpectation(double lat, double lon, int rgb) {
         return ok;
     }
 
-    private static boolean near(int a, int b) {
+    static boolean near(int a, int b) {
+        return near(a, b, TOLERANCE);
+    }
+
+    static boolean near(int a, int b, int tolerance) {
         for (int shift = 0; shift <= 16; shift += 8)
-            if (Math.abs(((a >> shift) & 0xff) - ((b >> shift) & 0xff)) > TOLERANCE) return false;
+            if (Math.abs(((a >> shift) & 0xff) - ((b >> shift) & 0xff)) > tolerance) return false;
         return true;
     }
 }

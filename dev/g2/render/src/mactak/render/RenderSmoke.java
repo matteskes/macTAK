@@ -76,6 +76,13 @@ public final class RenderSmoke {
       + "                the tint defaults to none; check it with --expect (repeatable)\n"
       + "  --line LAT,LON,LAT,LON,AARRGGBB[,LABEL]  a map line (G3.8b, MapMarkers.putLine),\n"
       + "                3 px wide; check it with --expect (repeatable)\n"
+      + "  --polyline LAT,LON,LAT,LON[,LAT,LON...],AARRGGBB,STYLE,WIDTH  a map line through\n"
+      + "                any number of points (G3.10b, a route's line): STYLE solid, dashed,\n"
+      + "                dotted or outlined; WIDTH pixels (repeatable)\n"
+      + "  --expect-run LAT,LON,LAT,LON,RRGGBB,MIN,MAX[,TOL]  of the pixels on the straight\n"
+      + "                run between two ground points' pixels, MIN-MAX percent must be that\n"
+      + "                colour, +/-TOL per channel (default " + PixelExpectation.TOLERANCE + "; G3.10b: dashes, an\n"
+      + "                outline; repeatable)\n"
       + "  --expect-ground LAT,LON  a click on that point's pixel must come back as that\n"
       + "                point, within a pixel (G3.8b, MapPick; repeatable)\n"
       + "  --expect-marker LAT,LON,UID  a click beside that point must pick marker UID\n"
@@ -107,6 +114,23 @@ public final class RenderSmoke {
         }
     }
 
+    /** {@code --polyline LAT,LON,LAT,LON[,LAT,LON...],AARRGGBB,STYLE,WIDTH}. */
+    record PolylineSpec(double[] latLons, int color, int style, float width) {
+        static final java.util.List<String> STYLES = java.util.List.of("solid", "dashed", "dotted", "outlined");
+
+        static PolylineSpec parse(String spec) {
+            final String[] p = spec.split(",");
+            final int n = p.length - 3;
+            if (n < 4 || n % 2 != 0 || p[n].length() != 8 || !STYLES.contains(p[n + 1]))
+                throw new IllegalArgumentException("want LAT,LON,LAT,LON[,...],AARRGGBB,STYLE,WIDTH, got " + spec);
+            final double[] ll = new double[n];
+            for (int i = 0; i < n; i++) ll[i] = Double.parseDouble(p[i]);
+            // STYLES is in MapMarkers.STYLE_* order, 5.5's basic line styles
+            return new PolylineSpec(ll, (int) Long.parseLong(p[n], 16), STYLES.indexOf(p[n + 1]),
+                    Float.parseFloat(p[n + 2]));
+        }
+    }
+
     public static void main(String[] args) throws IOException {
         List<String> libs = new ArrayList<>();
         List<File> layers = new ArrayList<>();
@@ -125,6 +149,8 @@ public final class RenderSmoke {
         final java.util.List<PixelExpectation> expectations = new java.util.ArrayList<>();
         final java.util.List<String> markerSpecs = new java.util.ArrayList<>();
         final java.util.List<LineSpec> lineSpecs = new java.util.ArrayList<>();
+        final java.util.List<PolylineSpec> polylineSpecs = new java.util.ArrayList<>();
+        final java.util.List<RunExpectation> runs = new java.util.ArrayList<>();
         final java.util.List<PickExpectation> picks = new java.util.ArrayList<>();
         final java.util.List<File> elevations = new java.util.ArrayList<>();
         final java.util.List<ElevationChecks.Height> heights = new java.util.ArrayList<>();
@@ -156,6 +182,8 @@ public final class RenderSmoke {
                     case "--expect": expectations.add(PixelExpectation.parse(args[++i])); break;
                     case "--marker": markerSpecs.add(args[++i]); break;
                     case "--line": lineSpecs.add(LineSpec.parse(args[++i])); break;
+                    case "--polyline": polylineSpecs.add(PolylineSpec.parse(args[++i])); break;
+                    case "--expect-run": runs.add(RunExpectation.parse(args[++i])); break;
                     case "--expect-ground": picks.add(PickExpectation.parseGround(args[++i])); break;
                     case "--expect-marker": picks.add(PickExpectation.parseMarker(args[++i])); break;
                     case "--elevation": elevations.add(new File(args[++i])); break;
@@ -323,9 +351,9 @@ public final class RenderSmoke {
             globe.addLayer(new FeatureLayer3("mactak-layer", store.dataStore()));
             frame = b;   // vector bounds win: that's what the fixture is about
         }
-        // --marker, --line: G3.7b's marker layer, over the data layers as the app adds it
+        // --marker, --line, --polyline: G3.7b's marker layer, over the data layers as the app adds it
         MapMarkers markers = null;
-        if (!markerSpecs.isEmpty() || !lineSpecs.isEmpty()) {
+        if (!markerSpecs.isEmpty() || !lineSpecs.isEmpty() || !polylineSpecs.isEmpty()) {
             markers = new MapMarkers();
             globe.addLayer(markers.layer());
             int n = 0;
@@ -340,7 +368,10 @@ public final class RenderSmoke {
                         "MARKER-" + n);
             }
             for (LineSpec l : lineSpecs)
-                markers.putLine("line-" + (n++), l.latLons(), l.color(), LineSpec.WIDTH, false, l.label());
+                markers.putLine("line-" + (n++), l.latLons(), l.color(), LineSpec.WIDTH, MapMarkers.STYLE_SOLID, false,
+                        l.label());
+            for (PolylineSpec l : polylineSpecs)
+                markers.putLine("line-" + (n++), l.latLons(), l.color(), l.width(), l.style(), false, null);
             System.out.printf("render-smoke: %d marker(s) and line(s)%n", markers.count());
         }
         if (frame == null && !Double.isNaN(atLat) && !Double.isNaN(res))   // --at and --res frame on their own
@@ -372,7 +403,7 @@ public final class RenderSmoke {
         // elevation is content too: the terrain renderer loads its tiles asynchronously
         // and so are markers: their icons load on the engine's loader threads
         boolean hasContent = !layers.isEmpty() || !basemaps.isEmpty() || !attached.isEmpty() || !markerSpecs.isEmpty()
-                || !lineSpecs.isEmpty();
+                || !lineSpecs.isEmpty() || !polylineSpecs.isEmpty();
         long deadline = System.currentTimeMillis() + (hasContent ? settleMs : 0);
         long cap = System.currentTimeMillis() + (hasContent ? Math.max(settleMs * 5, 15000) : 0);
         boolean contentSeen = !hasContent;
@@ -450,6 +481,8 @@ public final class RenderSmoke {
         boolean expectationsHold = true;
         for (PixelExpectation e : expectations)
             expectationsHold &= e.check(view, px, w, h);
+        for (RunExpectation r : runs)
+            expectationsHold &= r.check(view, px, w, h);
         final com.atakmap.map.MapSceneModel scene =
                 view.getMapSceneModel(false, com.atakmap.map.MapRenderer3.DisplayOrigin.UpperLeft);
         boolean picksHold = true;

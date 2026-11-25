@@ -88,7 +88,7 @@ public final class EngineBridge {
         midRemoveMarker = try jni.staticMethod(cls, "removeMarker", "(Ljava/lang/String;)V")
         midMarkersReady = try jni.staticMethod(cls, "markersReady", "()Z")
         midSelfIconUri = try jni.staticMethod(cls, "selfIconUri", "(II)Ljava/lang/String;")
-        midPutLine = try jni.staticMethod(cls, "putLine", "(Ljava/lang/String;[DIFZLjava/lang/String;)V")
+        midPutLine = try jni.staticMethod(cls, "putLine", "(Ljava/lang/String;[DIFIZLjava/lang/String;)V")
         midGroundAt = try jni.staticMethod(cls, "groundAt", "(FF)[D")
         midMarkerAt = try jni.staticMethod(cls, "markerAt", "(FFF)Ljava/lang/String;")
         midAltitudeSource = try jni.staticMethod(cls, "altitudeSource", "(DD)Ljava/lang/String;")
@@ -201,20 +201,28 @@ public final class EngineBridge {
         }
     }
 
+    /// 5.5's basic line styles (Shape.BASIC_LINE_STYLE_*), as the engine
+    /// draws them (G3.10b): dashed and dotted stipple, outlined a black
+    /// edge.
+    public enum LineStyle: Int32, Sendable {
+        case solid, dashed, dotted, outlined
+    }
+
     /// Add or move a line (G3.8b) through `points` (two or more), clamped
-    /// to the ground: `color` ARGB, `width` pixels, `arrow` an arrow head at
-    /// the last point, `label` drawn along it (hidden where it doesn't fit)
-    /// or nil. `removeMarker(uid:)` removes it. Dropped until `markersReady`.
+    /// to the ground: `color` ARGB, `width` pixels, `style` 5.5's line
+    /// style, `arrow` an arrow head at the last point (a solid line), `label`
+    /// drawn along it (hidden where it doesn't fit) or nil.
+    /// `removeMarker(uid:)` removes it. Dropped until `markersReady`.
     public func putLine(uid: String, points: [(lat: Double, lon: Double)], color: UInt32, width: Float,
-                        arrow: Bool, label: String?) {
+                        style: LineStyle = .solid, arrow: Bool, label: String?) {
         call {
             let jUid = try jni.newString(uid)
             let jPoints = try jni.newDoubleArray(points.flatMap { [$0.lat, $0.lon] })
             let jLabel = try label.map { try jni.newString($0) }
             defer { jni.deleteLocalRef(jUid); jni.deleteLocalRef(jPoints); jni.deleteLocalRef(jLabel) }
-            var a = [jvalue](repeating: jvalue(), count: 6)
+            var a = [jvalue](repeating: jvalue(), count: 7)
             a[0].l = jUid; a[1].l = jPoints; a[2].i = jint(bitPattern: color); a[3].f = jfloat(width)
-            a[4].z = jboolean(arrow ? JNI_TRUE : JNI_FALSE); a[5].l = jLabel
+            a[4].i = jint(style.rawValue); a[5].z = jboolean(arrow ? JNI_TRUE : JNI_FALSE); a[6].l = jLabel
             try jni.callStaticVoid(cls, midPutLine, a)
         }
     }

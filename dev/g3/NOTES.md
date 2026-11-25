@@ -3136,8 +3136,8 @@ Routes are the second of the three milestones G3.9's plan split out
 | PR | Branch | What | Gate |
 |---|---|---|---|
 | **a** | `g3/route-cot` | the route model and its CoT, field by field as `Route.toCot`, read as `RouteImporter`; 5.5's naming; a route store in `ServerConnections`, archived, removed by a force delete | golden test against the kernel; the naming rules in tests against 5.5's; a route survives a relaunch; **one client's route on the other's map** (CI comms leg) |
-| **b** | `g3/route-draw` | routes on the map: one line per route in its colour and width, waypoints labelled, control points hidden, leg distances | route pixels as a CI render step |
-| **c** | `g3/route-edit` | a route tool in the toolbar; right-click menus for a point and the line; drag to move; a route details inspector; Send… | model tests; hand check (owner) |
+| **b** | `g3/route-draw` | routes on the map: one line per route in its colour, width and line style, waypoints labelled, control points hidden (leg distances moved to **c**: §G3.10b) | route pixels as a CI render step |
+| **c** | `g3/route-edit` | a route tool in the toolbar; right-click menus for a point and the line; drag to move; a route details inspector, with its leg distances; Send… | model tests; hand check (owner) |
 
 Then a docs PR, as after each milestone.
 
@@ -3252,4 +3252,81 @@ list (G3.11), routes embedded in markers (`_route`,
 | `RouteCommsTests` (1, new) | **one client's route on the other's map**: two `ServerConnections` on `fake-cot-server.py`; A's route reaches B with its uids, types, names, places, line, details and author. Renamed and sent again, it is updated in place |
 | A/B | an expected callsign changed: both legs fail ("FAIL: 1 of 22"). Descending numbering starting one higher: naming and golden tests fail. No `routes.receive` in `handle`: the comms test times out. Routes left out of the archive: the relaunch test fails |
 | `make test-app` | MacTAKCotTests 97, MacTAKCoreTests 14, MacTAKCommsTests 226 pass (1 skipped, Apple's geocoder, network) |
+| `make lint` | passes |
+
+### G3.10b — routes on the map (2026-11-25, branch `g3/route-draw`)
+
+#### What 5.5 draws, read at the pin
+
+- **One line per route** (`GLPolyline` over the `EditablePolyline`):
+  the route's colour, its stroke weight, never closed. The basic line
+  style is `GLPolyline.refreshStyle`'s: solid; dashed, a stipple of
+  `0x3F3F`; dotted, `0x0303`; outlined, a black stroke two pixels wider
+  under the line. A route's `strokeStyle` is the basic line style
+  (`Shape.setStrokeStyle` redirects to `setBasicLineStyle`). A new route
+  is solid.
+- **The line's label is the route's title** (`EditablePolyline.setTitle`
+  calls `setLineLabel`). `GLPolyline.validateLabels` draws it only while
+  `labels_on` is set, and a new route has it off.
+- **Waypoints are markers** of type `b-m-p-w`, so they draw
+  icon_filters.xml's `icons/gugpgpow------.png`. `Route` sets each
+  waypoint's `color` meta to the route's colour, which tints the icon.
+  The label is the waypoint's name.
+- **Control points draw nothing**: `ControlPointMapItem` is
+  `setVisible(false)`.
+- **No leg distances on the map.** The plan listed them for **b**, but
+  5.5 sets no segment labels on a route (`Polyline.setLabels` is never
+  called for one). The distances between waypoints are
+  `Route.getRouteDetails`, which the route details' waypoint list shows
+  (`RoutePlannerView`). They move to **c**, with the inspector.
+- **A marker on the route is where it is now.** The route holds the
+  marker itself, so the line follows it.
+
+#### What changed
+
+- **`RouteGraphics`** (MacTAKComms): what a route draws, from the model.
+  The line has uid `mactak-route-<id>`, every point in order, the colour,
+  the weight as its width, the style, and the title as its label when
+  labels are on. A point that is another map item is placed where that
+  item is now. Fewer than two points draw no line. Each waypoint draws
+  the `b-m-p-w` icon (through `MarkerIcons`, so tinted as 5.5 tints it)
+  with its name.
+- **The engine draws 5.5's line styles.** `MapMarkers.putLine` takes a
+  style, and `lineStyle` builds `GLPolyline.refreshStyle`'s stroke for
+  it. `EngineBridge` (Java and Swift) passes it through; R&B lines stay
+  solid with their arrow.
+- **`MapMarkerSync`** draws every route: waypoints join the markers, and
+  the route's line joins the R&B lines, both sent only when they
+  change. The app refreshes the map when the routes change.
+- **5.5's `gugpgpow------.png`**, copied from the pin into the engine's
+  assets (`dev/g2/render/resources/assets/icons`), as G3.7c copied its
+  six icons.
+- **The render harness** gains `--polyline` (any number of points, a
+  colour, a style and a width) and `--expect-run`: of the pixels on the
+  straight run between two ground points, a given share must be a given
+  colour, within a given tolerance. A single pixel can't tell a dashed
+  line from a solid one, or an outlined line from a plain one. The share
+  of a run can.
+
+#### Not as 5.5
+
+- **A click goes through a waypoint**, to the ground under it, until
+  **c** gives waypoints their menus. 5.5 opens a waypoint's radial menu.
+- **A waypoint whose uid is a marker here draws as that marker.** 5.5's
+  `RouteImporter.createMarker` takes the existing marker as the waypoint
+  (§G3.10a); here the marker keeps its own icon and label.
+- **No `minRenderScale` or label resolution limits.** The title label,
+  when on, draws at every scale; the engine hides it where it doesn't
+  fit, as it does R&B labels.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `routes.sh` (new; CI render step "Render a route in 5.5's line styles") | at 2 m a pixel: the green route's two legs are 98% and 100% green; 29% of the run just west of SP is the waypoint icon's green, and 0% east of the control point; 62% of the dashed red line is red (the rest are gaps); 11% of the run across the outlined blue line over a white one is the dark edge. With the lines solid, no waypoint icons and an icon on the control point, those four checks fail: 100% red, 0% dark, 0% and the control point's icon. With nothing drawn, both legs fail |
+| `RouteGraphicsTests` (8, new) | the line through every point in its colour, weight and style; a new route white, solid, 3 wide; the four styles and an unknown one; the title label only with labels on; waypoints in the route's colour with their names, control points not drawn; a marker on the route where it is now; fewer than two points, no line; an unnamed waypoint, no label |
+| A/B | `MapMarkers.stroke` drawing every style solid: `routes.sh` fails on the dashes (100% red) and the outline (0% dark) |
+| `lines.sh` | still passes: R&B lines draw as before |
+| `dev/g2/shell/run.sh` | the shell's `EngineBridge` resolves the new `putLine` signature and renders |
+| `make test-app` | MacTAKCotTests 97, MacTAKCoreTests 14, MacTAKCommsTests 234 pass (1 skipped, Apple's geocoder, network) |
 | `make lint` | passes |

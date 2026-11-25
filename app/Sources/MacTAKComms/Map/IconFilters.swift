@@ -8,7 +8,8 @@
 // IconFiltersTests holds it to the copy in dev/g3/test/icon-filters.
 //
 // Only the icons an atom ("a-…") can reach ship in the engine's assets:
-// the app draws received atoms (CotMarkerStore), not 5.5's b-/u- items.
+// the app draws received atoms (CotMarkerStore), not 5.5's b-/u- items,
+// apart from a route's waypoints (b-m-p-w's gugpgpow, G3.10b).
 
 public enum IconFilters {
     /// (type prefix, asset path), as 5.5 lists them.
