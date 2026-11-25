@@ -3441,4 +3441,4 @@ list (G3.11), routes embedded in markers (`_route`,
 | `make test-app` | MacTAKCotTests 110, MacTAKCoreTests 14, MacTAKCommsTests 258 pass (1 skipped, Apple's geocoder, network) |
 | `make lint` | passes |
 | `make app` | the bundle carries `polyline_vertex_cropped.png`; the app starts and runs with a fresh settings suite |
-| Hand check (owner) | to do: draw a route, ⌥-click a checkpoint, end it, drag a point, use the menus, the inspector's fields and legs, Send… to a second copy |
+| Hand check (owner, 2026-11-25) | passes: drew a route, ⌥-clicked a checkpoint, ended it, dragged a point, used the menus, the inspector's fields and legs, Send… to a second copy |
