@@ -3137,7 +3137,7 @@ Routes are the second of the three milestones G3.9's plan split out
 |---|---|---|---|
 | **a** | `g3/route-cot` | the route model and its CoT, field by field as `Route.toCot`, read as `RouteImporter`; 5.5's naming; a route store in `ServerConnections`, archived, removed by a force delete | golden test against the kernel; the naming rules in tests against 5.5's; a route survives a relaunch; **one client's route on the other's map** (CI comms leg) |
 | **b** | `g3/route-draw` | routes on the map: one line per route in its colour, width and line style, waypoints labelled, control points hidden (leg distances moved to **c**: §G3.10b) | route pixels as a CI render step |
-| **c** | `g3/route-edit` | a route tool in the toolbar; right-click menus for a point and the line; drag to move; a route details inspector, with its leg distances; Send… | model tests; hand check (owner) |
+| **c** | `g3/route-edit` | a route tool in the toolbar; right-click menus for a point and the line; drag to move; a route details inspector, with its leg distances; Send… (§G3.10c) | model tests; hand check (owner) |
 
 Then a docs PR, as after each milestone.
 
@@ -3330,3 +3330,115 @@ list (G3.11), routes embedded in markers (`_route`,
 | `dev/g2/shell/run.sh` | the shell's `EngineBridge` resolves the new `putLine` signature and renders |
 | `make test-app` | MacTAKCotTests 97, MacTAKCoreTests 14, MacTAKCommsTests 234 pass (1 skipped, Apple's geocoder, network) |
 | `make lint` | passes |
+
+### G3.10c — making and editing routes (2026-11-25, branch `g3/route-edit`)
+
+#### What 5.5 does, read at the pin
+
+- **The route tool** is `RouteEditTool`, started on a new route
+  (`getNewRoute`: "Route n", the `waypointPrefix`) or on an existing one
+  (`edit_route`). A tap on the map adds a point at the end: a waypoint
+  when the route is empty, else a control point (`MAP_CLICK`). A long
+  press adds a waypoint (`MAP_LONG_PRESS`). A tap on a marker adds a new
+  waypoint at its point (`ITEM_CLICK` on a `PointMapItem`), not the
+  marker itself. A tap on the route's own point opens its menu instead.
+- **Ending the tool** (`onToolEnd`): a route with two points or more gets
+  `fixSPandVDO` (its ends made waypoints, its waypoints named); one with
+  fewer is removed. Undo takes back the last edit action and then runs
+  `fixSPandVDO(false)`.
+- **The menus.** Outside editing, a waypoint (`b-m-p-w.xml`) has Details
+  and Edit, and the line (`b-m-r.xml`) has Delete, Details (with Send),
+  Edit, the label toggle and more. While editing, the line has
+  `route_line_menu` (insert a waypoint or a point where it was touched,
+  after the segment hit: `ROUTE_INSERT_WAYPOINT` and `insert_vertex`),
+  and a point has `route_corner_menu` (delete the vertex, make it a
+  waypoint by `RouteExchangePointAction`, move). A waypoint that is
+  removed becomes a control point where it was (`Route.removeMarker`).
+- **While a route is editable** every point draws a vertex,
+  `polyline_vertex_cropped`, `ceil(max(4, weight) * 3)` pixels across
+  (`GLEditablePolylineFeature`), and points drag to move.
+- **The route details** (`RoutePlannerView`): the name, the colour, the
+  line style (`line_styles`), the weight (a slider up to 24), the
+  method, direction, type and order (`RouteCreationDialog`'s dialog:
+  choosing Exfil also picks Descending, Infil Ascending), the remarks,
+  and the waypoint list (`Route.getRouteDetails`). Each row is a
+  waypoint ("Wpt#n" without a name) with the distance from the waypoint
+  before, through its control points. The distance is in km when the R&B
+  range units are metric, else NM for flying and watercraft and miles for
+  the rest, always in that one unit (`SpanUtilities.format`). The climb
+  from the waypoint before is shown only when both altitudes are known
+  and it goes up ("+ n ft"). The totals are the line's length in the
+  range units' own way (`formatType`) and the highest point less the
+  lowest. Delete asks first ("Delete route: …").
+
+#### What changed
+
+- **`RouteEditor`** (MacTAKComms) is the tool and the details' edits.
+  - `begin` makes "Route n" and edits it; `edit` edits a route; `end`
+    runs 5.5's `onToolEnd`.
+  - `click` follows 5.5's rules, with ⌥-click for the long press. A
+    click on another route's waypoint or control point adds a waypoint
+    there.
+  - `undo` undoes one change at a time, and a whole drag is one step.
+  - The menus' changes (`makeControlPoint`, `makeWaypoint`,
+    `deletePoint`, `insert`) apply only to the route being edited.
+  - `update`, `toggleLabels` and `delete` serve the inspector, for any
+    route.
+- **The route model's edits** (`Route.insert`, `removePoint`,
+  `makeControlPoint`, `makeWaypoint`, `movePoint`, `renamePoint`,
+  `setDirection`) and **`RouteDetails`** (the rows and totals, their
+  text). `RangeBearingText.fixed` is `SpanUtilities.format` into a single
+  unit.
+- **`RouteHit`** says which route line a click is on. The engine gives
+  only the ground under a pixel, so the app measures its click radius
+  (8 points) as metres on the ground beside the click, and `RouteHit`
+  finds the nearest segment on a local flat plane.
+- **The app:**
+  - a Route button in the toolbar, and a prompt with Undo (⌘Z) and Done
+    (Esc);
+  - right-click menus for a waypoint, for a control point while its route
+    is being edited, and for the line;
+  - a click on a waypoint or a line opens the route inspector, which
+    shares the side column with the point inspector;
+  - Send… uses `share(route:)` and `SendItemSheet`;
+  - starting the route tool ends the other map tools, and starting one of
+    them ends the route tool.
+  - the Point Dropper, R&B and Move take a click on a route's point as the
+    ground where that point is (5.5's `findPoint` on a waypoint); their
+    stores know markers, not route points.
+- **`MapMarkerSync`** draws the edited route's control points as
+  vertices and keeps each route line's points for the hit test.
+  Waypoints can now be clicked; in **b** a click went through them.
+- **5.5's `polyline_vertex_cropped.png`** is copied from the pin into the
+  engine's assets.
+- **A route still being drawn, under two points, isn't archived.** 5.5
+  removes such a route when the tool ends.
+
+#### Not as 5.5
+
+- **⌥-click stands in for the long press**, and right-click menus stand
+  in for the radial menus (owner's decision 1, §G3.10).
+- **The line doesn't drag as a whole**, and there is no draw mode
+  (freehand segments). Only points drag.
+- **The other routes aren't dimmed** while one is edited
+  (`dimRoutes`).
+- **Clicking the line being edited does nothing.** 5.5 opens its menu on
+  a tap; here a right-click does.
+- **The leg distances use the route's own points.** The line follows a
+  marker on the route (§G3.10b), but the inspector's distances don't yet.
+- **The inspector's weight slider starts at 1**, not 0, so a route can't
+  be made invisible.
+- **No creation dialog.** 5.5's route toolbar can ask for a planner
+  first; the planners are out of G3.10.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `RouteEditorTests` (23, new) | a new route is "Route n" under the tool; the first click a waypoint and the rest control points; ⌥-click a waypoint; a click on a marker a new waypoint at its point; on the route's own point nothing; on another route's point a waypoint there; ending names the ends (SP, VDO) or, under two points, removes the route; starting again ends the route before; editing extends a route. Undo, and a drag as one undo step. Only the edited route drags. The menus: a waypoint becomes a control point and back (a new uid), delete, insert after the segment hit, and nothing on a route not being edited. The inspector: only a route that exists; an undo step only while editing; delete lets go of the route; labels toggle. A line hit: the nearest within the radius, its segment, none beyond the radius or for a single point |
+| `RouteDetailsTests` (13, new) | a row per waypoint, each leg through its control points; a marker on the route adds distance only; the line where it is now; "Wpt#n"; a climb only with both altitudes, going up; the totals; legs in km, mi or NM, never m or ft; `SpanUtilities.format`'s decimals; climbs in feet; the edits rename waypoints, a named waypoint keeps its name; Exfil picks Descending (VPU, CP2, CP1, EP) |
+| `RouteGraphicsTests` (+1) | while edited, control points are vertex markers `ceil(max(4, weight) * 3)` across, and waypoints keep their icon |
+| `make test-app` | MacTAKCotTests 110, MacTAKCoreTests 14, MacTAKCommsTests 258 pass (1 skipped, Apple's geocoder, network) |
+| `make lint` | passes |
+| `make app` | the bundle carries `polyline_vertex_cropped.png`; the app starts and runs with a fresh settings suite |
+| Hand check (owner, 2026-11-25) | passes: drew a route, ⌥-clicked a checkpoint, ended it, dragged a point, used the menus, the inspector's fields and legs, Send… to a second copy |

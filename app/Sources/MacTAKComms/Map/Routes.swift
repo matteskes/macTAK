@@ -17,8 +17,8 @@
 //   after the markers (5.5's query order puts b-m-r last), so a link to a
 //   marker finds it.
 //
-// The map side (drawing, G3.10b) and the route tool (G3.10c) are later;
-// this file holds what the routes are.
+// The map side is RouteGraphics (G3.10b), the route tool RouteEditor
+// (G3.10c); this file holds what the routes are.
 
 import Foundation
 import MacTAKCot
@@ -60,6 +60,16 @@ public final class Routes: ObservableObject {
         guard routes[i] != route else { return false }
         routes[i] = route
         return true
+    }
+
+    /// fixSPandVDO(true) on the route `id`, as the route tool does when it
+    /// ends (RouteEditTool.onToolEnd): its ends made waypoints, its
+    /// waypoints named.
+    public func fixEnds(id: String) {
+        guard let i = routes.firstIndex(where: { $0.id == id }) else { return }
+        var route = routes[i]
+        route.fixEnds(newUID: newID)
+        if routes[i] != route { routes[i] = route }
     }
 
     /// Takes in a CoT event commo received: a b-m-r route is added or

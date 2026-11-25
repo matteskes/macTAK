@@ -30,7 +30,8 @@
 //
 // Routes (G3.10a) are made here or heard like the lines, kept across
 // launches (every route is archived) and sent with `share(route:)`, as
-// 5.5's Route.toCot writes them (RouteEvent).
+// 5.5's Route.toCot writes them (RouteEvent). The RouteEditor (G3.10c)
+// makes and edits them.
 
 import Combine
 import Foundation
@@ -70,7 +71,9 @@ public final class ServerConnections: ObservableObject {
     /// Range and bearing lines, made here or heard (G3.8c/d).
     public let rangeBearing = RangeBearingLines()
     /// Routes, made here or heard (G3.10a).
-    public let routes = Routes()
+    public let routes: Routes
+    /// The route tool and the route details (G3.10c).
+    public let routeEditor: RouteEditor
     /// The Point Dropper tool (G3.9b).
     public let pointDropper: PointDropper
     /// Editing the CoT markers (G3.9c).
@@ -122,6 +125,9 @@ public final class ServerConnections: ObservableObject {
             deviceCallsign: { me.details.callsign },
             legacyNaming: { ["1", "true"].contains(settings.string(forKey: PointNaming.legacyPointDropNamingKey)?.lowercased()) })
         pointEditor = PointEditor(markers: markers, locate: locate)
+        let routes = Routes()
+        self.routes = routes
+        routeEditor = RouteEditor(routes: routes, locate: locate)
         rangeBearing.author = { author(Date()) }
         routes.author = { author(Date()) }
         let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
@@ -456,7 +462,9 @@ public final class ServerConnections: ObservableObject {
                                 signature: event(.atak, Date(timeIntervalSince1970: 0)).xml()) { event(.atak, Date()).xml() }
         }
         // the centre's altitude source is looked up only when a route is written
-        let keptRoutes = routes.routes.filter(\.archived).map { route in
+        // a route the tool is still drawing, under two points, isn't kept: 5.5
+        // removes it if the tool ends there (RouteEditTool.onToolEnd)
+        let keptRoutes = routes.routes.filter { $0.archived && $0.points.count >= 2 }.map { route in
             ArchivedItem(uid: route.id, type: Route.type,
                          signature: RouteEvent.make(route, center: nil, now: Date(timeIntervalSince1970: 0)).xml()) {
                 self.routeEvent(route, at: Date()).xml()

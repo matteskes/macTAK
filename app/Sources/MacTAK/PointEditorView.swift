@@ -62,7 +62,7 @@ final class PointActions: ObservableObject {
 }
 
 /// A menu item that runs a closure.
-private final class ActionItem: NSMenuItem {
+final class ActionItem: NSMenuItem {
     private let run: () -> Void
 
     init(_ title: String, run: @escaping () -> Void) {
@@ -181,7 +181,7 @@ struct PointInspector: View {
 }
 
 /// 5.5's ColorPalette as swatches; the chosen one is ringed.
-private struct ColorSwatches: View {
+struct ColorSwatches: View {
     let selected: UInt32?
     let choose: (UInt32) -> Void
 
