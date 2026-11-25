@@ -82,7 +82,7 @@ The milestones are now:
 - G3.8 range and bearing;
 - G3.9 points (dropped, edited, shared, and kept across launches);
 - G3.10 routes (made, edited, shared, and kept across launches);
-- G3.11 the Overlay Manager.
+- G3.11 the Overlay Manager (a sidebar tree of the map's items by kind: shown or hidden, gone to, sent, deleted and searched).
 
 The rendering approach already matches 5.5: map items as engine features, on by default upstream. 5.5 moved some app code into takkernel's `shared` module (CoT detail handlers, import resolvers, symbology, widgets, contacts). **Decided 2026-11-13: it is ported to Swift**, and the kernel's CoT serializer becomes a test oracle: golden tests diff the Swift port's XML against it. Most detail handlers never moved out of the app anyway, and the app doesn't ship `shared`. The kernel's 2525 symbology doesn't build from public sources, so G3.7's renderer comes from a spike (#171); the spike found 5.5's own renderers public on Maven Central, and the app runs them. Widgets are replaced by SwiftUI. Details: `../dev/g3/NOTES.md` §Plan revision.
 

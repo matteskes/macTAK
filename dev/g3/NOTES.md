@@ -184,7 +184,7 @@ Manager list (G3.11), routes embedded in markers (`_route`), draw mode,
 dragging a whole line, and dimming the other routes while one is
 edited.
 
-Next: G3.11, the Overlay Manager.
+Next: G3.11, the Overlay Manager (§G3.11, plan approved 2026-11-25).
 
 ## The plan (approved 2026-11-13)
 
@@ -228,7 +228,7 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
 | G3.8 | **range and bearing** (added 2026-11-20): the numbers and units golden-tested against 5.5, lines on the map, the R&B tool, `u-rb-a` | the kernel's R&B golden test; a line's pixels; one client's R&B line on the other's map |
 | G3.9 | **points** (split 2026-11-20): map items kept across launches; dropping, editing and deleting points; points as CoT | an R&B line survives a relaunch; a dropped point reaches the other client |
 | G3.10 | routes: `b-m-r` made, edited, drawn and shared | a route render; one client's route on the other's map |
-| G3.11 | the Overlay Manager | hand check |
+| G3.11 | the Overlay Manager: a sidebar tree of map items by kind, shown or hidden, gone to, sent, deleted, searched (plan 2026-11-25) | a hidden item's pixels gone (CI); hand check |
 | Exit | `make g3-exit`: two app instances, TLS, FTS and OTS | each sees the other's contact, marker (on screen) and chat |
 
 The numbers in bold refer to the sanity check's gaps (§Plan revision, below).
@@ -3471,3 +3471,73 @@ list (G3.11), routes embedded in markers (`_route`,
 | `make lint` | passes |
 | `make app` | the bundle carries `polyline_vertex_cropped.png`; the app starts and runs with a fresh settings suite |
 | Hand check (owner, 2026-11-25) | passes: drew a route, ⌥-clicked a checkpoint, ended it, dragged a point, used the menus, the inspector's fields and legs, Send… to a second copy |
+
+## G3.11 — the Overlay Manager (plan approved 2026-11-25)
+
+The last of the three milestones G3.9's plan split out (§G3.9): 5.5's
+Overlay Manager (`hierarchy`), a tree of the map's items by kind. It
+also brings in the Route Manager list, which G3.10 left for it (§G3.10,
+decision 2).
+
+### What 5.5 does (read at the pin)
+
+- **The tree** is `MapOverlayManager`'s overlays.
+  - The top-level parents are Alerts, Markers (`markerroot`), Shapes,
+    File Overlays and Other Overlays.
+  - `filters/overlays_hier.xml` builds the `FilterMapOverlay`s under
+    them. Each map item goes to the first overlay whose filter matches.
+    A filter is a CoT type prefix, or an item value (`atakRoleType`,
+    `team`). A `litmusFilter` on a parent rules out whole type
+    families.
+  - The XML's overlays:
+    - the team (friendly contacts by role, then by team colour);
+    - Markers: Hostile (`a-h`, `a-j`, `a-k`), Friendly (Troops, Ground
+      Vehicles, Air Platforms, Ships, Structures, Other), Neutral and
+      Unknown;
+    - Spot Map (`b-m-p-s-m`) and Vehicles;
+    - Navigation: Routes (`b-m-r`), Waypoints and Track History.
+  - Code adds the rest. Range & Bearing is a Shapes overlay
+    (`RangeAndBearingMapComponent`). Routes use `RouteListModel`, the
+    Route Manager's list.
+  - Empty lists are hidden (`EmptyListFilter`, the adapter's default).
+- **A row** shows its icon, title and count. Through its actions
+  (`hierarchy/action`) it can be shown or hidden (`Visibility`, for an
+  item or a whole overlay), gone to (`GoTo`), deleted, sent and
+  searched. Clicking an item focuses the map on it and opens its
+  details.
+- **The pane's bar:**
+  - search over the titles;
+  - sort A–Z, Z–A or by distance from you (`SortAlphabet`,
+    `SortAlphabetDesc`, `SortDistanceFrom`);
+  - the filters: Show All (off is the field-of-view filter, `fov_filter`),
+    Self-Authored (`AuthorFilter`, the item's `parent_uid` is this
+    device) and Auto Send;
+  - multi-select, which offers Export, plugin handlers and Delete.
+- **Visibility is kept across launches.** `StateSaverListener` writes
+  each archived item's `visible` into `cotevents`, and
+  `StateSaverPublisher` gives it back when the item loads.
+
+### The PRs
+
+| PR | Branch | What | Gate |
+|---|---|---|---|
+| **a** | `g3/overlay-model` | the tree as a model: `overlays_hier.xml`'s overlays and rules, plus Range & Bearing and Routes, over the contacts, CoT markers, R&B lines and routes; counts, empty lists hidden; search; the three sorts; Self-Authored and the field-of-view filter | model tests against 5.5's rules (each XML overlay's filters, first match, litmus, the sorts and filters) |
+| **b** | `g3/overlay-ui` | the Overlays section in the sidebar: the tree, search, sort and filters; a row's actions (show or hide, Go To, Details, Send, Delete); multi-select Delete; the Routes list with its route actions. Hidden items leave the map, and an item's visibility is kept across launches in the store's `visible` column. The sidebar's Range & Bearing section folds into the tree (Shapes › Range & Bearing) | a CI render step: a hidden item's pixels are gone and come back when shown; a hidden point stays hidden after a relaunch (test); hand check (owner) |
+
+Then a docs PR, as after each milestone.
+
+Not in G3.11: the overlays macTAK has no items for yet (Alerts, Shapes
+other than R&B, File Overlays, Vehicles, Waypoints, Track History, the
+Other Overlays such as grid lines), multi-select Export (it waits for
+the import/export milestone, which owns the file formats), plugin
+select handlers, and the Auto Send filter (macTAK has no auto send).
+
+### Decided with the plan (owner, 2026-11-25)
+
+1. The Overlay Manager is a section in the map's sidebar, a collapsible
+   tree, as 5.5's pane sits beside the map. The sidebar's Range & Bearing
+   list folds into it.
+2. Multi-select deletes only. Send stays on each row, and Export waits
+   for the import/export milestone.
+3. Two PRs: the model, then the UI with visibility (its render gate and
+   the hand check together).
