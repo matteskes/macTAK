@@ -309,3 +309,25 @@ public enum Geodesy {
                 ((b / lden) + hae) * sinLat)
     }
 }
+
+extension CotPoint {
+    /// The kernel's GeoCalculations.computeAverage of `points` (a line's
+    /// centre, Shape.getCenter), across the antimeridian when they cross
+    /// it; nil with no points.
+    public static func average(_ points: [CotPoint]) -> CotPoint? {
+        guard let first = points.first else { return nil }
+        let lons = points.map(\.lon)
+        let crosses = (lons.min()! < -180 || lons.max()! > 180) || lons.max()! - lons.min()! > 180
+        let east = first.lon >= 0
+        var lat = 0.0, lon = 0.0
+        let share = 1.0 / Double(points.count)
+        for p in points {
+            var l = p.lon
+            if crosses { l = east ? (l < 0 ? l + 360 : l) : (l > 0 ? l - 360 : l) }
+            lat += p.lat * share
+            lon += l * share
+        }
+        if crosses { lon = lon > 180 ? lon - 360 : (lon < -180 ? lon + 360 : lon) }
+        return CotPoint(lat: lat, lon: lon)
+    }
+}
