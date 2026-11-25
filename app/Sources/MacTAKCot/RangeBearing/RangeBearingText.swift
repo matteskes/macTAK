@@ -147,6 +147,44 @@ public enum RangeBearingText {
         return JavaNumber.format(JavaNumber.round(out), grouping: true) + " " + abbreviation
     }
 
+    /// One unit SpanUtilities.format(value, from, to) writes into.
+    public enum FixedUnit: Sendable {
+        case kilometers, miles, feet
+
+        var perMeter: Double {
+            switch self {
+            case .kilometers: metersToKilometers
+            // ConversionFactors.METERS_TO_MILES
+            case .miles: 0.000621371192
+            case .feet: metersToFeet
+            }
+        }
+
+        var abbreviation: String {
+            switch self {
+            case .kilometers: "km"
+            case .miles: "mi"
+            case .feet: "ft"
+            }
+        }
+    }
+
+    /// SpanUtilities.format(metres, Span.METER, to): always in `unit`;
+    /// feet whole, else two decimals under 100, one under 1000, none
+    /// above (each Math.round first).
+    public static func fixed(_ meters: Double, _ unit: FixedUnit) -> String {
+        let out = meters * unit.perMeter
+        let text: String
+        if unit == .feet || out >= 1000 {
+            text = JavaNumber.format(JavaNumber.round(out), grouping: true)
+        } else if out < 100 {
+            text = JavaNumber.format(Double(JavaNumber.round(out * 100)) / 100, fraction: 2, grouping: true)
+        } else {
+            text = JavaNumber.format(Double(JavaNumber.round(out * 10)) / 10, fraction: 1, grouping: true)
+        }
+        return text + " " + unit.abbreviation
+    }
+
     // MARK: - DirectionType
 
     /// DirectionType.getDirection(bearing).getAbbreviation(): the eight

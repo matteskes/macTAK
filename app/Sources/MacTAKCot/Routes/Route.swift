@@ -248,3 +248,62 @@ public struct Route: Sendable, Equatable, Identifiable {
         return CotPoint(lat: lat, lon: lon)
     }
 }
+
+// MARK: - editing (G3.10c)
+
+extension Route {
+    /// The index of the point with `uid`, nil if none.
+    public func index(of uid: String) -> Int? { points.firstIndex { $0.uid == uid } }
+
+    /// InsertPointAction: `point` at `index` (clamped to the ends), the
+    /// waypoints named again.
+    public mutating func insert(_ point: RoutePoint, at index: Int) {
+        points.insert(point, at: min(max(index, 0), points.count))
+        nameWaypoints()
+    }
+
+    /// RouteRemovePointAction: the point and its place in the line go.
+    public mutating func removePoint(at index: Int) {
+        guard points.indices.contains(index) else { return }
+        points.remove(at: index)
+        nameWaypoints()
+    }
+
+    /// removeMarker(index): a waypoint stops being one; a control point
+    /// (createControlPoint, a new uid) keeps its place in the line.
+    public mutating func makeControlPoint(at index: Int, uid: String) {
+        guard points.indices.contains(index), points[index].isWaypoint else { return }
+        points[index] = .controlPoint(points[index].point, uid: uid)
+        nameWaypoints()
+    }
+
+    /// RouteExchangePointAction with createWayPoint: the point becomes a
+    /// new waypoint (`uid`) where it is.
+    public mutating func makeWaypoint(at index: Int, uid: String) {
+        guard points.indices.contains(index), !points[index].isWaypoint else { return }
+        points[index] = .waypoint(points[index].point, uid: uid)
+        nameWaypoints()
+    }
+
+    /// MovePointAction: the point at `index` goes to `point`.
+    public mutating func movePoint(at index: Int, to point: CotPoint) {
+        guard points.indices.contains(index) else { return }
+        points[index].point = point
+    }
+
+    /// RouteSetPointName: the waypoint `uid` is named `name` (a name the
+    /// user gives isn't automatic, so it stays).
+    public mutating func renamePoint(_ uid: String, to name: String) {
+        guard let i = index(of: uid), points[i].isWaypoint else { return }
+        for j in points.indices where points[j].uid == uid { points[j].callsign = name }
+        nameWaypoints()
+    }
+
+    /// RouteCreationDialog's direction: Infil sets Ascending check points,
+    /// Exfil Descending; the names follow.
+    public mutating func setDirection(_ direction: Direction) {
+        self.direction = direction
+        order = direction == .infil ? .ascending : .descending
+        nameWaypoints()
+    }
+}

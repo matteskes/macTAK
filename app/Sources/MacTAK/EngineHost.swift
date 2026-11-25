@@ -29,6 +29,15 @@ final class EngineHost: ObservableObject {
     var onDrag: ((String, CotPoint) -> Void)?
     /// The menu for a right-click on the marker `uid`, or nil (G3.9c).
     var markerMenu: ((String) -> NSMenu?)?
+    /// A press on the marker `uid` that drags it (G3.10c).
+    var onDragBegan: ((String) -> Void)?
+    /// The route line near a clicked place within a radius in metres, or
+    /// nil (G3.10c).
+    var routeLineAt: ((CotPoint, Double) -> RouteHit?)?
+    /// A click on a route line; false lets it through to the ground.
+    var onLineClick: ((RouteHit) -> Bool)?
+    /// The menu for a right-click on a route line, or nil.
+    var lineMenu: ((RouteHit) -> NSMenu?)?
     private var dragged: String?
 
     /// Start the engine on `view` (once per process: a process gets one JVM).
@@ -86,14 +95,25 @@ final class EngineHost: ObservableObject {
 
     /// Half a 32-point marker icon: a click this near a marker's point picks it.
     static let markerHitPoints: Float = 16
+    /// A click this near a route's line picks it.
+    static let lineHitPoints: Float = 8
 
     private func clicked(x: Float, y: Float, scale: Float) {
         guard let onMapClick, let engine = markerEngine else { return }
         if let uid = marker(x: x, y: y, scale: scale) {
             onMapClick(.item(uid))
         } else if let g = ground(engine, x: x, y: y) {
+            if let hit = line(engine, at: g, x: x, y: y, scale: scale), onLineClick?(hit) == true { return }
             onMapClick(.ground(g))
         }
+    }
+
+    /// The route line within `lineHitPoints` of a surface pixel whose
+    /// ground is `g`: the radius is measured on the ground beside it.
+    private func line(_ engine: EngineBridge, at g: CotPoint, x: Float, y: Float, scale: Float) -> RouteHit? {
+        guard let routeLineAt, let side = ground(engine, x: x + Self.lineHitPoints * scale, y: y) else { return nil }
+        let radius = Geodesy.distance(lat1: g.lat, lon1: g.lon, lat2: side.lat, lon2: side.lon)
+        return routeLineAt(g, radius)
     }
 
     /// The clickable marker under a surface pixel.
@@ -110,6 +130,7 @@ final class EngineHost: ObservableObject {
     /// A press: whether it is on a marker that drags.
     private func grab(x: Float, y: Float, scale: Float) -> Bool {
         dragged = marker(x: x, y: y, scale: scale).flatMap { canDrag?($0) == true ? $0 : nil }
+        if let dragged { onDragBegan?(dragged) }
         return dragged != nil
     }
 
@@ -119,7 +140,10 @@ final class EngineHost: ObservableObject {
     }
 
     private func menu(x: Float, y: Float, scale: Float) -> NSMenu? {
-        marker(x: x, y: y, scale: scale).flatMap { markerMenu?($0) }
+        if let uid = marker(x: x, y: y, scale: scale) { return markerMenu?(uid) }
+        guard let engine = markerEngine, let g = ground(engine, x: x, y: y),
+              let hit = line(engine, at: g, x: x, y: y, scale: scale) else { return nil }
+        return lineMenu?(hit)
     }
 
     /// The engine, once the map runs and takes markers (G3.7b); nil before.

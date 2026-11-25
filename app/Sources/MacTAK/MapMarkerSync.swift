@@ -10,9 +10,9 @@
 //   - the self marker: 5.5's self icon (SelfIcon on the engine side), turned
 //     by the track's course, no label
 //   - each route (G3.10b, RouteGraphics): its line, through the markers it
-//     runs through where they are now, and its waypoints as markers. A
-//     click goes through a waypoint to the ground until the route tool
-//     (G3.10c) gives waypoints their menus.
+//     runs through where they are now, and its waypoints as markers; the
+//     route the tool edits (G3.10c) its control points too, as vertices.
+//     `routeLines` keeps where each line is, for a click on one.
 // The tick also catches contacts and markers going stale, which publishes
 // nothing.
 // While the map isn't running nothing is sent; when it starts, everything is
@@ -42,11 +42,14 @@ final class MapMarkerSync {
     private let me: SelfReporter
     private let rangeBearing: RangeBearingLines
     private let routes: Routes
+    private let routeEditor: RouteEditor
     private let units: UnitPreferences
     private var timer: Timer?
     /// What the engine has, by uid; nil until the map takes markers.
     private var sent: [String: Marker]?
     private var sentLines: [String: Line] = [:]
+    /// Each route's line where it was last drawn, by route id.
+    private(set) var routeLines: [(route: String, points: [CotPoint])] = []
 
     /// One line as the engine was last told it.
     struct Line: Equatable {
@@ -68,13 +71,14 @@ final class MapMarkerSync {
     private var selfIcon: String?
 
     init(host: EngineHost, contacts: ContactStore, cotMarkers: CotMarkerStore, me: SelfReporter,
-         rangeBearing: RangeBearingLines, routes: Routes, units: UnitPreferences) {
+         rangeBearing: RangeBearingLines, routes: Routes, routeEditor: RouteEditor, units: UnitPreferences) {
         self.host = host
         self.contacts = contacts
         self.cotMarkers = cotMarkers
         self.me = me
         self.rangeBearing = rangeBearing
         self.routes = routes
+        self.routeEditor = routeEditor
         self.units = units
         host.unclickable = [Self.rabStartUID]
     }
@@ -99,19 +103,21 @@ final class MapMarkerSync {
         guard let engine = host.markerEngine else {
             sent = nil   // a map that starts again starts empty
             sentLines = [:]
+            routeLines = []
             return
         }
         var have = sent ?? [:]
         var want = markers(engine, now: now)
         let places = want.mapValues { CotPoint(lat: $0.lat, lon: $0.lon, hae: $0.hae ?? CotPoint.unknown) }
-        let drawn = routes.routes.map { RouteGraphics($0) { places[$0] } }
-        var waypoints: Set<String> = []
-        for w in drawn.flatMap(\.waypoints) where want[w.uid] == nil {   // a marker with its uid draws as itself
+        let drawn = routes.routes.map { r in
+            (id: r.id, graphics: RouteGraphics(r, editing: r.id == routeEditor.editing) { places[$0] })
+        }
+        for w in drawn.flatMap({ $0.graphics.waypoints + $0.graphics.vertices }) where want[w.uid] == nil {
+            // a marker with its uid draws as itself
             want[w.uid] = Marker(lat: w.point.lat, lon: w.point.lon, hae: Self.hae(w.point), icon: w.icon,
                                  rotation: nil, label: w.label)
-            waypoints.insert(w.uid)
         }
-        host.unclickable = waypoints.union([Self.rabStartUID])
+        routeLines = drawn.compactMap { d in d.graphics.line.map { (d.id, $0.points) } }
         for (uid, m) in want where have[uid] != m {
             engine.putMarker(uid: uid, lat: m.lat, lon: m.lon, hae: m.hae, iconURI: m.icon.uri, color: m.icon.color,
                              width: m.icon.width, height: m.icon.height, rotation: m.rotation, label: m.label)
@@ -122,7 +128,7 @@ final class MapMarkerSync {
             have[uid] = nil
         }
         sent = have
-        syncLines(engine, places: places, routes: drawn.compactMap(\.line), now: now)
+        syncLines(engine, places: places, routes: drawn.compactMap(\.graphics.line), now: now)
     }
 
     private func syncLines(_ engine: EngineBridge, places: [String: CotPoint], routes: [RouteGraphics.Line],

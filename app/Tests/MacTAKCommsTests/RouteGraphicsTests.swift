@@ -1,7 +1,8 @@
 // RouteGraphicsTests.swift — what a route draws (G3.10b), each expectation
 // read off 5.5 at the pin: the line (GLPolyline over the route), its label
 // (labels_on), the waypoints (b-m-p-w's icon in the route's colour, their
-// names), control points hidden, a marker on the route followed.
+// names), control points hidden (vertices while edited, G3.10c), a
+// marker on the route followed.
 
 import MacTAKCot
 import XCTest
@@ -86,6 +87,17 @@ final class RouteGraphicsTests: XCTestCase {
         let one = RouteGraphics(Route(id: "r", title: "Route 1", points: [.waypoint(place(0), uid: "a")]))
         XCTAssertNil(one.line)
         XCTAssertEqual(one.waypoints.map(\.uid), ["a"])
+    }
+
+    func testWhileEditedControlPointsAreVertices() throws {
+        var r = route(threePoints)
+        XCTAssertTrue(RouteGraphics(r).vertices.isEmpty)
+        let vertices = RouteGraphics(r, editing: true).vertices
+        XCTAssertEqual(vertices.map(\.uid), ["b"])
+        XCTAssertEqual(vertices.first?.icon, MarkerIcon(uri: "asset://icons/polyline_vertex_cropped.png", width: 12, height: 12))
+        XCTAssertNil(vertices.first?.label)
+        r.strokeWeight = 5.5
+        XCTAssertEqual(RouteGraphics(r, editing: true).vertices.first?.icon.width, 17, "ceil(max(4, weight) * 3)")
     }
 
     func testAnUnnamedWaypointHasNoLabel() {
