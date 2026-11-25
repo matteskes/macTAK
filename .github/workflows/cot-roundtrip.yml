@@ -54,7 +54,7 @@ jobs:
           persist-credentials: false
 
       - name: Pull the tinygltf tarball from Git LFS (depends/ holds LFS pointers)
-        run: git -C src lfs pull --include=depends/tinygltf-2.4.1-mod.tar.gz
+        run: dev/lfs-pull-tinygltf.sh
 
       - name: Update Homebrew (every job installs the same versions; issue 151)
         # Without this, each runner installs what its image's Homebrew
