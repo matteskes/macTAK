@@ -6,8 +6,11 @@
 //   role; its SA names no author.
 // - a CoT marker: its label, type and point, its <__group>, its iconset
 //   path, and its author from its event's <link> and <creator>.
-// - an R&B line: "u-rb-a", its title, its two ends where they are now,
-//   its <creator>, in the Range & Bearing group.
+// - an R&B line: "u-rb-a", its title, its two ends where they are now
+//   (RangeBearingLines.ends), its <creator>, in the Range & Bearing group;
+//   and each end fixed on the ground, which 5.5 makes a marker of its own
+//   in that group (RangeAndBearingEndpoint, titled "<line> Endpoint" by
+//   RangeAndBearingMapItem.setTitle; addToObjList left on, so listed).
 // - a route: "b-m-r", its title and points, its <creator>; a search finds
 //   it by its waypoints' callsigns too.
 
@@ -26,17 +29,29 @@ extension OverlayItem {
                   author: OverlayItem.markerAuthor(of: marker.event.detail), iconsetPath: marker.traits.iconsetPath)
     }
 
-    /// `line`, its ends tied to markers found by `locate` (an end whose
-    /// marker isn't found is left out).
-    public init(_ line: RangeBearingLine, locate: (String) -> CotPoint?) {
-        let ends = [line.start, line.end].compactMap { end -> CotPoint? in
-            switch end {
-            case .item(let uid): locate(uid)
-            case .point(let p): p
-            }
-        }
-        self.init(id: line.id, title: line.title, type: RangeBearingEvent.type, location: .line(ends),
+    /// `line` with its ends where they are now, as
+    /// RangeBearingLines.ends(markers:) gives them: an end whose marker has
+    /// gone stays where the marker was last seen (5.5's removePoint).
+    public init(_ line: RangeBearingLine, start: CotPoint, end: CotPoint) {
+        self.init(id: line.id, title: line.title, type: RangeBearingEvent.type, location: .line([start, end]),
                   author: line.creator?.uid, group: .rangeAndBearing)
+    }
+
+    /// RangeAndBearingEndpoint's type.
+    public static let rangeAndBearingEndpointType = "u-r-b-endpoint"
+
+    /// What `line` puts in the Range & Bearing group, as 5.5's list shows
+    /// it: the line, and for each end fixed on the ground (not tied to a
+    /// marker) its endpoint marker, "<title> Endpoint", with no author.
+    public static func rangeAndBearing(_ line: RangeBearingLine, start: CotPoint, end: CotPoint) -> [OverlayItem] {
+        var items = [OverlayItem(line, start: start, end: end)]
+        for (name, end, point) in [("start", line.start, start), ("end", line.end, end)] {
+            guard case .point = end else { continue }
+            items.append(OverlayItem(id: line.id + "." + name, title: line.title + " Endpoint",
+                                     type: rangeAndBearingEndpointType, location: .point(point),
+                                     group: .rangeAndBearing))
+        }
+        return items
     }
 
     public init(_ route: Route) {

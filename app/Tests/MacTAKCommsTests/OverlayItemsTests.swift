@@ -41,15 +41,38 @@ final class OverlayItemsTests: XCTestCase {
         XCTAssertEqual(item.location, .point(CotPoint(lat: 37.7955, lon: -122.3937, hae: 5, ce: 9_999_999, le: 9_999_999)))
     }
 
-    func testAnRBLineIsWhereItsEndsAreNow() {
+    func testAnRBLineIsWhereItsEndsAreNowAndStaysWhenItsMarkerGoes() throws {
+        let lines = RangeBearingLines()
         let fixed = CotPoint(lat: 1, lon: 2), marker = CotPoint(lat: 3, lon: 4)
-        let line = RangeBearingLine(id: "rb", title: "R&B 1", start: .point(fixed), end: .item("m"),
-                                    creator: Author(uid: "me", type: "a-f-G", callsign: "ME", time: t0))
-        let item = OverlayItem(line) { $0 == "m" ? marker : nil }
+        lines.author = { Author(uid: "me", type: "a-f-G", callsign: "ME", time: self.t0) }
+        lines.add(start: .point(fixed), end: .item("m"))
+        var ends = try XCTUnwrap(lines.ends(markers: ["m": marker]).first)
+        var item = OverlayItem(ends.line, start: ends.start, end: ends.end)
         XCTAssertEqual(item.location, .line([fixed, marker]))
         XCTAssertEqual(item.group, .rangeAndBearing)
         XCTAssertEqual(item.author, "me")
-        XCTAssertEqual(OverlayItem(line) { _ in nil }.location, .line([fixed]), "a marker gone leaves one end")
+        ends = try XCTUnwrap(lines.ends(markers: [:]).first)
+        item = OverlayItem(ends.line, start: ends.start, end: ends.end)
+        XCTAssertEqual(item.location, .line([fixed, marker]), "the marker gone: the end stays where it was last seen")
+    }
+
+    func testAFixedEndIsAnEndpointRowInTheGroup() throws {
+        let lines = RangeBearingLines()
+        let fixed = CotPoint(lat: 1, lon: 2), marker = CotPoint(lat: 3, lon: 4)
+        lines.add(start: .point(fixed), end: .item("m"))
+        var ends = try XCTUnwrap(lines.ends(markers: ["m": marker]).first)
+        var items = OverlayItem.rangeAndBearing(ends.line, start: ends.start, end: ends.end)
+        XCTAssertEqual(items.map(\.title), ["R&B 1", "R&B 1 Endpoint"], "the marker-tied end is the marker's own row")
+        XCTAssertEqual(items[1].location, .point(fixed))
+        XCTAssertEqual(items[1].type, "u-r-b-endpoint")
+        XCTAssertNil(items[1].author)
+        ends = try XCTUnwrap(lines.ends(markers: [:]).first)
+        items = OverlayItem.rangeAndBearing(ends.line, start: ends.start, end: ends.end)
+        XCTAssertEqual(items.map(\.title), ["R&B 1", "R&B 1 Endpoint", "R&B 1 Endpoint"],
+                       "a marker gone: its end is pinned (removePoint) and gets an endpoint too")
+        let top = OverlayTree.build(items)
+        XCTAssertEqual(top.first { $0.title == "Shapes" }?.children?.first?.childCount, 3)
+        XCTAssertEqual(OverlayTree.search("endpoint", in: top).count, 2)
     }
 
     func testARouteIsFoundByItsWaypointNames() {

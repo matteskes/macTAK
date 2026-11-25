@@ -25,10 +25,18 @@
 //   lists first either way. (5.5's Z–A sort, SortAlphabetDesc, is offered
 //   only by the TAK server channel lists; these lists fall back to
 //   alphabetical.)
-// - a search (searchImpl over each top-level list's Search.find) finds the
-//   rows whose title holds the term, ignoring case: a list whose title
-//   matches is found itself, not searched into; a route is found by its
-//   waypoints' callsigns too. One row per uid, sorted as the lists are.
+// - a search (searchImpl) asks each top-level list's Search.find, and
+//   finds the list itself when its lowered title holds the term as typed
+//   (rootSearchEngine). Each list's find lowers the term and:
+//   - a filter overlay (ListModelImpl): a row whose title holds it, else
+//     a child overlay's find; a list that matches isn't searched into;
+//   - Routes (RouteListModel): a route by its title or a waypoint's
+//     callsign;
+//   - a parent (MapOverlayParent, Markers and Shapes): its lists' finds,
+//     not their titles;
+//   - the Range & Bearing group (MapGroupHierarchyListItem): an item
+//     whose lowered title matches "*term*" ('*' in the term a wildcard).
+//   One row per uid, sorted as the lists are.
 
 import Foundation
 
@@ -79,6 +87,18 @@ public enum OverlayTree {
         public var children: [Node]?
         /// getPreferredListIndex: a list's order; -1 for an item.
         public var order: Int
+        /// Which of 5.5's list classes it is, for search.
+        var kind: Kind = .item
+
+        enum Kind: Sendable, Equatable {
+            case item
+            /// FilterMapOverlay.ListModelImpl (RouteListModel for Routes).
+            case overlay
+            /// MapOverlayParent.
+            case parent
+            /// MapGroupHierarchyListItem.
+            case group
+        }
 
         public var isList: Bool { children != nil }
 
@@ -140,19 +160,20 @@ public enum OverlayTree {
             let lists = config.children.map { list($0, path: here) }.sorted(by: alphabetical)
             let rows = rows(placed[config.id] ?? [], path: here)
             return Node(id: here, uid: config.id, title: config.title, icon: config.icon, iconColor: config.iconColor,
-                        children: (lists + rows).filter { !$0.isHiddenEmpty }, order: config.order)
+                        children: (lists + rows).filter { !$0.isHiddenEmpty }, order: config.order, kind: .overlay)
         }
 
         /// A MapOverlayParent's list.
         func parent(id: String, title: String, icon: String, order: Int, children: [Node]) -> Node {
             Node(id: "/" + id, uid: id, title: title, icon: icon,
-                 children: children.filter { !$0.isHiddenEmpty }.sorted(by: alphabetical), order: order)
+                 children: children.filter { !$0.isHiddenEmpty }.sorted(by: alphabetical), order: order, kind: .parent)
         }
 
         /// A map group's list (MapGroupHierarchyListItem), no order of its own.
         func group(id: String, title: String, icon: String, items: [OverlayItem], path: String) -> Node {
             let here = path + "/" + id
-            return Node(id: here, uid: id, title: title, icon: icon, children: rows(items, path: here), order: -1)
+            return Node(id: here, uid: id, title: title, icon: icon, children: rows(items, path: here), order: -1,
+                        kind: .group)
         }
 
         func rows(_ items: [OverlayItem], path: String) -> [Node] {
@@ -164,31 +185,68 @@ public enum OverlayTree {
     // MARK: - searching
 
     /// The rows under `top` (the top-level lists) a search for `term`
-    /// finds; none for an empty term.
+    /// finds; none for an empty term (searchListAndFilterResults).
     public static func search(_ term: String, in top: [Node], sort: Sort = .alphabetical) -> [Node] {
-        let term = term.lowercased()
         guard !term.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
         var found: [Node] = []
         for list in top {
             found += find(term, in: list)
+            // The root search (rootSearchEngine) lowers the title, not the term.
             if list.title.lowercased().contains(term) { found.append(list) }
         }
         var seen = Set<String>()
         return found.filter { seen.insert($0.uid).inserted }.sorted(by: order(sort))
     }
 
-    /// ListModelImpl.find, and RouteListModel.find for the Routes list.
+    /// A list's Search.find, by its class; each lowers the term first.
     private static func find(_ term: String, in list: Node) -> [Node] {
-        var found: [Node] = []
-        for row in list.children ?? [] {
-            let names = [row.title] + (list.uid == routesID ? row.item?.searchNames ?? [] : [])
-            if names.contains(where: { $0.lowercased().contains(term) }) {
-                found.append(row)
-            } else if row.isList {
-                found += find(term, in: row)
+        let term = term.lowercased()
+        let rows = list.children ?? []
+        switch list.kind {
+        case .item:
+            return []
+        case .parent:
+            // MapOverlayParent: its lists' finds, not their titles.
+            return rows.flatMap { find(term, in: $0) }
+        case .group:
+            // MapGroupHierarchyListItem: deepFindItems(field, "*term*").
+            // String.matches: the whole value.
+            let pattern = "^(?:" + wildcardRegex("*" + term + "*") + ")$"
+            return rows.filter { $0.title.lowercased().range(of: pattern, options: .regularExpression) != nil }
+        case .overlay where list.uid == routesID:
+            // RouteListModel: a route's title, or a waypoint's callsign.
+            return rows.filter { row in
+                ([row.title] + (row.item?.searchNames ?? [])).contains { !$0.isEmpty && $0.lowercased().contains(term) }
+            }
+        case .overlay:
+            // ListModelImpl: a row by its title, else into a list.
+            return rows.flatMap { row -> [Node] in
+                if !row.title.isEmpty, row.title.lowercased().contains(term) { return [row] }
+                return row.kind == .overlay ? find(term, in: row) : []
             }
         }
-        return found
+    }
+
+    /// WildCard.wildcardAsRegex(s, '*'): '*' is any run, "\\*" a literal
+    /// '*', and the regex characters are escaped.
+    static func wildcardRegex(_ s: String) -> String {
+        var regex = "", previous: Character = " "
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            defer { previous = c; i += 1 }
+            if previous == "*" && c == "*" { continue }
+            if c == "\\", i + 1 < chars.count, chars[i + 1] == "*" {
+                regex += "\\*"
+                i += 1
+                continue
+            }
+            if c == "*" { regex += ".*"; continue }
+            if "*\\[]^$?.{}+|()-:!&".contains(c) { regex += "\\" }
+            regex.append(c)
+        }
+        return regex
     }
 
     // MARK: - sorting

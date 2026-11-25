@@ -151,7 +151,8 @@ final class OverlayTreeTests: XCTestCase {
     // MARK: - filters
 
     private let view = FieldOfView(upperLeft: CotPoint(lat: 1, lon: -1), upperRight: CotPoint(lat: 1, lon: 1),
-                                   lowerRight: CotPoint(lat: -1, lon: 1), lowerLeft: CotPoint(lat: -1, lon: -1))
+                                   lowerRight: CotPoint(lat: -1, lon: 1), lowerLeft: CotPoint(lat: -1, lon: -1),
+                                   center: CotPoint(lat: 0, lon: 0))
 
     func testShowAllOffKeepsWhatIsInView() {
         let items = [item("in", "a-h-G", at: p(0.5, 0.5)), item("out", "a-h-G", at: p(5, 5)), item("nowhere", "a-h-G")]
@@ -169,12 +170,37 @@ final class OverlayTreeTests: XCTestCase {
     }
 
     func testATurnedViewIsAQuadrilateral() {
-        let diamond = FieldOfView(upperLeft: p(0, -1), upperRight: p(1, 0), lowerRight: p(0, 1), lowerLeft: p(-1, 0))
+        let diamond = FieldOfView(upperLeft: p(0, -1), upperRight: p(1, 0), lowerRight: p(0, 1), lowerLeft: p(-1, 0),
+                                  center: p(0, 0))
         XCTAssertTrue(diamond.contains(p(0, 0)))
         XCTAssertFalse(diamond.contains(p(0.9, 0.9)), "inside the bounds, outside the diamond")
         XCTAssertTrue(diamond.contains(.line([p(0.9, 0.9), p(0.95, 0.95)])),
                       "a line's point only has to be inside the bounds")
         XCTAssertTrue(diamond.contains(.line([p(-2, 0), p(2, 0)])), "it crosses the diamond")
+    }
+
+    /// A view over the antimeridian, centred east of it: corners at
+    /// 178…182 unwrapped.
+    private func idlView(continuous: Bool = true) -> FieldOfView {
+        FieldOfView(upperLeft: p(1, 178), upperRight: p(1, 182), lowerRight: p(-1, 182), lowerLeft: p(-1, 178),
+                    center: p(0, 179.5), continuousScroll: continuous)
+    }
+
+    func testAViewOverTheAntimeridianIsTwoBoxes() {
+        let view = idlView()
+        XCTAssertTrue(view.contains(p(0, 179)), "east of the line")
+        XCTAssertTrue(view.contains(p(0, -179)), "west of it, unwrapped to 181")
+        XCTAssertFalse(view.contains(p(0, -177)), "past the view's east edge")
+        XCTAssertFalse(view.contains(p(0, 0)))
+        XCTAssertFalse(idlView(continuous: false).contains(p(0, -179)),
+                       "without continuous scroll it is one box, 178 to -178 wrapped")
+    }
+
+    func testALineAcrossTheAntimeridianMeetsTheView() {
+        let view = idlView()
+        XCTAssertTrue(view.contains(.line([p(5, 179), p(-5, -179)])), "its bounds wrap, its points unwrap to cross")
+        XCTAssertTrue(view.contains(.line([p(5, -179.5), p(-5, -179.5)])), "west of the line, crossing the view")
+        XCTAssertFalse(view.contains(.line([p(5, -170), p(-5, -170)])))
     }
 
     func testSelfAuthoredKeepsWhatThisDeviceMade() {
@@ -203,15 +229,36 @@ final class OverlayTreeTests: XCTestCase {
 
     func testSearchFindsRowsNotTheListsHoldingThem() {
         let top = OverlayTree.build([item("h", "a-h-G", title: "Bridge"), item("f", "a-f-G", title: "Ridge camp")])
-        XCTAssertEqual(OverlayTree.search("RIDGE", in: top).map(\.uid), ["h", "f"])
+        XCTAssertEqual(OverlayTree.search("RIDGE", in: top).map(\.uid), ["h", "f"], "the lists lower the term")
         XCTAssertEqual(OverlayTree.search("  ", in: top), [])
     }
 
-    func testAMatchingListIsFoundItself() {
-        let top = OverlayTree.build([item("h", "a-h-G", title: "Alpha")])
+    func testAMatchingListIsFoundItselfAndNotSearchedInto() {
+        let top = OverlayTree.build([item("h", "a-h-G", title: "Red one")])
         XCTAssertEqual(OverlayTree.search("red", in: top).map(\.uid), ["hostile"])
-        XCTAssertEqual(OverlayTree.search("markers", in: top).map(\.uid), ["affiliations", "markerroot"],
-                       "the top list and the list under it, by order; not searched into")
+    }
+
+    func testAParentSearchesItsListsNotTheirTitles() {
+        let top = OverlayTree.build([item("h", "a-h-G", title: "Alpha")])
+        XCTAssertEqual(OverlayTree.search("markers", in: top).map(\.uid), ["hostile", "markerroot"],
+                       "Markers by its own title at the top; the Markers list under it isn't matched by Markers")
+    }
+
+    func testTheTopLevelTitleIsMatchedAgainstTheTermAsTyped() {
+        let top = OverlayTree.build([item("h", "a-h-G", title: "Alpha")])
+        XCTAssertEqual(OverlayTree.search("Markers", in: top).map(\.uid), ["hostile"],
+                       "\"markers\" doesn't hold \"Markers\"; the lists under it lower the term")
+    }
+
+    func testTheRangeAndBearingGroupMatchesAWildcard() {
+        let lines = ["R&B 1", "R&B 12", "Bridge"].map {
+            OverlayItem(id: $0, title: $0, type: RangeBearingEvent.type, group: .rangeAndBearing)
+        }
+        let top = OverlayTree.build(lines)
+        XCTAssertEqual(OverlayTree.search("r&b 1", in: top).map(\.uid), ["R&B 1", "R&B 12"])
+        XCTAssertEqual(OverlayTree.search("r*2", in: top).map(\.uid), ["R&B 12"], "'*' in the term is a wildcard")
+        XCTAssertEqual(OverlayTree.search("range", in: top).map(\.uid), [], "the group's own title isn't searched")
+        XCTAssertEqual(OverlayTree.wildcardRegex("*a.b\\*c*"), ".*a\\.b\\*c.*")
     }
 
     func testARouteIsFoundByItsWaypoints() {

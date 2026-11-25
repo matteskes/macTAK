@@ -2,37 +2,63 @@
 // view filter (G3.11a): "Show All" off keeps only the items on screen, as
 // 5.5's FOVFilter does over a MapState.
 //
-// The view is its four corners on the ground (the screen's corners,
-// MapSceneModel.inverse), so a rotated map is a turned quadrilateral, and
-// its bounds are the corners' extremes.
+// The view is MapState as the map view builds it: the screen's corners on
+// the ground (MapSceneModel.inverse, longitudes unwrapped: past ±180 when
+// the view runs over the antimeridian) and its centre.
 //
-// - a point is in view when it is inside the bounds and inside the
+// - its bounds: the corners' extremes. With continuous scroll on
+//   (atakContinuousScrollEnabled, 5.5's default) a view running over the
+//   antimeridian is two boxes, one each side, and its corners are unwrapped
+//   into the centre's hemisphere (pointUnwrap);
+// - a point is in view when it is in the bounds and in the corners'
 //   quadrilateral (contains, precise);
-// - a line is in view when one of its points is inside the bounds, or,
-//   when the line's bounds meet the view's, one of its points is inside
-//   the quadrilateral or one of its segments crosses an edge
+// - a line is in view when one of its points is in the bounds; else, when
+//   the line's bounds (GeoBounds.createFromPoints, wrapped over the
+//   antimeridian with continuous scroll) meet the view's, when one of its
+//   points, unwrapped to the view's side (GLAntiMeridianHelper.getUnwrap),
+//   is in the quadrilateral or one of its segments crosses an edge
 //   (Vector2D.segmentArraysIntersect). macTAK's lines (routes, R&B lines)
-//   are open, so 5.5's closed-shape test (the view's centre inside the
-//   shape) never applies.
-//
-// The map doesn't scroll across the antimeridian, so a view never crosses
-// it (MapState's crossesIDL needs continuous scroll).
+//   are open, so 5.5's closed-shape test never applies.
 
 import Foundation
 
 public struct FieldOfView: Sendable, Equatable {
-    public var upperLeft, upperRight, lowerRight, lowerLeft: CotPoint
+    private let north, south: Double
+    private let eastUnwrapped, westUnwrapped: Double
+    private let continuousScroll: Bool
+    /// One box, or the two either side of the antimeridian.
+    private let boxes: [GeoBox]
+    /// The corners, closed, unwrapped into the centre's hemisphere.
+    private let quad: [Plane]
+    private let pointUnwrap: Double
 
-    public init(upperLeft: CotPoint, upperRight: CotPoint, lowerRight: CotPoint, lowerLeft: CotPoint) {
-        self.upperLeft = upperLeft; self.upperRight = upperRight
-        self.lowerRight = lowerRight; self.lowerLeft = lowerLeft
+    /// MapState(mapView): the screen's corners on the ground, its centre,
+    /// and whether the map scrolls continuously.
+    public init(upperLeft: CotPoint, upperRight: CotPoint, lowerRight: CotPoint, lowerLeft: CotPoint,
+                center: CotPoint, continuousScroll: Bool = true) {
+        let corners = [upperLeft, upperRight, lowerRight, lowerLeft]
+        north = corners.map(\.lat).max()!
+        south = corners.map(\.lat).min()!
+        eastUnwrapped = corners.map(\.lon).max()!
+        westUnwrapped = corners.map(\.lon).min()!
+        self.continuousScroll = continuousScroll
+        let crossesIDL = continuousScroll
+            && (eastUnwrapped > 180 && westUnwrapped < 180 || westUnwrapped < -180 && eastUnwrapped > -180)
+        let east = Self.wrap(eastUnwrapped), west = Self.wrap(westUnwrapped)
+        let unwrap: Double
+        if crossesIDL {
+            boxes = [GeoBox(north, max(east, west), south, 180), GeoBox(north, -180, south, min(east, west))]
+            unwrap = center.lon < 0 ? -360 : 360
+        } else {
+            boxes = [GeoBox(north, west, south, east)]
+            unwrap = 0
+        }
+        pointUnwrap = unwrap
+        quad = (corners + [upperLeft]).map { Plane($0, unwrap: unwrap) }
     }
 
-    private var corners: [CotPoint] { [upperLeft, upperRight, lowerRight, lowerLeft] }
-    private var north: Double { corners.map(\.lat).max()! }
-    private var south: Double { corners.map(\.lat).min()! }
-    private var east: Double { corners.map(\.lon).max()! }
-    private var west: Double { corners.map(\.lon).min()! }
+    /// GeoCalculations.wrapLongitude.
+    private static func wrap(_ lon: Double) -> Double { lon < -180 ? lon + 360 : lon > 180 ? lon - 360 : lon }
 
     /// FOVFilter.accept(MapItem).
     public func contains(_ location: OverlayItem.Location?) -> Bool {
@@ -45,34 +71,111 @@ public struct FieldOfView: Sendable, Equatable {
 
     /// MapState.contains(point, precise: true).
     public func contains(_ p: CotPoint) -> Bool {
-        p.isValid && boundsContain(p) && Plane.polygon(corners.map(Plane.init), contains: Plane(p))
+        p.isValid && boundsContain(p) && Plane.polygon(quad, contains: Plane(p, unwrap: pointUnwrap))
     }
 
-    private func boundsContain(_ p: CotPoint) -> Bool {
-        (south...north).contains(p.lat) && (west...east).contains(p.lon)
-    }
+    private func boundsContain(_ p: CotPoint) -> Bool { boxes.contains { $0.contains(p) } }
 
     /// FOVFilter.accept(Shape) for an open line.
     private func meets(_ points: [CotPoint]) -> Bool {
         guard points.count >= 2 else { return false }
         if points.contains(where: boundsContain) { return true }
-        let lats = points.map(\.lat), lons = points.map(\.lon)
-        guard lats.min()! <= north, lats.max()! >= south, lons.min()! <= east, lons.max()! >= west else {
-            return false
-        }
-        let quad = corners.map(Plane.init), line = points.map(Plane.init)
+        let bounds = GeoBox(points: points, wrap180: continuousScroll)
+        guard boxes.contains(where: { $0.intersects(bounds) }) else { return false }
+        let unwrap = continuousScroll ? bounds.unwrap(east: eastUnwrapped, west: westUnwrapped) : 0
+        let line = points.map { Plane($0, unwrap: unwrap) }
         if line.contains(where: { Plane.polygon(quad, contains: $0) }) { return true }
-        return Plane.segments(line, cross: quad + [quad[0]])
+        return Plane.segments(line, cross: quad)
+    }
+}
+
+/// The kernel's GeoBounds, as far as the filter uses it (no altitudes:
+/// MapState's bounds have none).
+private struct GeoBox: Equatable {
+    var south, west, north, east: Double
+    var wrap180 = false
+
+    /// GeoBounds(lat0, lng0, lat1, lng1): the extremes of two corners.
+    init(_ lat0: Double, _ lng0: Double, _ lat1: Double, _ lng1: Double) {
+        south = min(lat0, lat1); north = max(lat0, lat1)
+        west = min(lng0, lng1); east = max(lng0, lng1)
+    }
+
+    /// GeoBounds.createFromPoints (MutableGeoBounds.set), the kernel's
+    /// loop as it is: a point raising the north isn't tried for the south.
+    init(points: [CotPoint], wrap180: Bool) {
+        let crosses = wrap180 && Self.crossesIDL(points)
+        var n = 0.0, s = 0.0, e = 0.0, w = 0.0
+        for (i, p) in points.enumerated() {
+            var lng = p.lon
+            if crosses { lng += lng > 0 ? -360 : lng < 0 ? 360 : 0 }
+            if i == 0 {
+                n = p.lat; s = p.lat; e = lng; w = lng
+            } else {
+                if p.lat > n { n = p.lat } else if p.lat < s { s = p.lat }
+                if lng > e { e = lng } else if lng < w { w = lng }
+            }
+        }
+        if e > 180 || crosses && e == 180 { e -= 360 }
+        if w < -180 || crosses && w == -180 { w += 360 }
+        self.init(s, min(e, w), n, max(e, w))
+        self.wrap180 = wrap180
+    }
+
+    /// GeoCalculations.crossesIDL.
+    private static func crossesIDL(_ points: [CotPoint]) -> Bool {
+        let lons = points.map(\.lon)
+        guard let lo = lons.min(), let hi = lons.max() else { return false }
+        return lo < -180 || hi > 180 || hi - lo > 180
+    }
+
+    var crossesIDL: Bool { wrap180 && abs(east - west) > 180 }
+
+    func contains(_ p: CotPoint) -> Bool {
+        guard p.lat >= south, p.lat <= north else { return false }
+        if crossesIDL { return p.lon >= east && p.lon <= west + 360 || p.lon >= east - 360 && p.lon <= west }
+        return p.lon >= west && p.lon <= east
+    }
+
+    func intersects(_ b: GeoBox) -> Bool {
+        if north < b.south || south > b.north { return false }
+        let bCross = b.wrap180 && abs(b.east - b.west) > 180
+        if crossesIDL { return bCross || !(b.west > west && b.east < east) }
+        if bCross { return !(west > b.west && east < b.east) }
+        return !(east < b.west || west > b.east)
+    }
+
+    /// GLAntiMeridianHelper.getUnwrap: how far to shift this shape's
+    /// longitudes onto the view's side.
+    func unwrap(east eastUnwrapped: Double, west westUnwrapped: Double) -> Double {
+        let wrap = crossesIDL || eastUnwrapped > 180 && west + 360 <= eastUnwrapped
+            || westUnwrapped < -180 && east - 360 >= westUnwrapped
+        guard wrap else { return 0 }
+        if crossesIDL {
+            if westUnwrapped < -180 { return -360 }
+            if eastUnwrapped > 180 { return 360 }
+            if westUnwrapped <= west { return -360 }
+            if eastUnwrapped >= east { return 360 }
+            return (eastUnwrapped + westUnwrapped) / 2 < 0 ? -360 : 360
+        }
+        if westUnwrapped < -180 && west > 0 { return -360 }
+        if eastUnwrapped > 180 && east < 0 { return 360 }
+        return 0
     }
 }
 
 /// Vector2D's plane geometry over (lon, lat).
-private struct Plane {
+private struct Plane: Equatable {
     var x, y: Double
 
-    init(_ p: CotPoint) { x = p.lon; y = p.lat }
+    /// FOVFilter.geo2Vector: a longitude on the other side of 0 from the
+    /// unwrap moves by it.
+    init(_ p: CotPoint, unwrap: Double) {
+        x = unwrap > 0 && p.lon < 0 || unwrap < 0 && p.lon > 0 ? p.lon + unwrap : p.lon
+        y = p.lat
+    }
 
-    /// Vector2D.polygonContainsPoint: an even-odd ray cast.
+    /// Vector2D.polygonContainsPoint.
     static func polygon(_ polygon: [Plane], contains p: Plane) -> Bool {
         var inside = false
         var j = polygon.count - 1
@@ -86,23 +189,21 @@ private struct Plane {
         return inside
     }
 
-    /// Vector2D.segmentArraysIntersect: whether a segment of polyline `a`
-    /// crosses one of polyline `b`.
+    /// Vector2D.segmentArraysIntersect: parallel segments never meet.
     static func segments(_ a: [Plane], cross b: [Plane]) -> Bool {
-        for (a0, a1) in zip(a, a.dropFirst()) {
-            for (b0, b1) in zip(b, b.dropFirst()) where intersect(a0, a1, b0, b1) { return true }
+        func cross(_ ux: Double, _ uy: Double, _ vx: Double, _ vy: Double) -> Double { ux * vy - uy * vx }
+        for i in 0..<max(a.count - 1, 0) {
+            for j in 0..<max(b.count - 1, 0) {
+                let s0 = (b[j].x - b[j + 1].x, b[j].y - b[j + 1].y)
+                let s1 = (a[i + 1].x - a[i].x, a[i + 1].y - a[i].y)
+                let c1 = cross(s1.0, s1.1, s0.0, s0.1)
+                guard c1 != 0 else { continue }
+                let s2 = (b[j + 1].x - a[i].x, b[j + 1].y - a[i].y)
+                let t = cross(s2.0, s2.1, s0.0, s0.1) / c1
+                let u = cross(s2.0, s2.1, s1.0, s1.1) / c1
+                if t >= 0, t <= 1, u >= 0, u <= 1 { return true }
+            }
         }
         return false
-    }
-
-    private static func intersect(_ p1: Plane, _ p2: Plane, _ q1: Plane, _ q2: Plane) -> Bool {
-        func cross(_ o: Plane, _ a: Plane, _ b: Plane) -> Double { (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x) }
-        func within(_ o: Plane, _ a: Plane, _ p: Plane) -> Bool {
-            min(o.x, a.x) <= p.x && p.x <= max(o.x, a.x) && min(o.y, a.y) <= p.y && p.y <= max(o.y, a.y)
-        }
-        let d1 = cross(q1, q2, p1), d2 = cross(q1, q2, p2), d3 = cross(p1, p2, q1), d4 = cross(p1, p2, q2)
-        if (d1 > 0) != (d2 > 0), d1 != 0, d2 != 0, (d3 > 0) != (d4 > 0), d3 != 0, d4 != 0 { return true }
-        return d1 == 0 && within(q1, q2, p1) || d2 == 0 && within(q1, q2, p2)
-            || d3 == 0 && within(p1, p2, q1) || d4 == 0 && within(p1, p2, q2)
     }
 }
