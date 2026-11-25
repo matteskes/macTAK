@@ -3156,3 +3156,100 @@ list (G3.11), routes embedded in markers (`_route`,
 4. The kernel leg of the golden test writes the details in Java, as the
    point golden does (§G3.9's gate audit): 5.5's handlers need a
    `MapView`.
+
+### G3.10a — routes as 5.5's CoT (2026-11-25, branch `g3/route-cot`)
+
+#### What 5.5 does, beyond the plan's reading
+
+- **The transport type follows the method.** `setRouteMethod` sets it:
+  "On Foot" for Walking and Swimming, "Vehicle" otherwise. A new route
+  is Driving, so "Vehicle". The importer's "On Foot" default is
+  overwritten too, because it calls `setRouteMethod("Driving")` right
+  after it. A received `type` stays only when `link_attr` has no
+  `method`.
+- **Every point is a marker with a uid.** Control points are
+  `ControlPointMapItem`s, so their links carry uid, `b-m-p-c`,
+  relation c, and an empty callsign and remarks, as takcot's
+  `examples/Route.cot` shows. A link of another type is the map item
+  with that uid when there is one. Otherwise it becomes a control point.
+- **Details for a route**, handler by handler: `contact` (the title);
+  `precisionlocation` (`Shape.getCenter`: the average of the points,
+  with the altitude source that `getElevationMetadata` looks up there,
+  else `???`); `remarks` (only when set); `archive`; `creator`
+  (`RouteCreationDialog` calls `setAuthorInformation`); `color value`
+  (a shape's colour is `value`, not `argb`); `labels_on value='false'`;
+  `strokeColor`, `strokeWeight`, `strokeStyle`; and
+  `<__routeinfo><__navcues/>`, written by `NavigationCueHandler`
+  (registered by `RouteMapComponent`; it has no cues). No parent link:
+  `LinkDetailHandler` only handles point items. The kernel's handlers
+  (bullseye, milsym, group) add nothing.
+- **"Route n" counts every route.** n starts at one more than the
+  number of routes there are, and goes up past names already in use.
+- **Ends are fixed when a route is added to the map.** The receiver runs
+  `fixSPandVDO` on `ITEM_ADDED`, so a received route also gets waypoint
+  ends and automatic names. Waypoints between the ends count down from
+  n−2 when Descending. A name the user gave still takes its number.
+- **A link attribute that doesn't parse.** If `link_attr color` isn't
+  an int (`Integer.parseInt`), the import fails. `stroke` and `style`
+  are logged and ignored. A method, direction, type or order 5.5
+  doesn't know is ignored. The stroke details then override the
+  `link_attr` values (white, 6.0 or solid when a value doesn't parse).
+
+#### What changed
+
+- **`Route`, `RoutePoint`** (MacTAKCot/Routes): the model, with 5.5's
+  enums, defaults and naming rules: `newTitle`,
+  `firstWaypointName`/`lastWaypointName`, `isAutomaticName`
+  (Character.isDigit: any Unicode decimal digit), `nameWaypoints`
+  (validateWaypointNamesNoSync), `fixEnds` (fixSPandVDO(true)), and
+  `center` (computeAverage, which handles a route that crosses the
+  antimeridian).
+- **`RouteEvent`**: `make` writes the route field by field as
+  `Route.toCot` does, with the handlers' details in their registration
+  order. `read` reads it as `RouteImporter` does, onto the route that
+  already has the uid. `decimate`/`parsePoint` are the kernel's
+  `CotPoint.decimate` and `GeoPoint.parseGeoPoint`.
+- **`Routes`** (MacTAKComms): the route store. `add` makes a "Route n"
+  with this client as author and fixed ends. `update` renames the
+  waypoints. `receive` takes b-m-r events and force deletes. `restore`
+  marks a route as received unless this client made it.
+- **`ServerConnections.routes`**: routes are received from commo, kept
+  in the `MapItemArchive` (every route is archived), and restored
+  after the markers (b-m-r has query order 2). `share(route:)` sends
+  one. Routes are watched for changes like the lines.
+  `MapLocator.elevationSource(at:)` looks up the centre's altitude
+  source; this happens only when a route is written, so the archive's
+  change check (its signature) needs no engine call.
+
+#### Not as 5.5
+
+- **A received route is rebuilt from the model** when it is sent on or
+  stored, as R&B lines are. Details macTAK doesn't model (other
+  handlers' details, nav cues) are not kept.
+- **An updated route is renamed the same way as a new one.** 5.5 runs
+  `fixSPandVDO` only on `ITEM_ADDED`. On an update it runs `setPoints`
+  with refreshes off, which can leave automatic names that skip
+  validation until the next edit. macTAK fixes ends and names on every
+  route it takes in.
+- **A waypoint on a route doesn't move the map marker with its uid.**
+  5.5's `createMarker` moves an existing waypoint marker to the link's
+  point. Routes don't draw their waypoints yet (G3.10b).
+- **Changing a control point's name.** `fixSPandVDO` renames the old
+  end point after it has been replaced. For a control point, that point
+  shares `cpMeta` with every other control point on the route. Read
+  literally, this would rename all of them. takcot's example shows them
+  with empty names, so macTAK keeps them empty.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `make test-cot-golden` | the kernel writes all 22 fixtures as expected, 2 of them new (`cot-golden/route`): a new Driving/Infil route with a control point and an altitude; a Walking/Exfil/Descending route, red, dashed, weight 5, with remarks, a waypoint the user named, and `???`. Each link's point is the kernel's own `CotPoint.decimate` |
+| `GoldenTests.testRoutesAreWhatTheKernelBuilds` | the Swift leg builds the same routes with only the user's names, lets the naming name the rest, and checks each name and the transport against the spec |
+| `RouteNamingTests` (11, new) | "Route n"; the end names for each method and direction; automatic names; ascending and descending numbering; a user name kept while still taking its number; renaming on title and method changes; another map item isn't a waypoint; fixEnds; transport by method |
+| `RouteEventTests` (12, new) | the importer's defaults; what `link_attr` sets and ignores; a non-numeric colour and fewer than two points are refused; a link with no uid or type becomes a control point; another type, missing here, becomes a control point; stroke details override `link_attr`; an update keeps what it leaves out; write then read gives the same; decimate; the centre |
+| `RoutesTests` (9, new) | a new route; an update renaming waypoints; routes heard (added, updated, unnamed, given waypoint ends, refused); only a force delete removes one; restore as mine or received; **a route survives a relaunch** (the marker it runs through comes back first, the stored event has the centre's altsrc) |
+| `RouteCommsTests` (1, new) | **one client's route on the other's map**: two `ServerConnections` on `fake-cot-server.py`; A's route reaches B with its uids, types, names, places, line, details and author. Renamed and sent again, it is updated in place |
+| A/B | an expected callsign changed: both legs fail ("FAIL: 1 of 22"). Descending numbering starting one higher: naming and golden tests fail. No `routes.receive` in `handle`: the comms test times out. Routes left out of the archive: the relaunch test fails |
+| `make test-app` | MacTAKCotTests 97, MacTAKCoreTests 14, MacTAKCommsTests 226 pass (1 skipped, Apple's geocoder, network) |
+| `make lint` | passes |

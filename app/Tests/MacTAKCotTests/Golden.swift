@@ -112,4 +112,33 @@ enum Golden {
         }
         return (kind, event)
     }
+
+    /// A route spec: the route the details give, its points with only the
+    /// names the user gave (named=true); the rest are left to the naming,
+    /// as the route tool leaves them.
+    static func route(_ spec: [String: String]) throws -> Route {
+        func number(_ key: String) -> Double? { spec[key].flatMap(Double.init) }
+        let time = Cot.parseTime(spec["time"]!)!
+        var points: [RoutePoint] = []
+        var i = 1
+        while let uid = spec["point.\(i).uid"] {
+            let p = "point.\(i)."
+            let place = CotPoint(lat: number(p + "lat")!, lon: number(p + "lon")!, hae: number(p + "hae") ?? CotPoint.unknown)
+            points.append(RoutePoint(uid: uid, type: spec[p + "type"]!, point: place,
+                                     callsign: spec[p + "named"] == "true" ? spec[p + "callsign"] : nil,
+                                     remarks: spec[p + "remarks"]))
+            i += 1
+        }
+        var route = Route(id: spec["uid"]!, title: spec["title"]!, points: points,
+                          color: Int32(spec["color"]!)!, strokeWeight: number("stroke")!, strokeStyle: Int(spec["style"]!)!,
+                          direction: Route.Direction(rawValue: spec["direction"]!)!,
+                          kind: Route.Kind(rawValue: spec["routetype"]!)!,
+                          order: Route.Order(named: spec["order"]!)!,
+                          planningMethod: spec["planningmethod"], prefix: spec["prefix"]!, remarks: spec["remarks"],
+                          creator: Author(uid: spec["author.uid"]!, type: spec["author.type"]!,
+                                          callsign: spec["author.callsign"]!, time: time))
+        route.setMethod(Route.Method(rawValue: spec["method"]!)!)
+        route.fixEnds()
+        return route
+    }
 }

@@ -3,6 +3,7 @@ package mactak.g3;
 import com.atakmap.coremap.cot.event.CotDetail;
 import com.atakmap.coremap.cot.event.CotEvent;
 import com.atakmap.coremap.cot.event.CotPoint;
+import com.atakmap.coremap.maps.coords.GeoPoint;
 import com.atakmap.coremap.maps.time.CoordinatedTime;
 
 import gov.tak.api.cot.detail.GroupDetailHandler;
@@ -49,6 +50,11 @@ import javax.xml.parsers.DocumentBuilderFactory;
  * kernel's CotEvent, CotPoint, CotDetail and CoordinatedTime; then the
  * remarks and address the inspector gives it. 5.5 runs its handlers out of
  * a HashSet, in no set order; this follows the port's.</li>
+ * <li>{@code route/*.properties}: a route (G3.10a), as ATAK 5.5's
+ * EditablePolyline.toCot and Route.toCot write it, with the kernel's
+ * CotEvent, CotDetail, CoordinatedTime and {@link CotPoint#decimate(GeoPoint)}
+ * for each link's point; then the details the app's handlers write for a
+ * route, written here in the port's order (they need a MapView).</li>
  * </ul>
  *
  * <p>Both legs compare in one canonical form (canonical() here,
@@ -78,6 +84,9 @@ public final class CotOracle {
         }
         for (File spec : fixtures(new File(root, "point"), ".properties")) {
             check(pointEvent(load(spec)).toString(), expected(root, "point", spec));
+        }
+        for (File spec : fixtures(new File(root, "route"), ".properties")) {
+            check(routeEvent(load(spec)).toString(), expected(root, "route", spec));
         }
         if (checks == 0)
             fail("no fixtures under " + root);
@@ -263,6 +272,98 @@ public final class CotOracle {
             address.setAttribute("time", s.getProperty("address.time"));
             detail.addChild(address);
         }
+        return e;
+    }
+
+    /** Route.toCot (EditablePolyline.toCot, then link_attr), then the handlers' details. */
+    static CotEvent routeEvent(Properties s) {
+        CotEvent e = new CotEvent(); // the point stays CotPoint.ZERO: toCot never sets it
+        e.setType("b-m-r");
+        CoordinatedTime time = new CoordinatedTime(Instant.parse(s.getProperty("time")).toEpochMilli());
+        e.setTime(time);
+        e.setStart(time);
+        e.setStale(time.addDays(1));
+        e.setUID(s.getProperty("uid"));
+        e.setVersion("2.0");
+        e.setHow("h-e");
+        e.setAccess("Undefined"); // AccessUtils.setAccessDefault
+
+        CotDetail detail = new CotDetail("detail");
+        e.setDetail(detail);
+        for (int i = 1; s.getProperty("point." + i + ".uid") != null; i++) {
+            String p = "point." + i + ".";
+            String hae = s.getProperty(p + "hae");
+            GeoPoint gp = hae == null
+                    ? new GeoPoint(Double.parseDouble(s.getProperty(p + "lat")), Double.parseDouble(s.getProperty(p + "lon")))
+                    : new GeoPoint(Double.parseDouble(s.getProperty(p + "lat")), Double.parseDouble(s.getProperty(p + "lon")),
+                            Double.parseDouble(hae));
+            CotDetail link = new CotDetail("link");
+            link.setAttribute("point", CotPoint.decimate(gp));
+            link.setAttribute("type", s.getProperty(p + "type"));
+            link.setAttribute("uid", s.getProperty(p + "uid"));
+            link.setAttribute("relation", "c");
+            link.setAttribute("callsign", s.getProperty(p + "callsign", ""));
+            link.setAttribute("remarks", s.getProperty(p + "remarks", ""));
+            detail.addChild(link);
+        }
+        CotDetail linkAttr = new CotDetail("link_attr");
+        linkAttr.setAttribute("color", String.valueOf(Integer.parseInt(s.getProperty("color"))));
+        linkAttr.setAttribute("stroke", String.valueOf((int) Double.parseDouble(s.getProperty("stroke"))));
+        linkAttr.setAttribute("style", String.valueOf(Integer.parseInt(s.getProperty("style"))));
+        linkAttr.setAttribute("type", s.getProperty("transport"));
+        linkAttr.setAttribute("method", s.getProperty("method"));
+        linkAttr.setAttribute("direction", s.getProperty("direction"));
+        linkAttr.setAttribute("routetype", s.getProperty("routetype"));
+        linkAttr.setAttribute("order", s.getProperty("order"));
+        linkAttr.setAttribute("planningmethod", s.getProperty("planningmethod"));
+        linkAttr.setAttribute("prefix", s.getProperty("prefix"));
+        detail.addChild(linkAttr);
+
+        // ContactDetailHandler: a shape's title
+        CotDetail contact = new CotDetail("contact");
+        contact.setAttribute("callsign", s.getProperty("title"));
+        detail.addChild(contact);
+        // PrecisionLocationHandler over Shape.getCenter (getElevationMetadata: altsrc only)
+        CotDetail precision = new CotDetail("precisionlocation");
+        precision.setAttribute("altsrc", s.getProperty("altsrc"));
+        detail.addChild(precision);
+        // RemarksDetailHandler
+        if (s.getProperty("remarks") != null) {
+            CotDetail remarks = new CotDetail("remarks");
+            remarks.setInnerText(s.getProperty("remarks"));
+            detail.addChild(remarks);
+        }
+        detail.addChild(new CotDetail("archive")); // ArchiveDetailHandler: Route sets archive
+        // CreatorDetailHandler over setAuthorInformation's meta (RouteCreationDialog)
+        CotDetail creator = new CotDetail("creator");
+        creator.setAttribute("uid", s.getProperty("author.uid"));
+        creator.setAttribute("type", s.getProperty("author.type"));
+        creator.setAttribute("callsign", s.getProperty("author.callsign"));
+        creator.setAttribute("time", time.toString());
+        detail.addChild(creator);
+        // ColorDetailHandler: a shape's colour is value
+        CotDetail color = new CotDetail("color");
+        color.setAttribute("value", String.valueOf(Integer.parseInt(s.getProperty("color"))));
+        detail.addChild(color);
+        // LabelDetailHandler: not a Marker, so labels_on, off
+        CotDetail labels = new CotDetail("labels_on");
+        labels.setAttribute("value", String.valueOf(false));
+        detail.addChild(labels);
+        // StrokeFillDetailHandler: a route is a Shape, never closed
+        CotDetail strokeColor = new CotDetail("strokeColor");
+        strokeColor.setAttribute("value", Integer.toString(Integer.parseInt(s.getProperty("color"))));
+        detail.addChild(strokeColor);
+        CotDetail strokeWeight = new CotDetail("strokeWeight");
+        strokeWeight.setAttribute("value", Double.toString(Double.parseDouble(s.getProperty("stroke"))));
+        detail.addChild(strokeWeight);
+        CotDetail strokeStyle = new CotDetail("strokeStyle");
+        strokeStyle.setAttribute("value", new String[] { "solid", "dashed", "dotted", "outlined" }[
+                Integer.parseInt(s.getProperty("style"))]);
+        detail.addChild(strokeStyle);
+        // NavigationCueHandler (RouteDetailHandler): no cues
+        CotDetail routeInfo = new CotDetail("__routeinfo");
+        routeInfo.addChild(new CotDetail("__navcues"));
+        detail.addChild(routeInfo);
         return e;
     }
 

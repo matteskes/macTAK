@@ -27,6 +27,10 @@
 // The Point Dropper (G3.9b) places its points into the markers, archived, so
 // they are kept the same way. The PointEditor (G3.9c) edits them, and any
 // other CoT marker, in place; `share(marker:)` sends one as it is now.
+//
+// Routes (G3.10a) are made here or heard like the lines, kept across
+// launches (every route is archived) and sent with `share(route:)`, as
+// 5.5's Route.toCot writes them (RouteEvent).
 
 import Combine
 import Foundation
@@ -65,6 +69,8 @@ public final class ServerConnections: ObservableObject {
     public let chat: ChatService?
     /// Range and bearing lines, made here or heard (G3.8c/d).
     public let rangeBearing = RangeBearingLines()
+    /// Routes, made here or heard (G3.10a).
+    public let routes = Routes()
     /// The Point Dropper tool (G3.9b).
     public let pointDropper: PointDropper
     /// Editing the CoT markers (G3.9c).
@@ -117,6 +123,7 @@ public final class ServerConnections: ObservableObject {
             legacyNaming: { ["1", "true"].contains(settings.string(forKey: PointNaming.legacyPointDropNamingKey)?.lowercased()) })
         pointEditor = PointEditor(markers: markers, locate: locate)
         rangeBearing.author = { author(Date()) }
+        routes.author = { author(Date()) }
         let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
         self.chat = chat
         // A new team or role changes which rooms take messages.
@@ -135,7 +142,7 @@ public final class ServerConnections: ObservableObject {
                         importer: { [unowned self] xml in importKept(xml) },
                         items: { [unowned self] in archivedItems() },
                         changes: [markers.objectWillChange, rangeBearing.objectWillChange,
-                                  contacts.objectWillChange, me.objectWillChange])
+                                  routes.objectWillChange, contacts.objectWillChange, me.objectWillChange])
         }
         mapItems?.restore()
     }
@@ -309,6 +316,7 @@ public final class ServerConnections: ObservableObject {
             markers.receive(xml)
             chat?.receive(xml)
             rangeBearing.receive(xml, isMarker: isMarker)
+            routes.receive(xml, isItem: isMarker)
         case let .contactRemoved(uid):
             contacts.remove(uid)
         default:
@@ -331,7 +339,21 @@ public final class ServerConnections: ObservableObject {
         send(event(style, now).xml(), to: contacts, on: client)
     }
 
-    public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace, noMarker }
+    public enum ShareError: Error, Equatable { case notRunning, noLine, noPlace, noMarker, noRoute }
+
+    /// Send the route `id` as 5.5's Send does (b-m-r, RouteEvent): to the
+    /// contacts in `contacts`, or to everyone when it is nil. A received
+    /// route goes as it is here, its creator included.
+    public func share(route id: String, to contacts: [String]? = nil, at now: Date = Date()) throws {
+        guard let client else { throw ShareError.notRunning }
+        guard let route = routes[id] else { throw ShareError.noRoute }
+        send(routeEvent(route, at: now).xml(), to: contacts, on: client)
+    }
+
+    /// The route as 5.5 writes it, with where its centre's altitude comes from.
+    private func routeEvent(_ route: Route, at now: Date) -> CotEvent {
+        RouteEvent.make(route, center: route.center.map(mapLocator.elevationSource), now: now)
+    }
 
     /// Send the CoT marker `uid` as it is now, edits included (5.5's Send
     /// from its menu or details): to the contacts in `contacts`, or to
@@ -402,10 +424,12 @@ public final class ServerConnections: ObservableObject {
 
     // MARK: - kept map items
 
-    /// Takes one kept item back through the importers: the markers, then
-    /// the lines, which defer while a marker they name isn't in yet.
+    /// Takes one kept item back through the importers: the markers, the
+    /// routes, then the lines, which defer while a marker they name isn't
+    /// in yet.
     private func importKept(_ xml: String) -> MapItemArchive.Import {
         let marker = markers.receive(xml)
+        if routes.restore(xml, isItem: isMarker, selfUID: uid) == .restored { return .taken }
         switch rangeBearing.restore(xml, isMarker: isMarker, selfUID: uid) {
         case .restored: return .taken
         case .deferred: return .deferred
@@ -416,8 +440,8 @@ public final class ServerConnections: ObservableObject {
     /// Writes the archived items that changed now.
     func syncArchive() { mapItems?.sync() }
 
-    /// The archived markers as they came, and the archived lines as 5.5
-    /// stores them (u-rb-a, units as 5.5's defaults: a line keeps none of
+    /// The archived markers as they came, the routes as 5.5 writes them,
+    /// and the archived lines as 5.5 stores them (u-rb-a, units as 5.5's defaults: a line keeps none of
     /// its own here). A line with an end that has no place right now
     /// (its contact just went) is left as last stored.
     private func archivedItems() -> [ArchivedItem] {
@@ -431,7 +455,14 @@ public final class ServerConnections: ObservableObject {
             return ArchivedItem(uid: line.id, type: RangeBearingEvent.type,
                                 signature: event(.atak, Date(timeIntervalSince1970: 0)).xml()) { event(.atak, Date()).xml() }
         }
-        return kept + lines
+        // the centre's altitude source is looked up only when a route is written
+        let keptRoutes = routes.routes.filter(\.archived).map { route in
+            ArchivedItem(uid: route.id, type: Route.type,
+                         signature: RouteEvent.make(route, center: nil, now: Date(timeIntervalSince1970: 0)).xml()) {
+                self.routeEvent(route, at: Date()).xml()
+            }
+        }
+        return kept + lines + keptRoutes
     }
 
     private func setCallsign(_ callsign: String) {

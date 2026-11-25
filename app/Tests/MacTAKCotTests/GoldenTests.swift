@@ -41,6 +41,24 @@ final class GoldenTests: XCTestCase {
         }
     }
 
+    func testRoutesAreWhatTheKernelBuilds() throws {
+        let specs = try Golden.inputs("route", "properties")
+        XCTAssertFalse(specs.isEmpty, "no route fixtures in \(Golden.root.path)")
+        for spec in specs {
+            let properties = try Golden.properties(spec)
+            let route = try Golden.route(properties)
+            for (n, point) in route.points.enumerated() {
+                XCTAssertEqual(point.callsign ?? "", properties["point.\(n + 1).callsign"] ?? "",
+                               "point \(n + 1)'s name: \(spec.lastPathComponent)")
+            }
+            XCTAssertEqual(route.transportType, properties["transport"], "the method's transport: \(spec.lastPathComponent)")
+            let center = PrecisionLocation(geopointSource: nil, altitudeSource: properties["altsrc"])
+            let event = RouteEvent.make(route, center: center, now: Cot.parseTime(properties["time"]!)!)
+            XCTAssertTrue(event.isValid, spec.lastPathComponent)
+            try check(event.xml(), against: Golden.expectedURL("route", spec))
+        }
+    }
+
     private func check(_ xml: String, against expected: URL, line: UInt = #line) throws {
         if Golden.writing {
             try FileManager.default.createDirectory(at: expected.deletingLastPathComponent(), withIntermediateDirectories: true)
