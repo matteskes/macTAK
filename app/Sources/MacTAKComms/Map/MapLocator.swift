@@ -7,6 +7,9 @@
 //   (inverseWithElevation);
 // - an item: a CoT marker with its own <precisionlocation>, a contact with
 //   its SA's, or the self marker with how it was placed (GPS or USER).
+//
+// And for a place the app computes (a route's centre, G3.10a), the
+// elevation data's source there (`elevationSource`).
 
 import Foundation
 import MacTAKCot
@@ -41,5 +44,12 @@ public final class MapLocator {
             guard uid == me.details.uid, let l = me.location else { return nil }
             return SourcedPoint(l.point, precision: l.precision)
         }
+    }
+
+    /// Where the altitude at a computed place, such as a route's centre,
+    /// comes from (ATAKUtilities.getElevationMetadata): the elevation
+    /// data's source, else "???".
+    public func elevationSource(at p: CotPoint) -> PrecisionLocation {
+        PrecisionLocation(geopointSource: nil, altitudeSource: altitudeSource?(p) ?? PrecisionLocation.unknown)
     }
 }
