@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.9 done — 2026-11-23): servers, identity, mesh, SA, GeoChat, coordinates, markers, range and bearing, and points
+## State (G3.10 done — 2026-11-25): servers, identity, mesh, SA, GeoChat, coordinates, markers, range and bearing, points, and routes
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -155,8 +155,36 @@ Not in G3.9: the Mission Specific, user icon set and vehicle palettes,
 moving, the radial's other tools, menus for contacts and the self
 marker, and sending a delete for a removed point.
 
-Next: G3.10, routes (§G3.9, plan approved 2026-11-20); then G3.11 the
-Overlay Manager.
+G3.10 added routes as ATAK 5.5 has them:
+
+- **Routes are 5.5's `b-m-r` CoT.** A route is written field by field
+  as `Route.toCot` and the detail handlers write it, and read as
+  `RouteImporter` reads it, with 5.5's naming ("Route n"; SP, the
+  check points, VDO and the rest by method and direction). They are
+  kept across launches, and a force delete removes one. The kernel's
+  golden test holds the CoT, and a CI leg sends a route between two
+  clients (G3.10a, #257).
+- **Routes are drawn as 5.5 draws them**: one line in the route's
+  colour, weight and basic line style (solid, dashed, dotted, outlined,
+  `GLPolyline.refreshStyle`'s strokes in the engine), waypoints as
+  5.5's waypoint icon in the route's colour with their names, control
+  points hidden. A CI render step checks their pixels (G3.10b, #258).
+- **The route tool, menus and details**: a toolbar Route button draws a
+  new route or extends one (a click a control point, ⌥-click a
+  checkpoint, a marker a checkpoint at its point); points drag to move,
+  with undo. Right-click menus on waypoints, control points and the line
+  stand in for 5.5's radials, and an inspector for its route details:
+  name, method, direction, type, order, colour, line style, weight, the
+  checkpoints with each leg's distance and climb, remarks, Send… and
+  Delete…. The owner checked it by hand (G3.10c, #259).
+
+Not in G3.10: navigation and its cues, the route planners, the
+elevation profile, route-around regions, GPX and KML export, the Route
+Manager list (G3.11), routes embedded in markers (`_route`), draw mode,
+dragging a whole line, and dimming the other routes while one is
+edited.
+
+Next: G3.11, the Overlay Manager.
 
 ## The plan (approved 2026-11-13)
 
@@ -3092,7 +3120,7 @@ of them older than G3.9; it goes with the G3 clean-code audit.
 ## G3.10 — routes (plan approved 2026-11-23)
 
 Routes are the second of the three milestones G3.9's plan split out
-(§G3.9). Started 2026-11-24.
+(§G3.9). Started 2026-11-24, done 2026-11-25 (#257, #258, #259).
 
 ### What 5.5 does (read at the pin)
 
@@ -3135,9 +3163,9 @@ Routes are the second of the three milestones G3.9's plan split out
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/route-cot` | the route model and its CoT, field by field as `Route.toCot`, read as `RouteImporter`; 5.5's naming; a route store in `ServerConnections`, archived, removed by a force delete | golden test against the kernel; the naming rules in tests against 5.5's; a route survives a relaunch; **one client's route on the other's map** (CI comms leg) |
-| **b** | `g3/route-draw` | routes on the map: one line per route in its colour, width and line style, waypoints labelled, control points hidden (leg distances moved to **c**: §G3.10b) | route pixels as a CI render step |
-| **c** | `g3/route-edit` | a route tool in the toolbar; right-click menus for a point and the line; drag to move; a route details inspector, with its leg distances; Send… (§G3.10c) | model tests; hand check (owner) |
+| **a** (#257) | `g3/route-cot` | the route model and its CoT, field by field as `Route.toCot`, read as `RouteImporter`; 5.5's naming; a route store in `ServerConnections`, archived, removed by a force delete | golden test against the kernel; the naming rules in tests against 5.5's; a route survives a relaunch; **one client's route on the other's map** (CI comms leg) |
+| **b** (#258) | `g3/route-draw` | routes on the map: one line per route in its colour, width and line style, waypoints labelled, control points hidden (leg distances moved to **c**: §G3.10b) | route pixels as a CI render step |
+| **c** (#259) | `g3/route-edit` | a route tool in the toolbar; right-click menus for a point and the line; drag to move; a route details inspector, with its leg distances; Send… (§G3.10c) | model tests; hand check (owner) |
 
 Then a docs PR, as after each milestone.
 
@@ -3233,7 +3261,8 @@ list (G3.11), routes embedded in markers (`_route`,
   route it takes in.
 - **A waypoint on a route doesn't move the map marker with its uid.**
   5.5's `createMarker` moves an existing waypoint marker to the link's
-  point. Routes don't draw their waypoints yet (G3.10b).
+  point. Since G3.10b a waypoint whose uid is a marker here draws as
+  that marker.
 - **Changing a control point's name.** `fixSPandVDO` renames the old
   end point after it has been replaced. For a control point, that point
   shares `cpMeta` with every other control point on the route. Read

@@ -9,6 +9,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.10c, making and editing routes, which completes G3.10, routes
+  (`dev/g3/NOTES.md` §G3.10c):
+  - The Route button draws a new route: a click adds a control point
+    (the first a checkpoint), ⌥-click a checkpoint, a click on a marker
+    a checkpoint at its point. Done names the ends as 5.5 does; Undo
+    takes back a change, a drag at a time.
+  - While a route is edited its points drag, and right-click menus make
+    a checkpoint a control point and back, delete a point, or insert one
+    into the line.
+  - An inspector shows 5.5's route details: name, method, direction,
+    type, order, colour, line style, weight, the checkpoints with each
+    leg's distance and climb, the totals, remarks, Send… and Delete….
+
+- G3.10b, routes on the map (`dev/g3/NOTES.md` §G3.10b): one line per
+  route in its colour, weight and 5.5's basic line style (solid, dashed,
+  dotted, outlined), its waypoints in 5.5's waypoint icon in the route's
+  colour with their names, control points hidden. A CI render step
+  checks their pixels.
+
+- G3.10a, routes as ATAK 5.5's CoT (`dev/g3/NOTES.md` §G3.10a): `b-m-r`
+  routes written field by field as `Route.toCot` writes them and read as
+  `RouteImporter` reads them, named as 5.5 names them, kept across
+  launches and removed by a force delete. The kernel's golden test holds
+  the CoT, and a CI leg sends a route between two clients.
+
 - G3.9's gate audit (`dev/g3/NOTES.md` §G3.9's gate audit): where a
   click is (`MapLocator`) is now one type with its own tests; the
   restore count is right; NOTES says what the point golden's kernel leg
