@@ -489,6 +489,13 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/lines.sh dev/g2/build/render-lines.png
 
+      - name: Render a route in 5.5's line styles (dev/g2/render/test/routes.sh)
+        # G3.10b's gate: a route's line through every point, its waypoints'
+        # icons in its colour, no control point, and dashed and outlined
+        # lines as 5.5 draws them; plain lines, or nothing drawn, must fail
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/routes.sh dev/g2/build/render-routes.png
+
       - name: Render an offline MBTiles basemap under the vector layer
         # G2 M2.3: raster pipeline — synthetic graticule → gdalwarp/gdal_translate
         # (Homebrew gdal CLI) → MBTiles → PersistentRasterDataStore →
@@ -580,6 +587,7 @@ jobs:
             dev/g2/build/render-layer.png
             dev/g2/build/render-markers.png
             dev/g2/build/render-lines.png
+            dev/g2/build/render-routes.png
             dev/g2/build/render-basemap.png
             dev/g2/build/render-geotiff.png
             dev/g2/build/render-elevation.png

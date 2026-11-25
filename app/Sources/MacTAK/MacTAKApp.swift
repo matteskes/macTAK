@@ -124,7 +124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                         chatStore: chatStore, mapItemStore: mapItemStore)
         watcher = InterfaceWatcher { mesh.refresh() }
         markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
-                                me: me, rangeBearing: connections.rangeBearing, units: units)
+                                me: me, rangeBearing: connections.rangeBearing, routes: connections.routes,
+                                units: units)
         pointActions = PointActions(editor: connections.pointEditor, rangeBearing: connections.rangeBearing)
         super.init()
         let rangeBearing = rangeBearing, pointDropper = pointDropper, editor = pointEditor, markers = markers
@@ -158,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mapChanges = [
             rangeBearing.objectWillChange.sink(receiveValue: refresh),
             connections.markers.objectWillChange.sink(receiveValue: refresh),
+            connections.routes.objectWillChange.sink(receiveValue: refresh),
             // starting one map tool ends the others
             rangeBearing.$tool.sink { if $0 != .off { pointDropper.end(); editor.endMove() } },
             pointDropper.$selected.sink { if $0 != nil { rangeBearing.endTool(); editor.endMove() } },

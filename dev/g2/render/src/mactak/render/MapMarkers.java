@@ -21,6 +21,7 @@ import com.atakmap.map.layer.feature.style.BasicStrokeStyle;
 import com.atakmap.map.layer.feature.style.CompositeStyle;
 import com.atakmap.map.layer.feature.style.IconPointStyle;
 import com.atakmap.map.layer.feature.style.LabelPointStyle;
+import com.atakmap.map.layer.feature.style.PatternStrokeStyle;
 import com.atakmap.map.layer.feature.style.Style;
 
 /**
@@ -32,7 +33,8 @@ import com.atakmap.map.layer.feature.style.Style;
  *
  * <p>G3.8b adds lines beside them (a line string with a stroke, an arrow
  * head at its end if asked, and a label along it), and finds the marker
- * under a click ({@link #markerAt}).
+ * under a click ({@link #markerAt}). G3.10b draws a line in any of 5.5's
+ * four basic line styles ({@link #lineStyle}).
  *
  * <p>Swift owns what the markers are; this class only writes them. Any
  * thread: the store takes its own modify lock, and the renderer picks the
@@ -46,6 +48,11 @@ public final class MapMarkers {
     static final float ARROW_RADIUS = 16f;
     static final float LABEL_SIZE = 14f;
     static final int LABEL_BACKGROUND = 0x99000000;
+
+    /** 5.5's basic line styles (Shape.BASIC_LINE_STYLE_*), as a route's strokeStyle gives them. */
+    public static final int STYLE_SOLID = 0, STYLE_DASHED = 1, STYLE_DOTTED = 2, STYLE_OUTLINED = 3;
+    /** GLPolyline.refreshStyle's stipple patterns, one pixel a bit. */
+    static final short DASHED_PATTERN = (short) 0x3F3F, DOTTED_PATTERN = (short) 0x0303;
 
     private final FeatureSetDatabase2 store = new FeatureSetDatabase2(null);
     private final long fsid;
@@ -92,17 +99,19 @@ public final class MapMarkers {
      * @param latLons  lat, lon pairs, two or more points
      * @param color    ARGB stroke colour
      * @param width    stroke width, pixels
-     * @param arrow    draw an arrow head at the last point
+     * @param style    one of the STYLE_ constants (another value draws solid)
+     * @param arrow    draw an arrow head at the last point (solid lines only)
      * @param label    text drawn along the line, or null
      */
-    public synchronized void putLine(String uid, double[] latLons, int color, float width, boolean arrow, String label) {
+    public synchronized void putLine(String uid, double[] latLons, int color, float width, int style, boolean arrow,
+                                     String label) {
         if (latLons == null || latLons.length < 4 || latLons.length % 2 != 0) {
             System.err.println("MapMarkers: line " + uid + " wants two or more lat, lon pairs");
             return;
         }
         final LineString line = new LineString(2);
         for (int i = 0; i < latLons.length; i += 2) line.addPoint(latLons[i + 1], latLons[i]);
-        if (write(uid, label, line, lineStyle(color, width, arrow, label))) markerPoints.remove(uid);
+        if (write(uid, label, line, lineStyle(color, width, style, arrow, label))) markerPoints.remove(uid);
     }
 
     /** Insert or update one feature; whether it is in the store. */
@@ -167,11 +176,16 @@ public final class MapMarkers {
         return fids.size();
     }
 
-    /** A line's style: a stroke (with an arrow head when asked) and its label. */
-    static Style lineStyle(int color, float width, boolean arrow, String label) {
+    /**
+     * A line's style: a stroke (with an arrow head when asked) and its label.
+     * The stroke is GLPolyline.refreshStyle's for the basic line style:
+     * dashed and dotted are stipple patterns, outlined a black stroke two
+     * pixels wider under the line.
+     */
+    static Style lineStyle(int color, float width, int style, boolean arrow, String label) {
         final Style stroke = arrow
                 ? new ArrowStrokeStyle(ARROW_RADIUS, 1, (short) 0xFFFF, color, width, BasicStrokeStyle.EXTRUDE_NONE)
-                : new BasicStrokeStyle(color, width, BasicStrokeStyle.EXTRUDE_NONE);
+                : stroke(color, width, style);
         if (label == null) return stroke;
         // drawn at every resolution, white on a translucent black box; the
         // engine lays it along the line and hides it when it doesn't fit, as
@@ -179,6 +193,23 @@ public final class MapMarkers {
         final Style text = new LabelPointStyle(label, 0xFFFFFFFF, LABEL_BACKGROUND, LabelPointStyle.ScrollMode.OFF,
                 LABEL_SIZE, 0, 0, 0f, false, Double.MAX_VALUE);
         return new CompositeStyle(new Style[] { stroke, text });
+    }
+
+    private static Style stroke(int color, float width, int style) {
+        switch (style) {
+            case STYLE_DASHED: return pattern(DASHED_PATTERN, color, width);
+            case STYLE_DOTTED: return pattern(DOTTED_PATTERN, color, width);
+            case STYLE_OUTLINED:
+                return new CompositeStyle(new Style[] {
+                        new BasicStrokeStyle(0xFF000000 & color, width + 2f),
+                        new BasicStrokeStyle(color, width) });
+            default: return new BasicStrokeStyle(color, width);
+        }
+    }
+
+    private static Style pattern(short bits, int color, float width) {
+        return new PatternStrokeStyle(1, bits, ((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f,
+                (color & 0xff) / 255f, ((color >>> 24) & 0xff) / 255f, width);
     }
 
     /** 5.5's icon style: centred, sized, turned when there's a heading. */

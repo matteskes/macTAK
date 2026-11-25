@@ -235,9 +235,10 @@ public final class WindowApp {
     }
 
     /** Add or move a line (G3.8b, {@link MapMarkers#putLine}); dropped before the map exists. */
-    public static void putLine(String uid, double[] latLons, int color, float width, boolean arrow, String label) {
+    public static void putLine(String uid, double[] latLons, int color, float width, int style, boolean arrow,
+                               String label) {
         final MapMarkers m = markers;
-        if (m != null) m.putLine(uid, latLons, color, width, arrow, label);
+        if (m != null) m.putLine(uid, latLons, color, width, style, arrow, label);
     }
 
     /**

@@ -8,7 +8,11 @@
 //   - each CoT marker likewise, labelled with its callsign (or uid), in
 //     5.5's icon for its type and details
 //   - the self marker: 5.5's self icon (SelfIcon on the engine side), turned
-//     by the track's course, no label.
+//     by the track's course, no label
+//   - each route (G3.10b, RouteGraphics): its line, through the markers it
+//     runs through where they are now, and its waypoints as markers. A
+//     click goes through a waypoint to the ground until the route tool
+//     (G3.10c) gives waypoints their menus.
 // The tick also catches contacts and markers going stale, which publishes
 // nothing.
 // While the map isn't running nothing is sent; when it starts, everything is
@@ -37,6 +41,7 @@ final class MapMarkerSync {
     private let cotMarkers: CotMarkerStore
     private let me: SelfReporter
     private let rangeBearing: RangeBearingLines
+    private let routes: Routes
     private let units: UnitPreferences
     private var timer: Timer?
     /// What the engine has, by uid; nil until the map takes markers.
@@ -45,10 +50,12 @@ final class MapMarkerSync {
 
     /// One line as the engine was last told it.
     struct Line: Equatable {
-        var start, end: CotPoint
+        var points: [CotPoint]
         var label: String?
         var color: UInt32
         var width: Float
+        var style: EngineBridge.LineStyle = .solid
+        var arrow = false
     }
 
     /// The R&B tool's start point: 5.5's shape_marker, red, not clickable.
@@ -61,12 +68,13 @@ final class MapMarkerSync {
     private var selfIcon: String?
 
     init(host: EngineHost, contacts: ContactStore, cotMarkers: CotMarkerStore, me: SelfReporter,
-         rangeBearing: RangeBearingLines, units: UnitPreferences) {
+         rangeBearing: RangeBearingLines, routes: Routes, units: UnitPreferences) {
         self.host = host
         self.contacts = contacts
         self.cotMarkers = cotMarkers
         self.me = me
         self.rangeBearing = rangeBearing
+        self.routes = routes
         self.units = units
         host.unclickable = [Self.rabStartUID]
     }
@@ -94,7 +102,16 @@ final class MapMarkerSync {
             return
         }
         var have = sent ?? [:]
-        let want = markers(engine, now: now)
+        var want = markers(engine, now: now)
+        let places = want.mapValues { CotPoint(lat: $0.lat, lon: $0.lon, hae: $0.hae ?? CotPoint.unknown) }
+        let drawn = routes.routes.map { RouteGraphics($0) { places[$0] } }
+        var waypoints: Set<String> = []
+        for w in drawn.flatMap(\.waypoints) where want[w.uid] == nil {   // a marker with its uid draws as itself
+            want[w.uid] = Marker(lat: w.point.lat, lon: w.point.lon, hae: Self.hae(w.point), icon: w.icon,
+                                 rotation: nil, label: w.label)
+            waypoints.insert(w.uid)
+        }
+        host.unclickable = waypoints.union([Self.rabStartUID])
         for (uid, m) in want where have[uid] != m {
             engine.putMarker(uid: uid, lat: m.lat, lon: m.lon, hae: m.hae, iconURI: m.icon.uri, color: m.icon.color,
                              width: m.icon.width, height: m.icon.height, rotation: m.rotation, label: m.label)
@@ -105,23 +122,27 @@ final class MapMarkerSync {
             have[uid] = nil
         }
         sent = have
-        syncLines(engine, markers: want, now: now)
+        syncLines(engine, places: places, routes: drawn.compactMap(\.line), now: now)
     }
 
-    private func syncLines(_ engine: EngineBridge, markers: [String: Marker], now: Date) {
-        let places = markers.mapValues { CotPoint(lat: $0.lat, lon: $0.lon, hae: $0.hae ?? CotPoint.unknown) }
+    private func syncLines(_ engine: EngineBridge, places: [String: CotPoint], routes: [RouteGraphics.Line],
+                           now: Date) {
         let style = units.rangeBearingStyle
         var want: [String: Line] = [:]
         var labels: [String: String] = [:]
         for (line, start, end) in rangeBearing.ends(markers: places) {
             let label = RangeBearing(from: start, to: end).label(style, magnetic: units.magnetic, at: now)
-            want["mactak-rab-" + line.id] = Line(start: start, end: end, label: label,
-                                                 color: UInt32(bitPattern: line.color), width: Float(line.weight))
+            want["mactak-rab-" + line.id] = Line(points: [start, end], label: label, color: UInt32(bitPattern: line.color),
+                                                 width: Float(line.weight), arrow: true)
             labels[line.id] = label
         }
+        for r in routes {
+            want[r.uid] = Line(points: r.points, label: r.label, color: r.color, width: r.width,
+                               style: EngineBridge.LineStyle(rawValue: Int32(r.style.rawValue)) ?? .solid)
+        }
         for (uid, l) in want where sentLines[uid] != l {
-            engine.putLine(uid: uid, points: [(l.start.lat, l.start.lon), (l.end.lat, l.end.lon)],
-                           color: l.color, width: l.width, arrow: true, label: l.label)
+            engine.putLine(uid: uid, points: l.points.map { ($0.lat, $0.lon) }, color: l.color, width: l.width,
+                           style: l.style, arrow: l.arrow, label: l.label)
         }
         for uid in sentLines.keys where want[uid] == nil { engine.removeMarker(uid: uid) }
         sentLines = want
