@@ -3069,7 +3069,7 @@ and `PointEditorTests`), and a dropped point reaches the other client
   "Looking Up…" and showed the old lookup's failure under it (the address
   itself was safe: `setAddress` checks the uid and the place). The lookup
   and its problem now carry the uid they are for. A SwiftUI view, so no
-  test; owner hand check.
+  test; owner hand check passed (2026-11-23).
 - **`MapItemArchive.restore` counted an event deferred twice as taken.**
   It now counts only `.taken`, as its doc says
   (`testRestoreCountsOnlyWhatWasTaken`, which fails with the old count, 3
@@ -3088,3 +3088,71 @@ of them older than G3.9; it goes with the G3 clean-code audit.
 | `make test-app` | MacTAKCommsTests 216 pass (1 skipped, Apple's geocoder, network); 7 new |
 | A/B: restore's old count; a marker and a contact without precision | 3 tests fail |
 | `make lint` | passes |
+
+## G3.10 — routes (plan approved 2026-11-23)
+
+Routes are the second of the three milestones G3.9's plan split out
+(§G3.9). Started 2026-11-24.
+
+### What 5.5 does (read at the pin)
+
+- **A route is a `b-m-r` event** written by `EditablePolyline.toCot` and
+  `Route.toCot`: how `h-e`, stale a day after time, version 2.0. Each
+  point is a `<link>` in order, with `point`; a waypoint or control point
+  also has `uid`, `type`, `relation="c"`, `callsign` and `remarks`.
+  Waypoints are `b-m-p-w`; control points are `b-m-p-c`, shape points
+  with no label. A closed route repeats its first link.
+- **The event's own point is never set.** `EditablePolyline.toCot` says
+  "set the point to the first waypoint" and doesn't, so the point stays
+  the kernel `CotEvent`'s default, `CotPoint.ZERO`: 0, 0, with hae, ce
+  and le unknown. macTAK writes the same.
+- **`link_attr`** carries the rest: `color` (Android's signed int),
+  `stroke`, `style`, `type` (transport, On Foot by default), `method`
+  (Driving), `direction` (Infil), `routetype` (Primary), `order`
+  (Ascending Check Points), `planningmethod` and `prefix`. Then
+  `CotDetailManager` adds the details its handlers write for a route
+  (`archive`, `creator`, `remarks`, the stroke details, `contact`, …);
+  **a** lists them handler by handler.
+- **Reading** is `RouteImporter`: a missing `link_attr` value takes the
+  defaults above; a link with no `uid` or `type` becomes a control
+  point; a route with fewer than two points is refused.
+- **Naming:** a new route is `Route n`, skipping names in use. The ends
+  are named by method and direction (`getFirstWaypointName`,
+  `getLastWaypointName`): infil starts at SP; exfil starts at VPU when
+  driving, TGT otherwise; both after the route's title. Infil ends at VDO
+  when driving, TGT otherwise; exfil ends at EP. The waypoints between
+  are the prefix (`waypointPrefix`, CP by default) and a number,
+  ascending or descending with `order`. `fixSPandVDO` renames them after
+  every edit, except a waypoint the user named (`isAutomaticName`).
+- **Making and editing** is `RouteEditTool`: the first tap places a
+  waypoint, later taps control points; a long press or a tap on a marker
+  places a waypoint. Points drag to move; a point's radial menu makes it
+  a waypoint or control point, renames or deletes it. The Route Manager
+  lists routes; a route's details drop-down sets its name, colour,
+  method, direction, type, order and prefix, and sends it.
+
+### The PRs
+
+| PR | Branch | What | Gate |
+|---|---|---|---|
+| **a** | `g3/route-cot` | the route model and its CoT, field by field as `Route.toCot`, read as `RouteImporter`; 5.5's naming; a route store in `ServerConnections`, archived, removed by a force delete | golden test against the kernel; the naming rules in tests against 5.5's; a route survives a relaunch; **one client's route on the other's map** (CI comms leg) |
+| **b** | `g3/route-draw` | routes on the map: one line per route in its colour and width, waypoints labelled, control points hidden, leg distances | route pixels as a CI render step |
+| **c** | `g3/route-edit` | a route tool in the toolbar; right-click menus for a point and the line; drag to move; a route details inspector; Send… | model tests; hand check (owner) |
+
+Then a docs PR, as after each milestone.
+
+Not in G3.10: navigation and cues, the route planners, the elevation
+profile, route-around regions, GPX and KML export, the Route Manager
+list (G3.11), routes embedded in markers (`_route`,
+`MarkerIncludedRouteDetailHandler`).
+
+### Decided with the plan (owner, 2026-11-23)
+
+1. A click places a control point (the first click a waypoint),
+   ⌥-click a waypoint, and a click on a marker a waypoint on it.
+2. 5.5's Route Manager list goes to G3.11 with the Overlay Manager;
+   G3.10 has only the route details inspector.
+3. Routes embedded in markers (`_route`) are out.
+4. The kernel leg of the golden test writes the details in Java, as the
+   point golden does (§G3.9's gate audit): 5.5's handlers need a
+   `MapView`.
