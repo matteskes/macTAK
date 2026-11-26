@@ -2,10 +2,29 @@
 
 All notable changes to macTAK. Versions follow the roadmap gates
 ([docs/roadmap.md](docs/roadmap.md)): each completed gate bumps the minor
-version — 0.1.0 G0, 0.2.0 G1, 0.3.0 G2 — and dates are the merge dates.
+version — 0.1.0 G0, 0.2.0 G1, 0.3.0 G2, 0.4.0 G3 — and dates are the merge
+dates.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
+
+- Nothing yet.
+
+## [0.4.0] - 2026-11-26 — G3: the core client, and G2's gate closed
+
+G3 is closed: two copies of the app enroll with OpenTAKServer into the
+login Keychain, connect over TLS and see each other's contact, point on
+screen and chats (`make g3-exit`, watched by the owner). G2's gate
+closed on 2026-11-19 without a release of its own, so this release
+carries it too. In it:
+
+- G2's closure on the on-screen gate (trap 77), with ANGLE built from
+  source.
+- G3.4–G3.11: SA and contacts, GeoChat, coordinates and addresses,
+  markers with 2525 symbols, range and bearing, points, routes, and the
+  Overlay Manager, each held to ATAK 5.5's behaviour.
+- G3.2e, Quick Connect.
+- The G3 exit run, with OpenTAKServer in VMPal's container engine.
 
 ### Added
 
