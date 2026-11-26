@@ -3826,9 +3826,10 @@ screen, and its chat.
 
 ### Decided with the plan (owner, 2026-11-26)
 
-1. **The servers are where G1 ran them.** OpenTAKServer is `steintak`,
-   which G1 used over SSL on 8089 (`dev/g1/NOTES.md` §G1.3).
-   FreeTAKServer runs in Docker on the dev Mac, as in G1.
+1. **Both servers run in VMPal containers on the dev Mac**, one for
+   OpenTAKServer and one for FreeTAKServer, set up and pinned by
+   scripts in the repo. (The plan first said G1's arrangement; the owner
+   corrected it the same day.)
 2. **The run is fully scripted**, as G2's `make exit-run` is. The script
    launches the two instances, each in its own settings suite. A
    test-only launch flag has each one enroll, connect, drop a marker and
@@ -3860,7 +3861,7 @@ client's own events back, so a pass on it can't come from the echo.
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/exit-servers` | the server side: FreeTAKServer's container (a pinned image, SSL on 8089, enrollment on 8446), a preflight for both servers (reachable, enrollment and SSL ports answer, versions recorded), and the exit's users on each server | the preflight passes against both servers |
+| **a** | `g3/exit-servers` | the server side: OpenTAKServer's and FreeTAKServer's VMPal containers (pinned images, SSL on 8089, enrollment on 8446), a preflight for both (running, enrollment and SSL ports answer, versions recorded), and the exit's users on each server | the preflight passes against both servers |
 | **b** | `g3/exit-hook` | the app's test-only flag `--exit-script FILE`: steps read from a file (enroll, connect, wait for a contact, drop a point, send chats, wait for what the other sent) and a report of what the instance saw. Without the flag nothing changes | unit tests; a CI comms leg runs two instances' steps against the fake servers (`fake-enroll-server.py`, the fake TLS server) |
 | **c** | `g3/exit-run` | `make g3-exit` (`dev/g3/test/exit-run.sh`): both instances against FreeTAKServer, then OpenTAKServer; the reports checked; each window captured and the other's marker found in it; a log in `dev/g3/build/g3-exit.txt` | the run passes against both servers on the dev Mac, recorded in NOTES; the owner watches a run |
 
@@ -3880,20 +3881,24 @@ Then a docs PR that closes G3.
   run enrolled are deleted from the login Keychain at the end, by the
   fingerprints in the reports.
 - **The FreeTAKServer container restarts before each run**, for a clean
-  contact list (`dev/g1/NOTES.md` §Round-trip contract).
+  contact list (`dev/g1/NOTES.md` §Round-trip contract). OpenTAKServer
+  needs no reset.
 
 ### Risks to settle in PR a
 
 - **FreeTAKServer's enrollment.** G1 used FreeTAKServer over TCP only.
-  Whether the pinned image serves `signClient/v2` on 8446 is checked
-  first. If it doesn't, the owner decides between a newer image, and a
-  data package for FreeTAKServer alone (G3.2b's import path).
+  Whether the version installed serves `signClient/v2` on 8446 is
+  checked first. If it doesn't, the owner decides between a newer
+  version, and a data package for FreeTAKServer alone (G3.2b's import
+  path).
 - **Keychain prompts.** The ad-hoc-signed bundle exports its identity
   from the login keychain each time commo needs it (§G3.2b). A prompt
   would stop a scripted run, so PR b checks a fresh enrollment's export
   needs none.
-- **`steintak` must be up.** It didn't resolve from the dev Mac on
-  2026-11-26. The preflight says so plainly and the run doesn't start.
+- **The containers must be up.** The preflight checks both are running
+  and answering, says plainly which isn't, and the run doesn't start.
+- **OpenTAKServer in one container.** It runs with RabbitMQ and its own
+  CA; PR a settles how those fit in a VMPal container.
 
 ### Not in the exit
 
