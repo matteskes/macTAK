@@ -228,25 +228,9 @@ public struct Route: Sendable, Equatable, Identifiable {
 
     // MARK: - the line
 
-    /// Where the route's centre is (EditablePolyline.getCenter: the
-    /// kernel's GeoCalculations.computeAverage of its points, across the
-    /// antimeridian when they cross it); nil with no points.
-    public var center: CotPoint? {
-        guard let first = points.first else { return nil }
-        let lons = points.map(\.point.lon)
-        let crosses = (lons.min()! < -180 || lons.max()! > 180) || lons.max()! - lons.min()! > 180
-        let east = first.point.lon >= 0
-        var lat = 0.0, lon = 0.0
-        let share = 1.0 / Double(points.count)
-        for p in points {
-            var l = p.point.lon
-            if crosses { l = east ? (l < 0 ? l + 360 : l) : (l > 0 ? l - 360 : l) }
-            lat += p.point.lat * share
-            lon += l * share
-        }
-        if crosses { lon = lon > 180 ? lon - 360 : (lon < -180 ? lon + 360 : lon) }
-        return CotPoint(lat: lat, lon: lon)
-    }
+    /// Where the route's centre is (EditablePolyline.getCenter); nil with
+    /// no points.
+    public var center: CotPoint? { CotPoint.average(points.map(\.point)) }
 }
 
 // MARK: - editing (G3.10c)

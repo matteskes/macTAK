@@ -3541,3 +3541,111 @@ select handlers, and the Auto Send filter (macTAK has no auto send).
    for the import/export milestone.
 3. Two PRs: the model, then the UI with visibility (its render gate and
    the hand check together).
+
+### G3.11a — the Overlay Manager as a model (2026-11-25, branch `g3/overlay-model`)
+
+#### What 5.5 does, beyond the plan's reading
+
+- **A role list doesn't claim its items.** The XML's team role overlays
+  are `exclusive='false'`. One that takes an item lets the overlays after
+  it try too, so a Team Lead on the Cyan team is under both Team Lead
+  and Cyan Team. A Medic with no team is under Medic and, because nothing
+  exclusive claimed it, under Markers › Friendly Markers › Troops as well.
+- **An item with a user icon set is in no filter overlay**
+  (`preAccept`). An `iconsetpath` that is well formed and isn't the
+  2525C or Spot Map mapping leaves the item to the Icons overlay, which
+  isn't in G3.11.
+- **Markers is always shown.** `UserMapComponent` makes the
+  `markerroot` parent always visible, so it shows with nothing in it.
+  Every other list hides when it is empty, so a list that holds only
+  empty lists hides too.
+- **Counts count lists as rows.** A list's row says "N Items", its rows
+  after the empty-list filter. When there are more, it adds "(M including
+  sub-items)": its rows plus every row of every list below it
+  (`getDescendantCount`).
+- **The lists offer two sorts, not three.** `getDefaultSortModes` gives
+  alphabetical, plus distance when a row has a place. Only the TAK
+  server channel lists add Z–A (`SortAlphabetDesc`). A filter overlay
+  forces any other sort back to alphabetical. The plan's "three sorts"
+  is read as these two; Z–A waits until a list that offers it comes in.
+- **Alphabetical is `MENU_ITEM_COMP`:** lists by order, then titles
+  compared with Java's `compareToIgnoreCase`, then uids. By distance,
+  rows with a place come first, nearest first, and the rest
+  alphabetically. A line is measured from its centre (`Shape.getCenter`).
+  A filter overlay keeps its child lists first, by order, under either
+  sort.
+- **Search is each list's own `find`.** The root asks each top-level
+  list, and finds the list itself when its lowered title holds the term
+  as typed (`rootSearchEngine`), so "Markers" with a capital doesn't find
+  Markers there. Each list lowers the term, and then:
+  - a filter overlay (`ListModelImpl`) finds a row whose title holds it,
+    else searches into a child overlay. A list that matches isn't
+    searched into;
+  - Routes (`RouteListModel`) finds a route by its title or a waypoint's
+    callsign;
+  - a parent (`MapOverlayParent`: Markers, Shapes) asks its lists' finds
+    and never matches their titles, so the Markers list under Markers
+    isn't found by "markers";
+  - the Range & Bearing group (`MapGroupHierarchyListItem`) finds an item
+    whose lowered title matches `*term*` (`deepFindItems` with
+    `WildCard`), so a `*` in the term is a wildcard.
+
+  There is one result per uid, sorted as the lists are.
+- **The filters drop items, never lists.** Field of view and
+  Self-Authored pass every list (`FOVFilter`'s default, `MapItemFilter`
+  for a list), and the empty-list filter then hides what they emptied.
+  The view is `MapState` built from the screen's corners and centre. A
+  point is in view inside its bounds and its turned quadrilateral. A line
+  is in view if one of its points is inside the bounds; otherwise, when
+  the line's bounds meet the view's, if a point is inside the
+  quadrilateral or a segment crosses an edge (`segmentArraysIntersect`:
+  parallel segments never meet). With continuous scroll on
+  (`atakContinuousScrollEnabled`, 5.5's default), a view over the
+  antimeridian is two boxes and its corners are unwrapped into the
+  centre's hemisphere. A line's bounds wrap over it
+  (`GeoBounds.createFromPoints`), and its points are unwrapped onto the
+  view's side (`GLAntiMeridianHelper.getUnwrap`). The kernel's
+  `MutableGeoBounds.set` loop is kept as it is, `else if` included. The
+  UI passes the engine's scroll setting.
+- **Range & Bearing lists each fixed end too.** An end on the ground
+  is a marker of its own in the R&B group (`RangeAndBearingEndpoint`,
+  type `u-r-b-endpoint`), titled "R&B n Endpoint" by the line's
+  `setTitle`. The group lists anything with `addToObjList` on, so each
+  fixed end is a row with no author. An end tied to a marker is that
+  marker's own row. When the marker goes, `removePoint` makes the end a
+  new endpoint, which is listed too. The group's search matches
+  `callsign`, `title` and `shapeName`. A received line's callsign is its
+  title (`RangeAndBearingImporter`), so the title covers it.
+- **A marker's author** (`parent_uid`) comes from its `<link>`
+  (`LinkDetailHandler`, any relation but a url link) and its
+  `<creator>` (`CreatorDetailHandler`). The later detail wins. A route's
+  and an R&B line's author is their `<creator>`. A contact's SA names
+  none.
+
+#### Not as 5.5
+
+- **Routes have no navigation cues to search.** `RouteListModel.find`
+  searches them, but G3.10 has none.
+
+#### What it is
+
+`OverlayConfig` (MacTAKCot) is `overlays_hier.xml` as data, with its ids,
+orders, icons, colours and the civilian titles. `place` puts an item
+the way `FilterMapOverlay.addItem` does. `OverlayTree.build` makes the
+top-level lists over the items, with the filters and the sort, and
+`OverlayTree.search` searches them. `FieldOfView` is `FOVFilter` over a
+`MapState`'s corners. `OverlayItem` (MacTAKComms, `OverlayItems.swift`)
+reads a contact, a CoT marker, an R&B line (its ends from
+`RangeBearingLines.ends`, so an end whose marker has gone stays where
+it was last seen, as `removePoint` leaves it) and a route. Nothing is
+drawn yet: the sidebar section is G3.11b.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `OverlayTreeTests` (27, new) | each XML overlay's types; types no overlay names; a team member under the team, not the type; roles not exclusive; the litmus rules out a family; user icon sets left out (2525C and Spot Map paths aren't user icons; `split` drops a trailing empty part); the top level by order with empty lists hidden but Markers; counts with sub-lists; a Team Lead in two lists with unique ids; alphabetical ignoring case then uid; by distance with lists first and unplaced rows last; a line from its centre; `compareToIgnoreCase`; field of view for points, crossing lines and a turned view; Self-Authored; the author from link and creator; a view over the antimeridian as two boxes, with and without continuous scroll; a line across it; search for rows, for a matching list not searched into, a parent searching its lists not their titles, the top level against the term as typed, the R&B group's wildcard, a route by its waypoints, one per uid |
+| `OverlayItemsTests` (5, new) | a contact's team and role (its team name normalised); a marker's author and user icon set; an R&B line's ends from `RangeBearingLines.ends`, staying where a gone marker was last seen; a fixed end as an endpoint row, found by search; a route's waypoint names and type |
+| `make test-app` | MacTAKCotTests 137, MacTAKCoreTests 14, MacTAKCommsTests 263 pass (1 skipped, Apple's geocoder, network) |
+| A/B | the role lists made exclusive, the litmus ignored, Markers hidden when empty, no antimeridian split, the top level lowering the term, a parent matching its lists' titles: each fails its tests |
+| `make lint` | passes |
