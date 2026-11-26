@@ -4071,3 +4071,64 @@ Then a docs PR that closes G3.
 | Live, first tries | B heard A, A never heard B (the reporting rate); then the CA race; then the cleanup hang and the commo crash: all above |
 | `make test-app` | MacTAKCommsTests 279 pass (1 skipped, Apple's geocoder, network); Cot and Core unchanged |
 | `make lint` | passes |
+
+### PR c — the run, `make g3-exit` (2026-11-26, branch `g3/exit-run`)
+
+#### What it is
+
+- **`dev/g3/test/exit-run.sh`** (`make g3-exit`, which builds the app
+  first):
+  1. **Preflight:** `servers.sh preflight` (PR a).
+  2. **A clean start:**
+     - the server's CA and its password are taken from the container;
+     - each copy's earlier exit server and certificates are removed (a
+       cleanup-only script);
+     - both settings suites, their chat histories and kept map items are
+       deleted.
+
+     An instance keeps its points and chats across launches, so without
+     this an earlier run's dot or message could pass for this one's.
+  3. **Both copies at once**, each with its `--exit-script` (PR b): A
+     drops a red Spot Map point, B a blue one.
+  4. **The reports:** each copy passed; heard the other through the
+     server, not the mesh; has the other's point, from the other, where
+     it was dropped and named "R 1" or "B 1"; both chats; the delivered
+     and read receipts of its own one-to-one.
+  5. **On screen:** each copy fitted its map to both points (PR b). Its
+     window is captured, and must show the other copy's dot as one small
+     solid patch of its colour (20–400 pixels, at most 30 px across),
+     with no pixels of a Spot Map colour nobody dropped (green).
+  6. **Tidy-up:** both copies quit; the cleanup removes the identities
+     and truststore the run enrolled, and the run checks every
+     fingerprint it made is gone.
+
+  A run that fails stops the copies and removes what it enrolled too.
+  The log is `dev/g3/build/g3-exit.txt`; the scripts, reports, app logs
+  and window captures are in `dev/g3/build/exit-run/`.
+- **`dev/g3/test/exit-capture.swift`**, compiled by the run: a copy's
+  window by its process id (`CGWindowListCopyWindowInfo`), captured with
+  `screencapture -l`, and the pixels near a colour, with how far they
+  spread. The Mac has no Python imaging, so it is Swift.
+
+#### Found on the way
+
+- **Old points stack on the new ones.** A capture before the clean start
+  showed two labels on each dot ("R 1" over "R 3"): points kept from
+  earlier runs, drawn in the same place. Hence step 2, and the report
+  check on the point's name.
+- **Cyan is on every map.** Both copies are on the Cyan team, so their
+  contact markers are cyan: an A/B that looked for a cyan dot found 552
+  pixels. The colour nobody dropped is green, and the A/B break uses
+  magenta.
+- **The Mac's bash is 3.2**: no associative arrays or negative indexes.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1, OpenTAKServer 1.8.3 in VMPal)
+
+| Gate | Result |
+|---|---|
+| `make g3-exit` | PASS: both reports after 3 s; each copy enrolled, heard the other through the server in about 2.4 s, its point "R 1" / "B 1", 2 chats, both receipts; each window shows the other's dot (78–79 pixels, 10×10) and no green; the cleanup removed all 3 Keychain items. Twice |
+| A/B: the other's dot looked for in magenta | FAIL: `copy a's window has 0 pixels of the other copy's colour` |
+| A/B: no clean start | FAIL: `the point is named B 2, not B 1 (left from an earlier run?)` |
+| A/B: a failed run's tidy-up | the 3 Keychain items it made are removed; no copy left running |
+| `make lint` | passes |
+| The owner watches a run | pending |
