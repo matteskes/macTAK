@@ -1,4 +1,4 @@
-.PHONY: help hooks deps check-deps check-runtime test-app-bundle kernel-jars build build-angle angle angle-from-source check-angle-patches gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-cot-golden test-coord-golden test-rab-golden test-symbol-golden test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run app test-app test-app-comms lint docs-site clean
+.PHONY: help hooks deps check-deps check-runtime test-app-bundle kernel-jars build build-angle angle angle-from-source check-angle-patches gdal-java test-gdal-projection gen-gles-shim check-gen-gles-shim check-transplants check-ots-profiles test test-kernel test-cot-golden test-coord-golden test-rab-golden test-symbol-golden test-jni test-roundtrip test-tls test-gdal-network test-commo-https test-mp-server test-quic test-render test-render-resize build-window-host test-render-window smoke-window test-shell exit-run g3-exit-servers app test-app test-app-comms lint docs-site clean
 
 # The android.opengl.GLES20/30 runtime is GENERATED (dev/g2/gen-gles-shim.py):
 # two Java classes, the JNI bodies and the stub-mode libGLESv2. Edit the
@@ -50,6 +50,7 @@ help:
 	@echo "  test-app       - G3 Swift package: build every product, run swift test; comms legs over TCP, mutual TLS and QUIC (needs dev/g1/build-commo.sh)"
 	@echo "  test-app-comms - same as test-app (G3.1's name)"
 	@echo "  exit-run       - G2 exit run (dev Mac): real imagery + vector + elevation in the shell window, 10 s gesture tour, zero dropped frames (dev/g2/shell/test/exit-run.sh)"
+	@echo "  g3-exit-servers - G3 exit run's OpenTAKServer (dev Mac): start it in VMPal's container engine, make the exit users, run the preflight (dev/g3/exit/servers.sh up)"
 	@echo "  lint           - shellcheck + bash -n over dev/**/*.sh; markdownlint/actionlint if installed"
 	@echo "  docs-site      - build the docs site (MkDocs, strict) into dev/docs-site/build/site"
 	@echo "  clean          - remove build outputs"
@@ -233,6 +234,12 @@ test-shell: build-shell
 # cold start in dev/g2/build/exit-run.txt (dev/g2/NOTES.md "The 60 fps gate").
 exit-run: build-shell
 	bash dev/g2/shell/test/exit-run.sh
+
+# The G3 exit run's server: OpenTAKServer in VMPal's container engine
+# (dev/g3/NOTES.md "The G3 exit"). `servers.sh preflight`, `stop` and
+# `reset` are run directly.
+g3-exit-servers:
+	bash dev/g3/exit/servers.sh up
 
 # G3: the SwiftUI app as build/MacTAK.app (engine, ANGLE, classes and the
 # map's starting data inside; a development bundle for this Mac).

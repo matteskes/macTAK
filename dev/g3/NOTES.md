@@ -3911,3 +3911,70 @@ Then a docs PR that closes G3.
 - The clean-code items left from the audit and the dead-code recheck.
   They wait for the end of the G3 gate, and start only when the owner
   asks.
+
+### PR a — the exit's server (2026-11-26, branch `g3/exit-servers`)
+
+#### What it is
+
+- **OpenTAKServer as a compose project** (`dev/g3/exit/ots/compose.yml`,
+  project `mactak-exit-ots`) in VMPal's container engine. It is
+  OpenTAKServer-Docker's own setup (at `30aa20b`) cut down to what the
+  exit needs:
+  - OpenTAKServer itself, its CoT parser and its SSL CoT handler, at
+    1.8.3;
+  - nginx in front of it for enrollment (8446) and the Marti API (8443),
+    with OpenTAKServer-Docker's two templates for those ports;
+  - RabbitMQ 4.2.9 and PostGIS 18-3.6.
+
+  Left out: the TCP CoT port 8088, MediaMTX, the web UI and certbot.
+  Every image is pinned by tag and digest. The project's three OpenTAKServer
+  images are amd64 only and run through Rosetta. The ports are published
+  on the Mac's localhost only: 8089, 8443, 8446.
+- **`dev/g3/exit/servers.sh`** (`make g3-exit-servers` runs `up`):
+  - `up` starts the project, moves the administrator off OpenTAKServer's
+    default password, makes the exit users `exit_a` and `exit_b`, and
+    runs the preflight. Run again, it changes nothing.
+  - `preflight` checks every service runs; enrolls as `exit_a` on 8446
+    and checks the certificate it gets is signed by the server's CA;
+    checks 8089, 8443 and 8446 answer with a certificate under that CA;
+    and opens a TLS session on 8089 with the enrolled certificate. It
+    writes the versions to `dev/g3/build/exit-servers.txt`.
+  - `stop` keeps the data; `reset` removes it, CA and users included.
+- **The engine is reached through VMPal's own socket**
+  (`~/.vmpal/docker.sock`, or `MACTAK_EXIT_DOCKER_HOST`), so the user's
+  docker context is never changed.
+- **The password** for the administrator and both exit users is made
+  once and kept in the login Keychain (generic password `mactak-exit`).
+  It reaches the container in its environment and is never printed.
+
+#### Found on the way
+
+- **The named volume starts out root's.** OpenTAKServer runs as `ots`
+  (uid 1000, gid 1024) and makes its CA, config and uploads in
+  `/app/ots`, which its image doesn't have, so it died on
+  `PermissionError: '/app/ots/uploads'`. A one-shot service,
+  `ots-data-owner`, gives the volume to `ots` first. OpenTAKServer-Docker
+  mounts a host folder instead.
+- **The CA is made on first start**, not baked into the image, so each
+  `reset` gives a new CA.
+- **OpenTAKServer's CLI won't make the exit users.** `flask users create`
+  insists on a deliverable email address. `servers.sh` uses the admin API
+  instead (`/api/login`, then `/api/user/add`), from inside the
+  container on OpenTAKServer's loopback port.
+- **Enrollment ignores a deactivated user.** A wrong or missing password
+  gets 401 on 8446, but a user deactivated with `flask users deactivate`
+  still enrolls. The preflight's failure case changes the user's
+  password instead.
+- **The 1.8.3 images say 1.8.2.** The package inside reports version
+  1.8.2 (`pip show opentakserver`); the image is built from the 1.8.3 tag.
+  The report records both.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1, VMPal Containers on)
+
+| Gate | Result |
+|---|---|
+| `servers.sh up` from nothing (`reset` first) | PASS in 26 s: administrator password changed, both users made, every preflight check passes |
+| `servers.sh up` again | PASS; the users are there, nothing changes |
+| A/B: the SSL CoT handler stopped | FAIL: `mactak-exit-ots-eud-ssl is exited` |
+| A/B: `exit_a`'s password changed on the server | FAIL: `enrollment as exit_a on 8446 was refused` |
+| `make lint` | passes (shellcheck covers `servers.sh`) |
