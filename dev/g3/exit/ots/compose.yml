@@ -1,0 +1,129 @@
+# OpenTAKServer for the G3 exit run (dev/g3/NOTES.md §The G3 exit), run
+# in VMPal's container engine on the dev Mac by dev/g3/exit/servers.sh.
+#
+# Cut down from OpenTAKServer-Docker's docker-compose.yml (GPL-3.0,
+# github.com/brian7704/OpenTAKServer-Docker at 30aa20b) to what the exit
+# needs: the SSL CoT port (8089), certificate enrollment (8446) and the
+# Marti API (8443), with OpenTAKServer, its CoT parser, RabbitMQ and
+# PostGIS behind them. Left out: the TCP port 8088, MediaMTX, the web UI
+# and certbot. Every image is pinned, by tag and digest.
+#
+# The ports are published on the Mac's localhost only. The data lives in
+# named volumes on the engine's Linux disk; `servers.sh reset ots`
+# removes them.
+
+name: mactak-exit-ots
+
+x-ots: &ots
+  restart: unless-stopped
+  tty: true
+  env_file: ots.env
+  volumes:
+    - ots-data:/app/ots
+
+services:
+  # The named volume starts out root's; OpenTAKServer runs as ots
+  # (uid 1000, gid 1024) and makes its CA, config and uploads there.
+  ots-data-owner:
+    image: nginx:1.28.0-bookworm@sha256:552e7481ca93ffccd046aa658dbbed22caefbc09c66fa7cd247cbb90b8a5c609
+    container_name: mactak-exit-ots-data-owner
+    entrypoint: ["chown", "1000:1024", "/app/ots"]
+    volumes:
+      - ots-data:/app/ots
+
+  ots:
+    <<: *ots
+    platform: linux/amd64
+    image: ghcr.io/brian7704/opentakserver:1.8.3@sha256:6bdc9a59e63696474203a93861d15be96cea3290249362b4522ca74c47427e7d
+    container_name: mactak-exit-ots
+    hostname: opentakserver
+    depends_on:
+      ots-data-owner:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      ots-db:
+        condition: service_healthy
+    healthcheck:
+      test: curl --fail http://localhost:8081/api/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  ots-cot-parser:
+    <<: *ots
+    image: ghcr.io/brian7704/ots_cot_parser:1.8.3@sha256:4e9546e5548d1862508bba312e8465737f2b96c43c63ccb01bbac650d4366024
+    platform: linux/amd64
+    container_name: mactak-exit-ots-cot-parser
+    hostname: ots-cot-parser
+    command: python3 /app/venv/bin/cot_parser
+    depends_on:
+      ots:
+        condition: service_healthy
+
+  ots-eud-handler-ssl:
+    <<: *ots
+    image: ghcr.io/brian7704/ots_eud_handler_ssl:1.8.3@sha256:b8a3d61e81ba3574fe013546334c79dd18e56949f4f4fcbd6bbdf1a959003a23
+    platform: linux/amd64
+    container_name: mactak-exit-ots-eud-ssl
+    hostname: ots-eud-handler-ssl
+    command: python3 /app/venv/bin/eud_handler --ssl
+    ports:
+      - "127.0.0.1:8089:8089"
+    depends_on:
+      ots:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.28.0-bookworm@sha256:552e7481ca93ffccd046aa658dbbed22caefbc09c66fa7cd247cbb90b8a5c609
+    container_name: mactak-exit-ots-nginx
+    hostname: nginx-proxy
+    restart: unless-stopped
+    environment:
+      OTS_FQDN: _
+      OTS_ADDRESS: opentakserver:8081
+      CLIENT_MAX_BODY_SIZE: 512M
+    ports:
+      - "127.0.0.1:8443:8443"
+      - "127.0.0.1:8446:8446"
+    volumes:
+      - ots-data:/app/ots:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/includes:/etc/nginx/includes.d:ro
+    depends_on:
+      ots:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:4.2.9@sha256:d15c432b200a107c9602b9aafe6499b5ac7a56d870d367b53a7922f6f04e14df
+    container_name: mactak-exit-ots-rabbitmq
+    hostname: rabbitmq
+    restart: unless-stopped
+    volumes:
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./rabbitmq/99-opentakserver.conf:/etc/rabbitmq/conf.d/99-opentakserver.conf:ro
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 30s
+      retries: 12
+
+  ots-db:
+    image: postgis/postgis:18-3.6@sha256:4a43e3c3e5d55b9208240fc71db543b79c638766280c625a425bd0a2390989c4
+    platform: linux/amd64
+    container_name: mactak-exit-ots-db
+    hostname: ots-db
+    restart: unless-stopped
+    env_file: ots.env
+    volumes:
+      - ots-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  ots-data:
+  ots-pgdata:
