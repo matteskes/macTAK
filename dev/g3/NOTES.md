@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.10 done — 2026-11-25): servers, identity, mesh, SA, GeoChat, coordinates, markers, range and bearing, points, and routes
+## State (G3.11 done — 2026-11-26): servers, identity, mesh, SA, GeoChat, coordinates, markers, range and bearing, points, routes, and the Overlay Manager
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -184,7 +184,35 @@ Manager list (G3.11), routes embedded in markers (`_route`), draw mode,
 dragging a whole line, and dimming the other routes while one is
 edited.
 
-Next: G3.11, the Overlay Manager (§G3.11, plan approved 2026-11-25).
+G3.11 added 5.5's Overlay Manager as a section of the map's sidebar:
+
+- **The tree is 5.5's.** `filters/overlays_hier.xml`'s overlays and
+  rules (first match, the litmus filters, role lists that don't claim
+  their items, user icon sets left out), with Range & Bearing under
+  Shapes and Routes from the Route Manager's list, over the contacts,
+  CoT markers, R&B lines and routes. Counts, empty lists hidden, search,
+  the two sorts (alphabetical, distance), Show All (`fov_filter`, 5.5's
+  `MapState` view) and Self-Authored, held to 5.5's rules in model tests
+  (G3.11a, #262).
+- **The sidebar section and visibility.** Each row has 5.5's
+  three-state eye, icon, title, and count or position with range,
+  bearing and altitude from you. A click goes to the item as
+  `scaleToFit` and the focus do (ported line by line) and selects it; a
+  route's click opens its actions; a right-click gives the item's radial
+  actions; Multi-Select deletes with 5.5's "Are you sure?". A hidden
+  item leaves the map, a route takes its points with it, and visibility
+  is kept across launches in `cotevents` as each 5.5 importer takes it.
+  A CI render step checks a hidden item's pixels go and come back. The
+  sidebar's Range & Bearing section folded into the tree. The owner
+  checked it by hand (G3.11b, #264).
+
+Not in G3.11: Alerts, Shapes other than R&B, File Overlays, Vehicles,
+Waypoints, Track History, the Other Overlays, multi-select Export,
+plugin handlers and Auto Send; a focus that follows a moving marker;
+Navigate and Reverse in a route's actions; and Android drawables, for
+which SF Symbols stand in.
+
+Next: the G3 exit run (`make g3-exit`, §The plan).
 
 ## The plan (approved 2026-11-13)
 
@@ -3477,7 +3505,7 @@ list (G3.11), routes embedded in markers (`_route`,
 The last of the three milestones G3.9's plan split out (§G3.9): 5.5's
 Overlay Manager (`hierarchy`), a tree of the map's items by kind. It
 also brings in the Route Manager list, which G3.10 left for it (§G3.10,
-decision 2).
+decision 2). Started 2026-11-25, done 2026-11-26 (#262, #264).
 
 ### What 5.5 does (read at the pin)
 
@@ -3522,8 +3550,8 @@ decision 2).
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/overlay-model` | the tree as a model: `overlays_hier.xml`'s overlays and rules, plus Range & Bearing and Routes, over the contacts, CoT markers, R&B lines and routes; counts, empty lists hidden; search; the two sorts; Self-Authored and the field-of-view filter | model tests against 5.5's rules (each XML overlay's filters, first match, litmus, the sorts and filters) |
-| **b** | `g3/overlay-ui` | the Overlays section in the sidebar: the tree, search, sort and filters; a row's actions (show or hide, Go To, Details, Send, Delete); multi-select Delete; the Routes list with its route actions. Hidden items leave the map, and an item's visibility is kept across launches in the store's `visible` column. The sidebar's Range & Bearing section folds into the tree (Shapes › Range & Bearing) | a CI render step: a hidden item's pixels are gone and come back when shown; a hidden point stays hidden after a relaunch (test); hand check (owner) |
+| **a** (#262) | `g3/overlay-model` | the tree as a model: `overlays_hier.xml`'s overlays and rules, plus Range & Bearing and Routes, over the contacts, CoT markers, R&B lines and routes; counts, empty lists hidden; search; the two sorts; Self-Authored and the field-of-view filter | model tests against 5.5's rules (each XML overlay's filters, first match, litmus, the sorts and filters) |
+| **b** (#264) | `g3/overlay-ui` | the Overlays section in the sidebar: the tree, search, sort and filters; a row's actions (show or hide, Go To, Details, Send, Delete); multi-select Delete; the Routes list with its route actions. Hidden items leave the map, and an item's visibility is kept across launches in the store's `visible` column. The sidebar's Range & Bearing section folds into the tree (Shapes › Range & Bearing) | a CI render step: a hidden item's pixels are gone and come back when shown; a hidden point stays hidden after a relaunch (test); hand check (owner) |
 
 Then a docs PR, as after each milestone.
 
@@ -3786,4 +3814,4 @@ drawn yet: the sidebar section is G3.11b.
 | A/B | a route not taking its points; `visible` not written; the restore ignoring `visible`: each fails its tests |
 | The app | builds and runs; the section lists four CoT markers sent to it, with counts and icons |
 | `make lint` | passes |
-| Hand check (owner) | pending |
+| Hand check (owner, 2026-11-26, after the merge) | passes: the tree and its counts, search, the sorts, Show All and Self-Authored; the eye for an item, a list and a route with its points; click to go to and select, a marker's inspector, a route's actions; right-click actions; Multi-Select Delete; hidden items still hidden after a relaunch |

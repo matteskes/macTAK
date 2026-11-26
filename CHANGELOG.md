@@ -9,6 +9,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- G3.11b, the Overlay Manager in the sidebar, which completes G3.11, the
+  Overlay Manager (`dev/g3/NOTES.md` §G3.11b):
+  - The sidebar's Overlays section shows G3.11a's tree with search, the
+    two sorts, Show All, Self-Authored and Multi-Select Delete (5.5's
+    "Are you sure?"). It replaces the Range & Bearing section, now
+    Shapes › Range & Bearing.
+  - Each row has 5.5's three-state eye, its icon in the item's colour,
+    and a count or the item's position with range, bearing and altitude
+    from you. A click goes to the item as 5.5's `scaleToFit` and focus
+    do and selects it; a route's click opens its actions; a right-click
+    gives the item's radial actions.
+  - Hidden items leave the map, and a route hides its points. Visibility
+    is kept across launches as 5.5's StateSaver and importers keep it.
+    A CI render step checks a hidden item's pixels go and come back.
+
+- G3.11a, the Overlay Manager as a model (`dev/g3/NOTES.md` §G3.11a):
+  5.5's `overlays_hier.xml` overlays and rules, with Range & Bearing and
+  Routes, over the contacts, CoT markers, R&B lines and routes; counts,
+  empty lists hidden, search, the alphabetical and distance sorts, and
+  the Show All and Self-Authored filters, held to 5.5's rules in tests.
+
 - G3.10c, making and editing routes, which completes G3.10, routes
   (`dev/g3/NOTES.md` §G3.10c):
   - The Route button draws a new route: a click adds a control point

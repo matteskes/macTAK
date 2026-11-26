@@ -11,7 +11,7 @@ G0–G2 are closed: the engine builds natively, talks CoT headless, and renders 
 | **G0** — engine builds on macOS arm64 | ✅ Closed 2026-11-02 — `libtakengine.dylib` and the kernel jars build natively ([G0 spike](dev/spike/g0/NOTES.md)) |
 | **G1** — headless engine + CoT round-trip | ✅ Closed 2026-11-04 — `atak-headless` opens GeoJSON/GPKG/KML/SHP layers, round-trips CoT with FreeTAKServer and OpenTAKServer over TCP and SSL through commoncommo, persists tracks, and connects from an ATAK data package |
 | **G2** — map renders in a native macOS window | ✅ Closed 2026-11-19 — ANGLE-on-Metal (built from source at a pinned commit) in the engine's GLES slot; real imagery, vector and terrain in a Swift/AppKit window with the JVM in-process and Apple Maps gestures; the exit run passes 21 of 21 with no on-screen miss ([G2 notes](dev/g2/NOTES.md)) |
-| **G3** — core client skeleton | 🔵 In progress — G3.0–G3.10 done, G3.11 (the Overlay Manager) next; see below ([G3 notes](dev/g3/NOTES.md)) |
+| **G3** — core client skeleton | 🔵 In progress — G3.0–G3.11 done, the G3 exit run next; see below ([G3 notes](dev/g3/NOTES.md)) |
 | **G4–G6** — data/import parity, first deployable client, the parity ladder to full ATAK-CIV | ⚪ Planned |
 
 ## Features in the app today (G3)
@@ -25,7 +25,8 @@ G0–G2 are closed: the engine builds natively, talks CoT headless, and renders 
 - **Range and bearing** — the R&B Line tool with 5.5's numbers (magnetic north from the WMMHR-2025 model), lines that follow the markers they join, shared and received as 5.5's `u-rb-a` CoT.
 - **Points** — drop 2525C's four affiliations and Spot Map dots with a click, named as 5.5 names them; a right-click menu and an inspector to rename, recolour, change affiliation, add remarks, look up the address, move (or drag), send and delete; sent as 5.5's marker CoT, field by field.
 - **Routes** — draw a route with the Route tool (click a control point, ⌥-click a checkpoint), drag its points, and edit it from right-click menus and an inspector with 5.5's route details and leg distances; drawn in 5.5's line styles, named as 5.5 names them, shared and received as 5.5's `b-m-r` CoT.
-- **Map items kept across launches** — points, routes, R&B lines and archived markers, as 5.5's StateSaver keeps them.
+- **The Overlay Manager** — a sidebar tree of the map's items by kind, built from 5.5's own overlay rules: search, sort by name or distance, Show All and Self-Authored; show or hide an item or a whole list, click to go to it, right-click for its actions, multi-select to delete.
+- **Map items kept across launches** — points, routes, R&B lines and archived markers, shown or hidden, as 5.5's StateSaver keeps them.
 
 The CoT model, coordinates, range and bearing and the 2525 mapping are Swift ports held to the kernel's own answers by golden tests (`make test-cot-golden`, `test-coord-golden`, `test-rab-golden`, `test-symbol-golden`).
 
@@ -84,7 +85,7 @@ on every merge to `main` (`dev/docs-site/`, `make docs-site`).
 | [`dev/g1/NOTES.md`](dev/g1/NOTES.md) · [`dev/g2/NOTES.md`](dev/g2/NOTES.md) · [`dev/g3/NOTES.md`](dev/g3/NOTES.md) | Engineering notes per gate: how each milestone went — plans, decisions, traps, gate logs |
 | [`dev/spike/g0/NOTES.md`](dev/spike/g0/NOTES.md) · [`dev/spike/g55/NOTES.md`](dev/spike/g55/NOTES.md) | The G0 build spike, and the move of the baseline from 4.6 to 5.5 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: setup, the gate ladder, where changes land (patches/shadows/shim), CI contract, house style |
-| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit; Unreleased: G2 closed, G3.4–G3.10 |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit; Unreleased: G2 closed, G3.4–G3.11 |
 
 ## Local gates
 
