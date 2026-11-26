@@ -4131,4 +4131,4 @@ Then a docs PR that closes G3.
 | A/B: no clean start | FAIL: `the point is named B 2, not B 1 (left from an earlier run?)` |
 | A/B: a failed run's tidy-up | the 3 Keychain items it made are removed; no copy left running |
 | `make lint` | passes |
-| The owner watches a run | pending |
+| The owner watches a run (2026-11-26) | PASS: `make g3-exit` launched for the owner, who watched it; both copies reported in 3 s (2.4 s and 2.5 s), each window showed the other's dot (79 and 78 pixels, 10×10), the cleanup removed all 3 Keychain items |

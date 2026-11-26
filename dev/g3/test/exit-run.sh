@@ -123,7 +123,7 @@ cleanup() {
 # 1. preflight
 mkdir -p "$(dirname "$log")"
 : > "$log"
-say "G3 exit run, $(date -u +%Y-%m-%dT%H:%M:%SZ), main at $(git -C "$repo" rev-parse --short HEAD)"
+say "G3 exit run, $(date -u +%Y-%m-%dT%H:%M:%SZ), at $(git -C "$repo" rev-parse --abbrev-ref HEAD) $(git -C "$repo" rev-parse --short HEAD)"
 [[ -x $app ]] || fail "no app bundle: run make app"
 bash "$repo/dev/g3/exit/servers.sh" preflight | tee -a "$log"
 password=$(security find-generic-password -s mactak-exit -a exit -w)
