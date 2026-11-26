@@ -12,6 +12,12 @@
 // servers, mesh) in the defaults suite NAME instead of the app's own, its
 // chat history in chat-NAME.sqlite, and suffixes its device uid with
 // "-NAME", so a second copy on one Mac is a second client.
+//
+// `--exit-script FILE` is for the G3 exit run only (dev/g3/NOTES.md §The G3
+// exit): the copy turns its mesh off, so it can hear the other copy only
+// through the server, and carries out the script (ExitRun). When the run
+// passes it fits the map to the two points. A cleanup-only script runs
+// without starting commo, and quits when done.
 
 import AppKit
 import Combine
@@ -107,11 +113,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let settings: UserDefaults
     /// The Overlay Manager's state (G3.11b).
     let overlayManager: OverlayManagerModel
+    /// The exit run's script, when `--exit-script` names one.
+    private let exitScript: ExitScript?
 
     override init() {
         let (settings, suite) = Self.settings()
         self.settings = settings
+        exitScript = Self.exitScript()
         let mesh = MeshNetwork(settings: settings)
+        if exitScript != nil { mesh.setEnabled(false) }
         self.mesh = mesh
         let details = SelfDetails(settings: settings, uid: DeviceUID.resolve(suite: suite))
         me = SelfReporter(settings: settings, details: details, locator: LocationService())
@@ -220,12 +230,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         CommsRuntime.configure()
         markers.start()
+        // a cleanup only edits the server list and the Keychain: no commo, so
+        // nothing connects the server it is about to remove
+        if let exitScript, exitScript.cleanupOnly { return runExit(exitScript) }
         do {
             try connections.start()
             watcher.start()
         } catch {
             NSLog("macTAK: commo didn't start: \(error)")
         }
+        if let exitScript { runExit(exitScript) }
+    }
+
+    /// The exit run: the script, then the map fitted to the two points
+    /// (once the map runs), or a quit after a cleanup.
+    private func runExit(_ script: ExitScript) {
+        let run = ExitRun(script: script, connections: connections, identities: .login)
+        Task {
+            let report = await run.run()
+            if script.cleanupOnly {
+                // from the run loop, not this Task: terminate's own Task needs
+                // the main queue (SignalQuit, G3 trap 19's fix). A timer, as
+                // a queued run-loop block waits for something to wake the loop.
+                return NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
+            }
+            let points = [report.dropped, report.peerMarker].compactMap { $0 }
+                .map { CotPoint(lat: $0.lat, lon: $0.lon) }
+            guard report.passed, !points.isEmpty else { return }
+            while host.state != .running { try? await Task.sleep(for: .milliseconds(200)) }
+            host.goTo(points, altitude: nil, marker: false, point: false)
+        }
+    }
+
+    /// The script `--exit-script FILE` names; the app quits if it can't be read.
+    private static func exitScript() -> ExitScript? {
+        let arguments = CommandLine.arguments
+        guard let flag = arguments.firstIndex(of: "--exit-script") else { return nil }
+        guard flag + 1 < arguments.count else { refuse("--exit-script needs a file") }
+        do {
+            return try ExitScript.load(URL(fileURLWithPath: arguments[flag + 1]))
+        } catch {
+            refuse("--exit-script \(arguments[flag + 1]): \(error)")
+        }
+    }
+
+    private static func refuse(_ why: String) -> Never {
+        FileHandle.standardError.write(Data("macTAK: \(why)\n".utf8))
+        exit(2)
     }
 
     /// The settings, and the suite's name when --settings-suite names one.

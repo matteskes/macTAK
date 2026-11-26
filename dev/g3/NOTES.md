@@ -3978,3 +3978,96 @@ Then a docs PR that closes G3.
 | A/B: the SSL CoT handler stopped | FAIL: `mactak-exit-ots-eud-ssl is exited` |
 | A/B: `exit_a`'s password changed on the server | FAIL: `enrollment as exit_a on 8446 was refused` |
 | `make lint` | passes (shellcheck covers `servers.sh`) |
+
+### PR b — the instances' part, `--exit-script` (2026-11-26, branch `g3/exit-hook`)
+
+#### What it is
+
+- **`ExitScript` and `ExitReport` (MacTAKComms/Exit)**: the script one
+  instance carries out, read from JSON, and what it reports. The script
+  names the server (host, SSL port, enrollment port, the CA as PKCS#12,
+  the user, and the environment variable that holds the password: never
+  the password itself), the callsign, a placed position, the reporting
+  rate, the peer's callsign, the Spot Map point it drops and its colour,
+  the two chats, a timeout, and where the report goes. `cleanupOnly`
+  makes it a tidy-up instead.
+- **`ExitRun`** carries the script out on a `ServerConnections`, as a
+  user would by hand:
+  1. the callsign, the placed position and the reporting rate, before it
+     connects;
+  2. any earlier server of the script's name leaves the list; the CA is
+     imported as the truststore, the server added with enrollment, and
+     enrolled (G3.2c), which connects it;
+  3. the peer, waited for as a contact by callsign, with whether it was
+     heard through the server or the mesh;
+  4. a Spot Map point dropped with the Point Dropper and sent, then sent
+     again every 2 s while the run waits;
+  5. a chat to All Chat Rooms;
+  6. the peer's point, then the one-to-one;
+  7. the peer's two chats; its one-to-one marked seen (the read receipt
+     goes back); the delivered and read receipts of this instance's own
+     one-to-one.
+
+  Each step is timed into the report, which is written however the run
+  ends. Only what arrives after the run starts counts, as an instance
+  keeps its chats and map items across launches.
+- **The app** (`--exit-script FILE`): the copy turns its mesh off, so it
+  can hear the other copy only through the server, and runs the script
+  after commo starts. When the run passes, it fits the map to the two
+  points for PR c's capture. A cleanup-only script runs without starting
+  commo and quits when done. A script that can't be read stops the app
+  with exit code 2. Without the flag nothing changes.
+- **`ServerConnections.removeWithCertificates`** removes a server and its
+  client certificate and truststore from the IdentityStore (the cleanup).
+
+#### Found on the way
+
+- **ATAK's default reporting rate leaves the peer waiting.** On the
+  first live run, B heard A at once, but A never heard B within 90 s.
+  OpenTAKServer had both registered, but B's first self-SA reached it
+  0.5 s before A was registered, and OpenTAKServer forwards only to the
+  clients it has then. Dynamic, ATAK's default, reports a still client to
+  the server every 180 s, so A would have heard B only then. The two
+  copies left open did see each other after that (owner). The script now
+  sets ATAK's Constant strategy (`reportEvery`, 3 s), a real preference
+  (`SelfDetails.reporting`), not a test hook.
+- **A one-to-one sent too early gets no delivered receipt.** 5.5's
+  `ChatService.message` sends a delivered receipt only to a sender it
+  knows as a contact, and a peer that starts later may not have heard
+  this instance yet. The run sends its one-to-one only once the peer's
+  point has arrived: the peer sends that only after hearing this
+  instance.
+- **Two copies importing the same CA raced** (a product bug, fixed).
+  `IdentityStore.importTruststore` deleted the stored copy, then added
+  the new one; the second copy's add failed with "already exists"
+  (-25299). It now updates the stored copy in place and adds it only
+  when it isn't there, so it is never missing, and an add that finds it
+  there updates it.
+- **A quit from inside a `Task` hangs** (G3 trap 19 again):
+  `NSApp.terminate` runs AppKit's quit loop in place, and
+  `applicationShouldTerminate`'s own `Task` needs the main queue. The
+  cleanup's quit is a zero-delay timer instead: a block queued with
+  `RunLoop.main.perform` waited for something to wake the loop, and one
+  cleanup hung until it was killed.
+- **commo crashed when a connecting server was removed and the app
+  quit** (SIGSEGV in
+  `StreamingSocketManagement::connectionThreadProcess`). The first
+  cleanups started commo, which connected the saved exit server; the
+  cleanup removed it mid-connect and quit a second later. Cleanup no
+  longer starts commo. A user removing a server while it connects and
+  quitting at once could hit the same crash; it is left for its own
+  issue.
+- **No Keychain prompt.** A fresh enrollment's identity exports from the
+  login keychain with no prompt for the ad-hoc-signed bundle, as the
+  plan's risk asked.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `ExitRunTests` (7, new; the CI leg, in `make test-app`) | two instances against the fake enrollment and TLS servers: enrolled, each other's contact through the server and not the mesh, the point (author, name, place), both chats, both receipts, every step; a peer that starts 5 s later still hears the first; a second run counts only its own chats and point; cleanup removes the server, the identity and the truststore; no password fails and still reports; a missing peer times out; the script reads from JSON |
+| A/B | no read receipt sent; the point never sent; a slow reporting rate (600 s) with a late peer; the run-start filters taken out: each fails its test |
+| Live, the app against PR a's OpenTAKServer | both copies pass in 2.8 s, through the server, both receipts back; quit in 2 s; each cleanup in 1 s removes its identity (and the truststore), nothing left in the login Keychain; two rounds |
+| Live, first tries | B heard A, A never heard B (the reporting rate); then the CA race; then the cleanup hang and the commo crash: all above |
+| `make test-app` | MacTAKCommsTests 279 pass (1 skipped, Apple's geocoder, network); Cot and Core unchanged |
+| `make lint` | passes |
