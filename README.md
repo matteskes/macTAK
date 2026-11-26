@@ -85,7 +85,7 @@ on every merge to `main` (`dev/docs-site/`, `make docs-site`).
 | [`dev/g1/NOTES.md`](dev/g1/NOTES.md) · [`dev/g2/NOTES.md`](dev/g2/NOTES.md) · [`dev/g3/NOTES.md`](dev/g3/NOTES.md) | Engineering notes per gate: how each milestone went — plans, decisions, traps, gate logs |
 | [`dev/spike/g0/NOTES.md`](dev/spike/g0/NOTES.md) · [`dev/spike/g55/NOTES.md`](dev/spike/g55/NOTES.md) | The G0 build spike, and the move of the baseline from 4.6 to 5.5 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: setup, the gate ladder, where changes land (patches/shadows/shim), CI contract, house style |
-| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit; Unreleased: G2 closed, G3.4–G3.11 and G3's exit run (G3 closed) |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit, 0.4.0 G3 the core client (G2 and G3 closed) |
 
 ## Local gates
 
