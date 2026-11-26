@@ -15,6 +15,9 @@
 //     `routeLines` keeps where each line is, for a click on one.
 // The tick also catches contacts and markers going stale, which publishes
 // nothing.
+// An item hidden in the Overlay Manager (G3.11b, MapVisibility) is sent
+// nothing, so the engine takes it off the map, and can't be clicked; it
+// still counts where it is (a line tied to it, a route through it).
 // While the map isn't running nothing is sent; when it starts, everything is
 // (the engine's marker layer starts empty).
 
@@ -44,10 +47,14 @@ final class MapMarkerSync {
     private let routes: Routes
     private let routeEditor: RouteEditor
     private let units: UnitPreferences
+    private let visibility: MapVisibility
     private var timer: Timer?
     /// What the engine has, by uid; nil until the map takes markers.
     private var sent: [String: Marker]?
     private var sentLines: [String: Line] = [:]
+    /// Each marker's icon as last worked out, hidden ones too (the
+    /// Overlay Manager's rows show it, G3.11b).
+    private(set) var icons: [String: MarkerIcon] = [:]
     /// Each route's line where it was last drawn, by route id.
     private(set) var routeLines: [(route: String, points: [CotPoint])] = []
 
@@ -71,7 +78,8 @@ final class MapMarkerSync {
     private var selfIcon: String?
 
     init(host: EngineHost, contacts: ContactStore, cotMarkers: CotMarkerStore, me: SelfReporter,
-         rangeBearing: RangeBearingLines, routes: Routes, routeEditor: RouteEditor, units: UnitPreferences) {
+         rangeBearing: RangeBearingLines, routes: Routes, routeEditor: RouteEditor, units: UnitPreferences,
+         visibility: MapVisibility) {
         self.host = host
         self.contacts = contacts
         self.cotMarkers = cotMarkers
@@ -80,6 +88,7 @@ final class MapMarkerSync {
         self.routes = routes
         self.routeEditor = routeEditor
         self.units = units
+        self.visibility = visibility
         host.unclickable = [Self.rabStartUID]
     }
 
@@ -117,7 +126,10 @@ final class MapMarkerSync {
             want[w.uid] = Marker(lat: w.point.lat, lon: w.point.lon, hae: Self.hae(w.point), icon: w.icon,
                                  rotation: nil, label: w.label)
         }
-        routeLines = drawn.compactMap { d in d.graphics.line.map { (d.id, $0.points) } }
+        icons = want.mapValues(\.icon)
+        let shown = drawn.filter { visibility.isVisible($0.id) }
+        routeLines = shown.compactMap { d in d.graphics.line.map { (d.id, $0.points) } }
+        want = want.filter { visibility.isVisible($0.key) }
         for (uid, m) in want where have[uid] != m {
             engine.putMarker(uid: uid, lat: m.lat, lon: m.lon, hae: m.hae, iconURI: m.icon.uri, color: m.icon.color,
                              width: m.icon.width, height: m.icon.height, rotation: m.rotation, label: m.label)
@@ -128,7 +140,7 @@ final class MapMarkerSync {
             have[uid] = nil
         }
         sent = have
-        syncLines(engine, places: places, routes: drawn.compactMap(\.graphics.line), now: now)
+        syncLines(engine, places: places, routes: shown.compactMap(\.graphics.line), now: now)
     }
 
     private func syncLines(_ engine: EngineBridge, places: [String: CotPoint], routes: [RouteGraphics.Line],
@@ -138,9 +150,10 @@ final class MapMarkerSync {
         var labels: [String: String] = [:]
         for (line, start, end) in rangeBearing.ends(markers: places) {
             let label = RangeBearing(from: start, to: end).label(style, magnetic: units.magnetic, at: now)
+            labels[line.id] = label
+            guard visibility.isVisible(line.id) else { continue }
             want["mactak-rab-" + line.id] = Line(points: [start, end], label: label, color: UInt32(bitPattern: line.color),
                                                  width: Float(line.weight), arrow: true)
-            labels[line.id] = label
         }
         for r in routes {
             want[r.uid] = Line(points: r.points, label: r.label, color: r.color, width: r.width,

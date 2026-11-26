@@ -264,8 +264,13 @@ public final class RangeBearingLines: ObservableObject {
         }
         let stillTied = tiedUIDs
         lastSeen = lastSeen.filter { stillTied.contains($0.key) }
+        placed = Dictionary(resolved.map { ($0.0.id, (start: $0.1, end: $0.2)) }, uniquingKeysWith: { a, _ in a })
         return resolved
     }
+
+    /// Where each line's ends were when the map last drew it (`ends`), by
+    /// line id: the Overlay Manager lists the lines there (G3.11b).
+    public private(set) var placed: [String: (start: CotPoint, end: CotPoint)] = [:]
 
     /// Where each tied marker was last seen.
     private var lastSeen: [String: CotPoint] = [:]

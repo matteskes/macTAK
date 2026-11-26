@@ -3507,8 +3507,9 @@ decision 2).
   details.
 - **The pane's bar:**
   - search over the titles;
-  - sort A–Z, Z–A or by distance from you (`SortAlphabet`,
-    `SortAlphabetDesc`, `SortDistanceFrom`);
+  - sort alphabetically or by distance from you (`SortAlphabet`,
+    `SortDistanceFrom`; only the TAK server channel lists add Z–A,
+    `SortAlphabetDesc`: corrected in G3.11a, owner 2026-11-26);
   - the filters: Show All (off is the field-of-view filter, `fov_filter`),
     Self-Authored (`AuthorFilter`, the item's `parent_uid` is this
     device) and Auto Send;
@@ -3521,7 +3522,7 @@ decision 2).
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/overlay-model` | the tree as a model: `overlays_hier.xml`'s overlays and rules, plus Range & Bearing and Routes, over the contacts, CoT markers, R&B lines and routes; counts, empty lists hidden; search; the three sorts; Self-Authored and the field-of-view filter | model tests against 5.5's rules (each XML overlay's filters, first match, litmus, the sorts and filters) |
+| **a** | `g3/overlay-model` | the tree as a model: `overlays_hier.xml`'s overlays and rules, plus Range & Bearing and Routes, over the contacts, CoT markers, R&B lines and routes; counts, empty lists hidden; search; the two sorts; Self-Authored and the field-of-view filter | model tests against 5.5's rules (each XML overlay's filters, first match, litmus, the sorts and filters) |
 | **b** | `g3/overlay-ui` | the Overlays section in the sidebar: the tree, search, sort and filters; a row's actions (show or hide, Go To, Details, Send, Delete); multi-select Delete; the Routes list with its route actions. Hidden items leave the map, and an item's visibility is kept across launches in the store's `visible` column. The sidebar's Range & Bearing section folds into the tree (Shapes › Range & Bearing) | a CI render step: a hidden item's pixels are gone and come back when shown; a hidden point stays hidden after a relaunch (test); hand check (owner) |
 
 Then a docs PR, as after each milestone.
@@ -3649,3 +3650,140 @@ drawn yet: the sidebar section is G3.11b.
 | `make test-app` | MacTAKCotTests 137, MacTAKCoreTests 14, MacTAKCommsTests 263 pass (1 skipped, Apple's geocoder, network) |
 | A/B | the role lists made exclusive, the litmus ignored, Markers hidden when empty, no antimeridian split, the top level lowering the term, a parent matching its lists' titles: each fails its tests |
 | `make lint` | passes |
+
+### G3.11b — the Overlay Manager in the sidebar, with visibility (2026-11-26, branch `g3/overlay-ui`)
+
+#### What 5.5 does, beyond the plan's reading
+
+- **A row shows more than its title.** `HierarchyListAdapter.getView`
+  gives a list its count. An item gets its position in the coordinate
+  format, and under it its range, bearing and altitude from you, or
+  from the map's centre without a fix (`adaptLocationItem`,
+  `getCurrentLocation`). A route shows its first point instead
+  (`RouteListModel.getDescription`). An empty title reads
+  "[Untitled Item]", and this device's uid reads as its callsign. The
+  selected item's row is green (`0x8000AF4F`).
+- **The eye has three states.** A list is shown when all its rows are,
+  partly shown when some are, and hidden when none are or it has none
+  (`AbstractHierarchyListItem2.getVisibility`). Clicking a shown or
+  partly shown list hides all of it, and clicking a hidden one shows it.
+- **An item changes only when it would.** `MapItemHierarchyListItem.setVisible`
+  does nothing when the item is already that way. A route that changes
+  shows or hides its points with it, including the markers it runs
+  through (`EditablePolyline.onVisibleChanged`). Hiding a route that is
+  already hidden leaves its points alone.
+- **A click goes to the item.** Clicking an item fits it in the view
+  (`MapTouchController.goTo`, `ATAKUtilities.scaleToFit`) and selects
+  it. A Marker fits into 1/18th of the view and a shape into all of it.
+  A point item is then focused (FOCUS with `useTightZoom`: zoomed to at
+  least 1:197,219). A hidden item is shown. Clicking the selected item
+  again unselects it. Selecting opens what the radial and the details do
+  for that item; here that is a CoT marker's inspector.
+- **A route's click is its own** (`RouteListItem.onClick`). It opens the
+  route's actions under its row (Details, Send, Edit, Delete), shows the
+  route, and goes to it without selecting it.
+- **Send is not on every row.** A map item's row in 5.5 has no Send;
+  Send comes from its radial menu, and only a route's actions carry it.
+  The plan's "Send per row" is read that way. Here a row's right-click
+  menu is the item's radial: a marker's Details, Send, Range & Bearing,
+  Move and Delete; a route's; and an R&B line's Send and Delete, which
+  the sidebar's old R&B section had.
+- **Delete is 5.5's `HierarchyListUserDelete`.** It asks "Are you sure?"
+  with `delete_items_confirmation`, then runs each checked row's Delete,
+  and a list's for each of its rows (`GroupDelete`). A contact or a CoT
+  marker leaves the map here (`removeFromGroup`), and an R&B line or a
+  route is deleted. An R&B endpoint leaves the list while its line keeps
+  the end where it was, because an endpoint has no remove listener in
+  `RangeAndBearingMapItem`.
+- **Visibility is kept the way each importer takes it.** `StateSaverListener`
+  writes `visible` with every persist, so hiding or showing an item
+  rewrites it. At launch, `StateSaverPublisher` passes it as an extra.
+  `MarkerImporter` always applies it. `DrawingImporter` applies it to a
+  route, whose points follow. `RangeAndBearingImporter` applies it when
+  the line is first added, which a kept line is.
+- **An update keeps the item's visibility, and a new item is shown.** A
+  CoT for a hidden marker leaves it hidden, because the importers default
+  the extra to the item's own visibility. An item that leaves the map
+  takes its visibility with it, so the same uid coming back is shown.
+- **Show All is the `fov_filter` setting.** Off keeps only what is on
+  screen. The view is `MapState`'s: the scene's inverse at the corners
+  and the centre, not a ray cast, so a corner off the world is an
+  invalid point and nothing is in view. The rows follow the map as it
+  moves (`onMapMoved`).
+
+#### Corrected from G3.11a
+
+- **Two icons named assets that 5.5 doesn't have.** Shapes and Range &
+  Bearing use Android drawables (`R.drawable.shape` in
+  `MapOverlayManager.addShapesOverlay`, `R.drawable.ruler` in
+  `RangeAndBearingMapComponent`), not `icons/shape.png` and
+  `icons/rangebearing.png`. The model now names them as 5.5 does
+  (`android.resource://…/shape`, `…/ruler`; `OverlayTree.drawable`).
+  Every other icon in the model was checked against the 5.5 tree. The
+  XML's own `icons/roles/k9.png` is missing from 5.5's assets too.
+
+#### Not as 5.5
+
+- **Android drawables aren't shipped.** The engine serves 5.5's assets,
+  but not its `res/drawable` images. Where 5.5 uses a drawable, an SF
+  Symbol stands in: Shapes (`shape`), Range & Bearing (`ruler`), a
+  route (`ic_route`) and an R&B line (`pairing_line_white`). Each is
+  tinted with the item's colour, as 5.5 tints them.
+- **A list expands in place.** 5.5 pushes a list onto the pane; the
+  sidebar's tree opens it under its row instead (decision 1).
+- **The focus doesn't follow a moving marker.** 5.5's FOCUS keeps the
+  camera on the marker as it moves and can lock to it. That is the map's
+  focus, which macTAK hasn't built anywhere, so GoTo focuses once.
+- **A route's actions leave out Navigate and Reverse.** macTAK has no
+  route navigation or reversal yet (G3.10).
+- **Range and bearing use the R&B label's format.** The row's range and
+  bearing use the same `RangeBearing` label as the map's R&B lines and
+  the Units settings. 5.5 formats them with `SpanUtilities` and
+  `NorthReference.format`, which macTAK hasn't ported.
+
+#### What it is
+
+- **`MapVisibility` (MacTAKComms)** holds the hidden uids.
+  `ServerConnections` owns it, writes it with each archived item
+  (`ArchivedItem.visible`, `MapItemArchive`), and gives it back to
+  `importKept` as each 5.5 importer takes it.
+- **`OverlayManager` (MacTAKComms)** provides the listed items, the
+  three-state visibility, `setVisible` with a route's points, `delete`
+  per kind, GoTo's point (`location(of:)`: an Arrow's point 2, a route's
+  centre, a point) and the pruning of what left.
+- **The engine side.** `MapMarkerSync` sends a hidden item nothing, so
+  the engine takes it off the map and it can't be clicked; a line tied
+  to it still follows it. The render path gains three calls:
+  - `EngineBridge.viewState`, `MapState`'s corners, centre and
+    continuous scroll;
+  - `EngineBridge.asset`, the icons;
+  - `EngineBridge.goTo`, `mactak.render.GoTo`: `scaleToFit` and the
+    focus, ported line by line, with MapView's parts read off the
+    renderer.
+- **`OverlayManagerView`** is the sidebar section, its bar and rows. It
+  replaces the sidebar's Range & Bearing section, which is now Shapes ›
+  Range & Bearing.
+- **5.5's list icons** are copied from the pin into the engine's assets
+  (`dev/g2/render/resources/assets/icons`: `affiliations`, `aircraft`,
+  `friendly`, `neutral`, `routes`, `target`, `track`, `unknown`; 32 KB),
+  as G3.7c and G3.10b copied theirs. The XML's 2525C symbols
+  (`asset://mil-std-2525c/…`) aren't among 5.5's assets: a symbol
+  package supplies them, so those lists show no icon, as 5.5-civ does
+  without one. A test checks that every other list icon ships.
+- **The render gate.** `RenderSmoke` gains `--hide UID` and
+  `--expect-hidden-run`, which take an item off the marker layer, check,
+  put it back, and check again. `dev/g2/render/test/visibility.sh` runs
+  them, and it is a step of its own in CI.
+
+#### Results (dev Mac, M5 Max, macOS 27.2.1)
+
+| Gate | Result |
+|---|---|
+| `visibility.sh` (render, new CI step) | in one session the marker's and the route line's pixels go (0%) while the orange line stays (100%), then come back (100%); with nothing hidden the hidden checks fail; with nothing drawn every check fails |
+| `OverlayManagerTests` (8, new) | a list shown, partly shown, hidden, and hidden with no rows; hiding a list hides each row and showing shows them; a route takes its points, the marker it runs through too, only when it changes; an update keeps an item hidden, and one that left comes back shown; Delete per kind, a list's every row, an endpoint leaving the list while its line keeps the end; GoTo's point; **a hidden point stays hidden after a relaunch**, shown again is written; a hidden route (its points with it) and R&B line stay hidden after a relaunch |
+| `MarkerIconsTests.testEveryOverlayIconShips` (new) | every list icon the model names ships, but the 2525C symbols |
+| `make test-app` | MacTAKCotTests 137, MacTAKCoreTests 14, MacTAKCommsTests 272 pass (1 skipped, Apple's geocoder, network). Three mesh and chat tests time out while a copy of the app holds the mesh ports, and pass with it closed |
+| A/B | a route not taking its points; `visible` not written; the restore ignoring `visible`: each fails its tests |
+| The app | builds and runs; the section lists four CoT markers sent to it, with counts and icons |
+| `make lint` | passes |
+| Hand check (owner) | pending |

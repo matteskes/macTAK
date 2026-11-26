@@ -62,6 +62,7 @@ public final class EngineBridge {
     private let midSymbolPng, midCanRenderSymbol: jmethodID
     private let midPutMarker, midRemoveMarker, midMarkersReady, midSelfIconUri: jmethodID
     private let midPutLine, midGroundAt, midMarkerAt, midAltitudeSource: jmethodID
+    private let midViewState, midAsset, midGoTo: jmethodID
     /// Called when a call across JNI raises; defaults to printing and exit(2).
     public var onFailure: (String) -> Never = { msg in
         fputs("EngineBridge: \(msg)\n", stderr)
@@ -92,6 +93,9 @@ public final class EngineBridge {
         midGroundAt = try jni.staticMethod(cls, "groundAt", "(FF)[D")
         midMarkerAt = try jni.staticMethod(cls, "markerAt", "(FFF)Ljava/lang/String;")
         midAltitudeSource = try jni.staticMethod(cls, "altitudeSource", "(DD)Ljava/lang/String;")
+        midViewState = try jni.staticMethod(cls, "viewState", "()[D")
+        midAsset = try jni.staticMethod(cls, "asset", "(Ljava/lang/String;)[B")
+        midGoTo = try jni.staticMethod(cls, "goTo", "([DDZZ)V")
     }
 
     /// Start the render thread on `layer` (w x h pixels at dpi) and return.
@@ -236,6 +240,56 @@ public final class EngineBridge {
             a[0].f = jfloat(x); a[1].f = jfloat(y)
             guard let v = try jni.callStaticDoubles(cls, midGroundAt, a), v.count == 3 else { return nil }
             return (v[0], v[1], v[2].isNaN ? nil : v[2])
+        }
+    }
+
+    /// What 5.5's FOVFilter.MapState reads off the map view (G3.11b): the
+    /// scene's inverse at the surface's corners and middle (NaN where a
+    /// pixel is off the world) and whether the map scrolls continuously;
+    /// nil before the first frame.
+    public struct ViewState: Sendable, Equatable {
+        public var upperLeft, upperRight, lowerRight, lowerLeft, center: (lat: Double, lon: Double)
+        public var continuousScroll: Bool
+
+        public static func == (a: ViewState, b: ViewState) -> Bool {
+            [a.upperLeft, a.upperRight, a.lowerRight, a.lowerLeft, a.center].elementsEqual(
+                [b.upperLeft, b.upperRight, b.lowerRight, b.lowerLeft, b.center]) { $0 == $1 }
+                && a.continuousScroll == b.continuousScroll
+        }
+    }
+
+    public func viewState() -> ViewState? {
+        call {
+            guard let v = try jni.callStaticDoubles(cls, midViewState), v.count == 11 else { return nil }
+            return ViewState(upperLeft: (v[0], v[1]), upperRight: (v[2], v[3]), lowerRight: (v[4], v[5]),
+                             lowerLeft: (v[6], v[7]), center: (v[8], v[9]), continuousScroll: v[10] != 0)
+        }
+    }
+
+    /// The Overlay Manager's GoTo (G3.11b): fits `points` in the view as
+    /// 5.5's MapTouchController.goTo does, a Marker into 1/18th of it, and
+    /// focuses a point item. `altitude` is its point's, or the highest of a
+    /// shape's; nil when none is known.
+    public func goTo(_ points: [(lat: Double, lon: Double)], altitude: Double?, marker: Bool, point: Bool) {
+        call {
+            let arr = try jni.newDoubleArray(points.flatMap { [$0.lat, $0.lon] })
+            defer { jni.deleteLocalRef(arr) }
+            var a = [jvalue](repeating: jvalue(), count: 4)
+            a[0].l = arr; a[1].d = altitude ?? .nan
+            a[2].z = jboolean(marker ? JNI_TRUE : JNI_FALSE); a[3].z = jboolean(point ? JNI_TRUE : JNI_FALSE)
+            try jni.callStaticVoid(cls, midGoTo, a)
+        }
+    }
+
+    /// An asset's bytes, as the engine reads `asset://<path>`; nil when
+    /// there is none (G3.11b: the Overlay Manager's icons).
+    public func asset(_ path: String) -> [UInt8]? {
+        call {
+            let js = try jni.newString(path)
+            defer { jni.deleteLocalRef(js) }
+            var a = [jvalue](repeating: jvalue(), count: 1)
+            a[0].l = js
+            return try jni.callStaticBytes(cls, midAsset, a)
         }
     }
 

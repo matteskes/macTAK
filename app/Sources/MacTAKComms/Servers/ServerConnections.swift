@@ -81,6 +81,11 @@ public final class ServerConnections: ObservableObject {
     /// Where a click on the map is, for the Point Dropper and Move (G3.9d);
     /// the app gives it the engine's altitude source.
     public let mapLocator: MapLocator
+    /// Which map items are hidden (G3.11b), kept across launches for the
+    /// archived ones.
+    public let visibility = MapVisibility()
+    /// What the Overlay Manager's rows do to the items (G3.11b).
+    public let overlays: OverlayManager
     /// Keeps the archived items across launches, when a store was given.
     private var mapItems: MapItemSync?
     private var detailsWatch: AnyCancellable?
@@ -128,6 +133,8 @@ public final class ServerConnections: ObservableObject {
         let routes = Routes()
         self.routes = routes
         routeEditor = RouteEditor(routes: routes, locate: locate)
+        overlays = OverlayManager(contacts: contacts, markers: markers, rangeBearing: rangeBearing, routes: routes,
+                                  routeEditor: routeEditor, pointEditor: pointEditor, visibility: visibility)
         rangeBearing.author = { author(Date()) }
         routes.author = { author(Date()) }
         let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
@@ -145,10 +152,11 @@ public final class ServerConnections: ObservableObject {
         // a line's ends follow its markers, contacts and this client
         mapItems = mapItemStore.map { store in
             MapItemSync(archive: MapItemArchive(store: store, selfUID: me.details.uid),
-                        importer: { [unowned self] xml in importKept(xml) },
+                        importer: { [unowned self] item in importKept(item) },
                         items: { [unowned self] in archivedItems() },
                         changes: [markers.objectWillChange, rangeBearing.objectWillChange,
-                                  routes.objectWillChange, contacts.objectWillChange, me.objectWillChange])
+                                  routes.objectWillChange, contacts.objectWillChange, me.objectWillChange,
+                                  visibility.objectWillChange])
         }
         mapItems?.restore()
     }
@@ -432,12 +440,24 @@ public final class ServerConnections: ObservableObject {
 
     /// Takes one kept item back through the importers: the markers, the
     /// routes, then the lines, which defer while a marker they name isn't
-    /// in yet.
-    private func importKept(_ xml: String) -> MapItemArchive.Import {
+    /// in yet. Each takes the row's `visible` as 5.5's importers take the
+    /// StateSaver's extra: a marker always (MarkerImporter), a route as a
+    /// shape, its points with it (DrawingImporter), a line when it is
+    /// first added (RangeAndBearingImporter), which a kept one is.
+    private func importKept(_ kept: StoredMapItem) -> MapItemArchive.Import {
+        let xml = kept.event
         let marker = markers.receive(xml)
-        if routes.restore(xml, isItem: isMarker, selfUID: uid) == .restored { return .taken }
+        if marker { visibility.set(kept.uid, visible: kept.visible) }
+        if routes.restore(xml, isItem: isMarker, selfUID: uid) == .restored {
+            if let route = routes[kept.uid], visibility.isVisible(route.id) != kept.visible {
+                visibility.set([route.id] + route.points.map(\.uid), visible: kept.visible)
+            }
+            return .taken
+        }
         switch rangeBearing.restore(xml, isMarker: isMarker, selfUID: uid) {
-        case .restored: return .taken
+        case .restored:
+            visibility.set(kept.uid, visible: kept.visible)
+            return .taken
         case .deferred: return .deferred
         case .ignored: return marker ? .taken : .ignored
         }
@@ -452,21 +472,25 @@ public final class ServerConnections: ObservableObject {
     /// (its contact just went) is left as last stored.
     private func archivedItems() -> [ArchivedItem] {
         let kept = markers.markers.compactMap { m in
-            m.archivedEvent.map { xml in ArchivedItem(uid: m.uid, type: m.type, signature: xml) { xml } }
+            m.archivedEvent.map { xml in
+                ArchivedItem(uid: m.uid, type: m.type, signature: xml, visible: visibility.isVisible(m.uid)) { xml }
+            }
         }
         let lines = rangeBearing.lines.filter(\.archived).map { line -> ArchivedItem in
             guard let event = lineEvent(line) else {
                 return ArchivedItem(uid: line.id, type: RangeBearingEvent.type, signature: nil) { "" }
             }
             return ArchivedItem(uid: line.id, type: RangeBearingEvent.type,
-                                signature: event(.atak, Date(timeIntervalSince1970: 0)).xml()) { event(.atak, Date()).xml() }
+                                signature: event(.atak, Date(timeIntervalSince1970: 0)).xml(),
+                                visible: visibility.isVisible(line.id)) { event(.atak, Date()).xml() }
         }
         // the centre's altitude source is looked up only when a route is written
         // a route the tool is still drawing, under two points, isn't kept: 5.5
         // removes it if the tool ends there (RouteEditTool.onToolEnd)
         let keptRoutes = routes.routes.filter { $0.archived && $0.points.count >= 2 }.map { route in
             ArchivedItem(uid: route.id, type: Route.type,
-                         signature: RouteEvent.make(route, center: nil, now: Date(timeIntervalSince1970: 0)).xml()) {
+                         signature: RouteEvent.make(route, center: nil, now: Date(timeIntervalSince1970: 0)).xml(),
+                         visible: visibility.isVisible(route.id)) {
                 self.routeEvent(route, at: Date()).xml()
             }
         }

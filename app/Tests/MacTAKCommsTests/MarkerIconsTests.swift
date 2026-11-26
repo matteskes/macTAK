@@ -147,6 +147,23 @@ final class MarkerIconsTests: XCTestCase {
         }
     }
 
+    /// Every asset an Overlay Manager list's icon names ships (G3.11b),
+    /// but the XML's 2525C symbols, which aren't among 5.5's assets
+    /// either (a symbol package supplies them).
+    func testEveryOverlayIconShips() {
+        func icons(_ configs: [OverlayConfig]) -> [String] {
+            configs.flatMap { [$0.icon] + icons($0.children) }
+        }
+        let uris = (icons(OverlayConfig.atak) + ["asset://icons/affiliations.png"])
+            .filter { $0.hasPrefix("asset://") && !$0.hasPrefix("asset://mil-std-2525c/") }
+        XCTAssertGreaterThan(uris.count, 10)
+        let assets = Self.repo.appendingPathComponent("dev/g2/render/resources/assets")
+        for uri in Set(uris) {
+            let path = assets.appendingPathComponent(String(uri.dropFirst("asset://".count))).path
+            XCTAssertTrue(FileManager.default.fileExists(atPath: path), uri)
+        }
+    }
+
     private static let repo = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent()

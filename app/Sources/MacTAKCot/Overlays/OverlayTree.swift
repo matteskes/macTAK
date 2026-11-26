@@ -127,6 +127,15 @@ public enum OverlayTree {
         var isHiddenEmpty: Bool { isList && childCount == 0 && uid != OverlayTree.markersID }
     }
 
+    /// An Android drawable as 5.5 names one for an icon
+    /// ("android.resource://<package>/" + R.drawable.<name>): MapOverlayManager's
+    /// Shapes is `shape`, RangeAndBearingMapComponent's group `ruler`. 5.5
+    /// writes the resource's number; the name stands for it here.
+    public static func drawable(_ name: String) -> String { drawablePrefix + name }
+
+    /// What `drawable` puts before the name.
+    public static let drawablePrefix = "android.resource://com.atakmap.app.civ/"
+
     // MARK: - building
 
     /// The top-level lists over `items`, empty ones hidden.
@@ -143,8 +152,8 @@ public enum OverlayTree {
         top.append(builder.parent(id: markersID, title: "Markers", icon: "asset://icons/affiliations.png", order: 2,
                                   children: markers.map { builder.list($0, path: "/" + markersID) }))
         let rangeAndBearing = items.filter { $0.group == .rangeAndBearing && filters.accept($0) }
-        top.append(builder.parent(id: shapesID, title: "Shapes", icon: "asset://icons/shape.png", order: 7, children: [
-            builder.group(id: rangeAndBearingID, title: "Range & Bearing", icon: "asset://icons/rangebearing.png",
+        top.append(builder.parent(id: shapesID, title: "Shapes", icon: OverlayTree.drawable("shape"), order: 7, children: [
+            builder.group(id: rangeAndBearingID, title: "Range & Bearing", icon: OverlayTree.drawable("ruler"),
                           items: rangeAndBearing, path: "/" + shapesID),
         ]))
         return top.filter { !$0.isHiddenEmpty }.sorted(by: alphabetical)

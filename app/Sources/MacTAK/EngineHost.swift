@@ -87,6 +87,27 @@ final class EngineHost: ObservableObject {
         engine?.panTo(lat: lat, lon: lon)
     }
 
+    /// The Overlay Manager's GoTo (G3.11b, EngineBridge.goTo); nothing
+    /// until the map runs.
+    func goTo(_ points: [CotPoint], altitude: Double?, marker: Bool, point: Bool) {
+        guard state == .running, !points.isEmpty else { return }
+        engine?.goTo(points.map { ($0.lat, $0.lon) }, altitude: altitude, marker: marker, point: point)
+    }
+
+    /// The view as 5.5's FOVFilter.MapState reads it (G3.11b); nil until
+    /// the map has drawn.
+    var viewState: EngineBridge.ViewState? {
+        guard state == .running else { return nil }
+        return engine?.viewState()
+    }
+
+    /// An asset's bytes (G3.11b: the Overlay Manager's icons); nil until
+    /// the map runs.
+    func asset(_ path: String) -> [UInt8]? {
+        guard state == .running else { return nil }
+        return engine?.asset(path)
+    }
+
     /// Where the altitude at a place comes from; nil until the map runs.
     func altitudeSource(at p: CotPoint) -> String? {
         guard state == .running else { return nil }

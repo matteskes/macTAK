@@ -496,6 +496,14 @@ jobs:
         if: needs.changes.outputs.changed == 'true'
         run: bash dev/g2/render/test/routes.sh dev/g2/build/render-routes.png
 
+      - name: Hide and show map items (dev/g2/render/test/visibility.sh)
+        # G3.11b's gate: an item the Overlay Manager hides leaves the map and
+        # comes back when shown, in one session, the item beside it untouched;
+        # the hidden checks must fail with nothing hidden, and every check with
+        # nothing drawn
+        if: needs.changes.outputs.changed == 'true'
+        run: bash dev/g2/render/test/visibility.sh dev/g2/build/render-visibility.png
+
       - name: Render an offline MBTiles basemap under the vector layer
         # G2 M2.3: raster pipeline — synthetic graticule → gdalwarp/gdal_translate
         # (Homebrew gdal CLI) → MBTiles → PersistentRasterDataStore →
@@ -588,6 +596,7 @@ jobs:
             dev/g2/build/render-markers.png
             dev/g2/build/render-lines.png
             dev/g2/build/render-routes.png
+            dev/g2/build/render-visibility.png
             dev/g2/build/render-basemap.png
             dev/g2/build/render-geotiff.png
             dev/g2/build/render-elevation.png

@@ -83,6 +83,11 @@ public final class RenderSmoke {
       + "                run between two ground points' pixels, MIN-MAX percent must be that\n"
       + "                colour, +/-TOL per channel (default " + PixelExpectation.TOLERANCE + "; G3.10b: dashes, an\n"
       + "                outline; repeatable)\n"
+      + "  --hide UID    once the checks above are made, remove marker or line UID (marker-0,\n"
+      + "                line-1, ... in option order), render, check --expect-hidden-run; then put\n"
+      + "                it back as it was, render, and check --expect-run again (G3.11b: an\n"
+      + "                item the Overlay Manager hides leaves the map, and comes back; repeatable)\n"
+      + "  --expect-hidden-run SPEC  as --expect-run, checked while the --hide items are off\n"
       + "  --expect-ground LAT,LON  a click on that point's pixel must come back as that\n"
       + "                point, within a pixel (G3.8b, MapPick; repeatable)\n"
       + "  --expect-marker LAT,LON,UID  a click beside that point must pick marker UID\n"
@@ -151,6 +156,8 @@ public final class RenderSmoke {
         final java.util.List<LineSpec> lineSpecs = new java.util.ArrayList<>();
         final java.util.List<PolylineSpec> polylineSpecs = new java.util.ArrayList<>();
         final java.util.List<RunExpectation> runs = new java.util.ArrayList<>();
+        final java.util.List<String> hides = new java.util.ArrayList<>();
+        final java.util.List<RunExpectation> hiddenRuns = new java.util.ArrayList<>();
         final java.util.List<PickExpectation> picks = new java.util.ArrayList<>();
         final java.util.List<File> elevations = new java.util.ArrayList<>();
         final java.util.List<ElevationChecks.Height> heights = new java.util.ArrayList<>();
@@ -184,6 +191,8 @@ public final class RenderSmoke {
                     case "--line": lineSpecs.add(LineSpec.parse(args[++i])); break;
                     case "--polyline": polylineSpecs.add(PolylineSpec.parse(args[++i])); break;
                     case "--expect-run": runs.add(RunExpectation.parse(args[++i])); break;
+                    case "--hide": hides.add(args[++i]); break;
+                    case "--expect-hidden-run": hiddenRuns.add(RunExpectation.parse(args[++i])); break;
                     case "--expect-ground": picks.add(PickExpectation.parseGround(args[++i])); break;
                     case "--expect-marker": picks.add(PickExpectation.parseMarker(args[++i])); break;
                     case "--elevation": elevations.add(new File(args[++i])); break;
@@ -353,6 +362,8 @@ public final class RenderSmoke {
         }
         // --marker, --line, --polyline: G3.7b's marker layer, over the data layers as the app adds it
         MapMarkers markers = null;
+        // how each item was put, to put a --hide item back as it was
+        final java.util.Map<String, Runnable> puts = new java.util.HashMap<>();
         if (!markerSpecs.isEmpty() || !lineSpecs.isEmpty() || !polylineSpecs.isEmpty()) {
             markers = new MapMarkers();
             globe.addLayer(markers.layer());
@@ -363,15 +374,29 @@ public final class RenderSmoke {
                 final boolean self = m[2].equals("self");
                 final String icon = self ? SelfIcon.uri(SelfIcon.DEFAULT_FILL, SelfIcon.DEFAULT_STROKE) : m[2];
                 final int color = m.length == 4 ? (int) Long.parseLong(m[3], 16) : 0xFFFFFFFF;
-                markers.put("marker-" + (n++), Double.parseDouble(m[0]), Double.parseDouble(m[1]), Double.NaN, icon, color,
-                        self ? SelfIcon.WIDTH : MapMarkers.ICON_SIZE, self ? SelfIcon.HEIGHT : MapMarkers.ICON_SIZE, Double.NaN,
-                        "MARKER-" + n);
+                final MapMarkers mm = markers;
+                final String uid = "marker-" + (n++), label = "MARKER-" + n;
+                final Runnable put = () -> mm.put(uid, Double.parseDouble(m[0]), Double.parseDouble(m[1]), Double.NaN, icon,
+                        color, self ? SelfIcon.WIDTH : MapMarkers.ICON_SIZE, self ? SelfIcon.HEIGHT : MapMarkers.ICON_SIZE,
+                        Double.NaN, label);
+                put.run();
+                puts.put(uid, put);
             }
-            for (LineSpec l : lineSpecs)
-                markers.putLine("line-" + (n++), l.latLons(), l.color(), LineSpec.WIDTH, MapMarkers.STYLE_SOLID, false,
-                        l.label());
-            for (PolylineSpec l : polylineSpecs)
-                markers.putLine("line-" + (n++), l.latLons(), l.color(), l.width(), l.style(), false, null);
+            for (LineSpec l : lineSpecs) {
+                final MapMarkers mm = markers;
+                final String uid = "line-" + (n++);
+                final Runnable put = () -> mm.putLine(uid, l.latLons(), l.color(), LineSpec.WIDTH, MapMarkers.STYLE_SOLID,
+                        false, l.label());
+                put.run();
+                puts.put(uid, put);
+            }
+            for (PolylineSpec l : polylineSpecs) {
+                final MapMarkers mm = markers;
+                final String uid = "line-" + (n++);
+                final Runnable put = () -> mm.putLine(uid, l.latLons(), l.color(), l.width(), l.style(), false, null);
+                put.run();
+                puts.put(uid, put);
+            }
             System.out.printf("render-smoke: %d marker(s) and line(s)%n", markers.count());
         }
         if (frame == null && !Double.isNaN(atLat) && !Double.isNaN(res))   // --at and --res frame on their own
@@ -493,6 +518,26 @@ public final class RenderSmoke {
             heightsHold &= e.check();
         final boolean terrainHolds = attached.isEmpty() || ElevationChecks.terrainDrawn(view, w, h);
 
+        // --hide: the items leave the map, then come back as they were
+        boolean hideHolds = true;
+        if (!hides.isEmpty() && markers != null) {
+            for (String uid : hides) markers.remove(uid);
+            glErrors += renderFor(ctx, view, frames, settleMs);
+            readOk &= NativeEgl.readPixels(px);
+            System.out.println("render-smoke: hidden " + String.join(", ", hides));
+            for (RunExpectation r : hiddenRuns)
+                hideHolds &= r.check(view, px, w, h);
+            for (String uid : hides) {
+                final Runnable put = puts.get(uid);
+                if (put != null) put.run();
+            }
+            glErrors += renderFor(ctx, view, frames, settleMs);
+            readOk &= NativeEgl.readPixels(px);
+            System.out.println("render-smoke: shown again " + String.join(", ", hides));
+            for (RunExpectation r : runs)
+                hideHolds &= r.check(view, px, w, h);
+        }
+
         if (out != null) {
             try {
                 if (out.toLowerCase().endsWith(".png")) writePng(out, px, w, h); else writePpm(out, px, w, h);
@@ -522,11 +567,14 @@ public final class RenderSmoke {
             System.err.println("render-smoke: FAIL: " + swapFails + " of " + (presented + swapFails) + " presents failed");
         final long required = ContentGate.requiredPixels(w, h, !layers.isEmpty(), !basemaps.isEmpty());
         boolean pass = readOk && glErrors == 0 && sentinel == 0 && resizeSeen
-                && content >= required && windowOk && expectationsHold && picksHold && heightsHold && terrainHolds;
+                && content >= required && windowOk && expectationsHold && picksHold && heightsHold && terrainHolds
+                && hideHolds;
         if (content < required)
             System.err.println("render-smoke: FAIL: " + ContentGate.failure(content, required, w, h, !basemaps.isEmpty()));
         if (!expectationsHold)
             System.err.println("render-smoke: FAIL: a pixel over a known ground point has the wrong colour (--expect)");
+        if (!hideHolds)
+            System.err.println("render-smoke: FAIL: a hidden item's pixels didn't go, or didn't come back (--hide)");
         if (!picksHold)
             System.err.println("render-smoke: FAIL: a click came back as the wrong place or marker (--expect-ground, --expect-marker)");
         if (!heightsHold)
@@ -535,6 +583,23 @@ public final class RenderSmoke {
             System.err.println("render-smoke: FAIL: the terrain renderer did not draw the elevation (ray casts missed the terrain mesh)");
         System.out.println(pass ? "render-smoke: PASS" : "render-smoke: FAIL");
         System.exit(pass ? 0 : 1);
+    }
+
+    /**
+     * Renders at least {@code frames} frames and for at least {@code ms}
+     * (icons load on the engine's loader threads); the GL errors seen.
+     */
+    private static int renderFor(EglRenderContext ctx, GLMapView view, int frames, long ms) {
+        int errors = 0;
+        final long deadline = System.currentTimeMillis() + ms;
+        for (int i = 0; i < frames || System.currentTimeMillis() < deadline; i++) {
+            ctx.pump();
+            view.render();
+            NativeEgl.finish();
+            while (NativeEgl.getGlError() != 0) errors++;
+            try { Thread.sleep(16); } catch (InterruptedException e) { break; }
+        }
+        return errors;
     }
 
     private static Envelope union(Envelope a, Envelope b) {

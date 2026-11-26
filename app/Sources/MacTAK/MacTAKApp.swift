@@ -5,7 +5,8 @@
 // (G3.7), range and bearing (G3.8), points (G3.9: dropped, then edited
 // from a right-click menu and an inspector beside the map) and routes
 // (G3.10: drawn with the route tool, edited from their menus and the
-// inspector).
+// inspector) and the Overlay Manager (G3.11: the map's items by kind, shown
+// or hidden; the range and bearing lines are listed there).
 //
 // `--settings-suite NAME` keeps this copy's settings (self details,
 // servers, mesh) in the defaults suite NAME instead of the app's own, its
@@ -43,6 +44,7 @@ struct MacTAKApp: App {
                 .environmentObject(delegate.pointActions)
                 .environmentObject(delegate.routeEditor)
                 .environmentObject(delegate.routeActions)
+                .environmentObject(delegate.overlayManager)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 1200, height: 800)
@@ -101,9 +103,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let watcher: InterfaceWatcher
     /// The map's markers: the contacts and the self position (G3.7b).
     private let markers: MapMarkerSync
+    /// This copy's settings (the Overlay Manager keeps Show All there).
+    let settings: UserDefaults
+    /// The Overlay Manager's state (G3.11b).
+    let overlayManager: OverlayManagerModel
 
     override init() {
         let (settings, suite) = Self.settings()
+        self.settings = settings
         let mesh = MeshNetwork(settings: settings)
         self.mesh = mesh
         let details = SelfDetails(settings: settings, uid: DeviceUID.resolve(suite: suite))
@@ -132,9 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watcher = InterfaceWatcher { mesh.refresh() }
         markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
                                 me: me, rangeBearing: connections.rangeBearing, routes: connections.routes,
-                                routeEditor: connections.routeEditor, units: units)
+                                routeEditor: connections.routeEditor, units: units,
+                                visibility: connections.visibility)
         pointActions = PointActions(editor: connections.pointEditor, rangeBearing: connections.rangeBearing)
         routeActions = RouteActions(editor: connections.routeEditor, routes: connections.routes)
+        overlayManager = OverlayManagerModel(connections: connections, host: host, units: units, settings: settings,
+                                             pointActions: pointActions, routeActions: routeActions,
+                                             icon: { [markers] uid in markers.icons[uid] })
         super.init()
         let rangeBearing = rangeBearing, pointDropper = pointDropper, editor = pointEditor, markers = markers
         let pointActions = pointActions, routeEditor = routeEditor, routeActions = routeActions
@@ -194,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             connections.markers.objectWillChange.sink(receiveValue: refresh),
             connections.routes.objectWillChange.sink(receiveValue: refresh),
             routeEditor.objectWillChange.sink(receiveValue: refresh),
+            connections.visibility.objectWillChange.sink(receiveValue: refresh),
             // starting one map tool ends the others
             rangeBearing.$tool.sink { if $0 != .off { pointDropper.end(); editor.endMove(); routeEditor.end() } },
             pointDropper.$selected.sink { if $0 != nil { rangeBearing.endTool(); editor.endMove(); routeEditor.end() } },
@@ -252,6 +264,7 @@ struct ContentView: View {
     @EnvironmentObject private var routeEditor: RouteEditor
     @EnvironmentObject private var routeActions: RouteActions
     @EnvironmentObject private var connections: ServerConnections
+    @EnvironmentObject private var overlayManager: OverlayManagerModel
 
     var body: some View {
         NavigationSplitView {
@@ -260,7 +273,7 @@ struct ContentView: View {
                 MeshSection()
                 ContactsSection()
                 ChatSection()
-                RangeBearingSection(lines: rangeBearing)
+                OverlayManagerSection(model: overlayManager)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {

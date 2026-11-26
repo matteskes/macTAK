@@ -82,7 +82,8 @@ final class MapItemArchiveTests: XCTestCase {
             try store.save(StoredMapItem(uid: uid, type: "a-h-G", event: uid, lastUpdateTime: Date()))
         }
         var tries: [String: Int] = [:]
-        let taken = MapItemArchive(store: store, selfUID: "me").restore({ event in
+        let taken = MapItemArchive(store: store, selfUID: "me").restore({ item in
+            let event = item.event
             tries[event, default: 0] += 1
             switch event {
             case "taken-1": return .taken
