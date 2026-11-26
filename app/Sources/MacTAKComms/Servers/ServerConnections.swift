@@ -275,6 +275,21 @@ public final class ServerConnections: ObservableObject {
         replace(result.server)
     }
 
+    /// Removes the server and deletes its client certificate and truststore
+    /// from the IdentityStore; returns what it deleted. A certificate
+    /// already gone is skipped. (The exit run's cleanup: ExitRun.)
+    @discardableResult
+    public func removeWithCertificates(_ id: UUID) -> [Fingerprint] {
+        guard let server = servers.first(where: { $0.id == id }) else { return [] }
+        remove(id)
+        var removed: [Fingerprint] = []
+        if let identity = server.identity, (try? identities.removeIdentity(identity)) != nil { removed.append(identity) }
+        if let truststore = server.truststore, (try? identities.removeTruststore(truststore)) != nil {
+            removed.append(truststore)
+        }
+        return removed
+    }
+
     public func setEnabled(_ id: UUID, _ enabled: Bool) {
         guard var server = servers.first(where: { $0.id == id }), server.enabled != enabled else { return }
         server.enabled = enabled

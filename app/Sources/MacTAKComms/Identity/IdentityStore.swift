@@ -117,20 +117,30 @@ public final class IdentityStore: @unchecked Sendable {
 
     /// Keeps a truststore (CA certificates) as the PKCS#12 bytes and
     /// password it came with; returns its first certificate's fingerprint.
-    /// Importing it again replaces the stored copy.
+    /// Importing it again replaces the stored copy, in place: two copies of
+    /// the app importing the same CA at once (the exit run's two instances)
+    /// must not find it missing, so it is updated, and added only when it
+    /// isn't there; an add that finds it there after all updates it instead.
     @discardableResult
     public func importTruststore(pkcs12: Data, password: String) throws -> Fingerprint {
         let parsed = try Self.parse(pkcs12, password: password)
         guard let first = parsed.chain.first else { throw IdentityError("the truststore carries no certificate") }
         let fingerprint = Fingerprint(first)
         let blob = try PropertyListEncoder().encode(Truststore(pkcs12: pkcs12, password: password))
-        try? removeTruststore(fingerprint)
-        var item = truststoreQuery(fingerprint)
-        item[kSecValueData as String] = blob
-        item[kSecAttrLabel as String] = "macTAK truststore \(SecCertificateCopySubjectSummary(first) as String? ?? "")"
-        if let keychain { item[kSecUseKeychain as String] = keychain }
-        item.removeValue(forKey: kSecMatchSearchList as String)
-        let status = SecItemAdd(item as CFDictionary, nil)
+        let label = "macTAK truststore \(SecCertificateCopySubjectSummary(first) as String? ?? "")"
+        let change = [kSecValueData as String: blob, kSecAttrLabel as String: label] as CFDictionary
+        var status = SecItemUpdate(truststoreQuery(fingerprint) as CFDictionary, change)
+        if status == errSecItemNotFound {
+            var item = truststoreQuery(fingerprint)
+            item[kSecValueData as String] = blob
+            item[kSecAttrLabel as String] = label
+            if let keychain { item[kSecUseKeychain as String] = keychain }
+            item.removeValue(forKey: kSecMatchSearchList as String)
+            status = SecItemAdd(item as CFDictionary, nil)
+            if status == errSecDuplicateItem {
+                status = SecItemUpdate(truststoreQuery(fingerprint) as CFDictionary, change)
+            }
+        }
         guard status == errSecSuccess else { throw IdentityError("storing the truststore", status) }
         return fingerprint
     }
