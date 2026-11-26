@@ -6,7 +6,7 @@ the macOS Keychain, a layer manager and coordinate tools. **Exit:** two
 Mac clients on one TAK server see each other's markers and chat live
 (`docs/roadmap.md` G3).
 
-## State (G3.11 done — 2026-11-26): servers, identity, mesh, SA, GeoChat, coordinates, markers, range and bearing, points, routes, and the Overlay Manager
+## State (G3 closed — 2026-11-26): servers, identity, mesh, SA, GeoChat, coordinates, markers, range and bearing, points, routes, the Overlay Manager, and the exit run
 
 `app/` is a Swift package. Its SwiftUI app, `MacTAK`, opens the engine's
 live map beside a sidebar (G3.0), and talks to TAK servers through
@@ -212,8 +212,27 @@ plugin handlers and Auto Send; a focus that follows a moving marker;
 Navigate and Reverse in a route's actions; and Android drawables, for
 which SF Symbols stand in.
 
-Next: the G3 exit run (`make g3-exit`, §The G3 exit, plan approved
-2026-11-26).
+**G3 is closed (2026-11-26) on its exit run** (§The G3 exit):
+
+- **The server:** OpenTAKServer 1.8.3 as a compose project in VMPal's
+  container engine on the dev Mac, with a preflight that enrolls and
+  connects (PR a, #268). FreeTAKServer was dropped from the exit: it has
+  no certificate enrollment (decision 4).
+- **The copies' part:** the app's test-only `--exit-script` (PR b, #269).
+  It enrolls, connects with the mesh off, drops and sends a point,
+  chats, and reports. Two instances run it against the fake servers in
+  CI.
+- **The run:** `make g3-exit` (PR c, #271) starts from a clean slate,
+  runs both copies, checks their reports and the other's dot in each
+  window capture, and removes what it enrolled. It passes in about a
+  minute, and the owner watched it pass.
+
+Found on the way: ATAK's default Dynamic rate reports a still client to
+the server every 180 s, so the exit sets the Constant rate (3 s); two
+copies importing one CA raced in the Keychain (fixed); and commo crashes
+when a connecting server is removed and the app quits at once (#270).
+
+Next: G4 (`docs/roadmap.md`).
 
 ## The plan (approved 2026-11-13)
 
@@ -3820,6 +3839,8 @@ drawn yet: the sidebar section is G3.11b.
 
 ## The G3 exit (plan approved 2026-11-26)
 
+Planned in #267; done 2026-11-26 (#268, #269, #271). G3 closed on it.
+
 The gate from §The plan, narrowed (decision 4): `make g3-exit` runs two
 app instances over TLS, with client certificates from the Keychain,
 against OpenTAKServer. Each instance sees the other's contact, its
@@ -3869,9 +3890,9 @@ can't come from the echo.
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/exit-servers` | the server side: OpenTAKServer as a compose project in VMPal's engine (pinned images; SSL CoT on 8089, enrollment on 8446, the API on 8443, on the Mac's localhost), its exit users, and a preflight (running, the ports answer, a test enrollment signs, versions recorded) | the preflight passes |
-| **b** | `g3/exit-hook` | the app's test-only flag `--exit-script FILE`: steps read from a file (enroll, connect, wait for a contact, drop a point, send chats, wait for what the other sent) and a report of what the instance saw. Without the flag nothing changes | unit tests; a CI comms leg runs two instances' steps against the fake servers (`fake-enroll-server.py`, the fake TLS server) |
-| **c** | `g3/exit-run` | `make g3-exit` (`dev/g3/test/exit-run.sh`): both instances against OpenTAKServer; the reports checked; each window captured and the other's marker found in it; a log in `dev/g3/build/g3-exit.txt` | the run passes on the dev Mac, recorded in NOTES; the owner watches a run |
+| **a** (#268) | `g3/exit-servers` | the server side: OpenTAKServer as a compose project in VMPal's engine (pinned images; SSL CoT on 8089, enrollment on 8446, the API on 8443, on the Mac's localhost), its exit users, and a preflight (running, the ports answer, a test enrollment signs, versions recorded) | the preflight passes |
+| **b** (#269) | `g3/exit-hook` | the app's test-only flag `--exit-script FILE`: steps read from a file (enroll, connect, wait for a contact, drop a point, send chats, wait for what the other sent) and a report of what the instance saw. Without the flag nothing changes | unit tests; a CI comms leg runs two instances' steps against the fake servers (`fake-enroll-server.py`, the fake TLS server) |
+| **c** (#271) | `g3/exit-run` | `make g3-exit` (`dev/g3/test/exit-run.sh`): both instances against OpenTAKServer; the reports checked; each window captured and the other's marker found in it; a log in `dev/g3/build/g3-exit.txt` | the run passes on the dev Mac, recorded in NOTES; the owner watches a run |
 
 Then a docs PR that closes G3.
 
@@ -3912,7 +3933,7 @@ Then a docs PR that closes G3.
   They wait for the end of the G3 gate, and start only when the owner
   asks.
 
-### PR a — the exit's server (2026-11-26, branch `g3/exit-servers`)
+### PR a — the exit's server (2026-11-26, branch `g3/exit-servers`, #268)
 
 #### What it is
 
@@ -3979,7 +4000,7 @@ Then a docs PR that closes G3.
 | A/B: `exit_a`'s password changed on the server | FAIL: `enrollment as exit_a on 8446 was refused` |
 | `make lint` | passes (shellcheck covers `servers.sh`) |
 
-### PR b — the instances' part, `--exit-script` (2026-11-26, branch `g3/exit-hook`)
+### PR b — the instances' part, `--exit-script` (2026-11-26, branch `g3/exit-hook`, #269)
 
 #### What it is
 
@@ -4072,7 +4093,7 @@ Then a docs PR that closes G3.
 | `make test-app` | MacTAKCommsTests 279 pass (1 skipped, Apple's geocoder, network); Cot and Core unchanged |
 | `make lint` | passes |
 
-### PR c — the run, `make g3-exit` (2026-11-26, branch `g3/exit-run`)
+### PR c — the run, `make g3-exit` (2026-11-26, branch `g3/exit-run`, #271)
 
 #### What it is
 

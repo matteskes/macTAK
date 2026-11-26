@@ -9,6 +9,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The G3 exit run, `make g3-exit` (`dev/g3/NOTES.md` §The G3 exit):
+  - OpenTAKServer 1.8.3 for the run, as a compose project in VMPal's
+    container engine with pinned images, its exit users, and a
+    preflight that enrolls and connects (`make g3-exit-servers`,
+    `dev/g3/exit/servers.sh`).
+  - The app's test-only `--exit-script FILE`. A copy turns its mesh
+    off, enrolls, connects, waits for the other copy, drops and sends a
+    Spot Map point, chats to All Chat Rooms and one-to-one, and reports
+    what arrived. `ExitRunTests` run two instances against the fake
+    servers in CI.
+  - The run itself (`dev/g3/test/exit-run.sh`): two copies from a clean
+    start, their reports checked, the other's dot found in each window
+    capture, and the Keychain items the run made removed.
+
 - G3.11b, the Overlay Manager in the sidebar, which completes G3.11, the
   Overlay Manager (`dev/g3/NOTES.md` §G3.11b):
   - The sidebar's Overlays section shows G3.11a's tree with search, the
@@ -253,6 +267,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `app/Tests/MacTAKCommsTests/Support/Waiting.swift`. Before, seven
   test files each had their own copy, and routes' comms leg would have
   added another (G3 clean-code audit, finding h).
+- G3 is closed (2026-11-26) on its exit run. Two copies of the app
+  enroll with OpenTAKServer into the login Keychain, connect over TLS
+  with the mesh off, and see each other's contact, point on screen and
+  chats, with both receipts. The owner watched it pass. FreeTAKServer
+  was dropped from the exit: it has no certificate enrollment
+  (`dev/g3/NOTES.md` §The G3 exit).
 - G2 is closed (2026-11-19). The exit run's gate now counts on-screen
   misses, two shown frames more than 1.5 refreshes apart, from each
   drawable's `presentedTime` through an ANGLE patch. It used to count
@@ -268,6 +288,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   still move to C++ where measurements point to them.
 
 ### Fixed
+
+- Two copies of the app importing the same server CA at once no longer
+  fail with "already exists": `IdentityStore.importTruststore` updates
+  the stored truststore in place instead of deleting and re-adding it.
 
 - Sending CoT to chosen contacts (a chat message, a shared line or
   point) no longer leaks their uids if commo throws partway: the commo shim's `mactak_commo_send` now owns
