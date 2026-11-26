@@ -4,14 +4,14 @@ The Team Awareness Kit (TAK) is the geospatial situational-awareness stack used 
 
 ## Where it stands
 
-G0–G2 are closed: the engine builds natively, talks CoT headless, and renders the map in a native window at 60 fps. G3, the core client, is in progress — `MacTAK.app` is a SwiftUI app around the engine's live map that already works as a TAK client against real servers and on the local mesh, with ATAK 5.5's behaviour as the reference. The full plan is in [`docs/roadmap.md`](docs/roadmap.md); what shipped when is in [`CHANGELOG.md`](CHANGELOG.md).
+G0–G3 are closed: the engine builds natively, talks CoT headless, renders the map in a native window at 60 fps, and `MacTAK.app`, a SwiftUI app around the engine's live map, works as a TAK client against real servers and on the local mesh, with ATAK 5.5's behaviour as the reference. The full plan is in [`docs/roadmap.md`](docs/roadmap.md); what shipped when is in [`CHANGELOG.md`](CHANGELOG.md).
 
 | Gate | Status |
 |---|---|
 | **G0** — engine builds on macOS arm64 | ✅ Closed 2026-11-02 — `libtakengine.dylib` and the kernel jars build natively ([G0 spike](dev/spike/g0/NOTES.md)) |
 | **G1** — headless engine + CoT round-trip | ✅ Closed 2026-11-04 — `atak-headless` opens GeoJSON/GPKG/KML/SHP layers, round-trips CoT with FreeTAKServer and OpenTAKServer over TCP and SSL through commoncommo, persists tracks, and connects from an ATAK data package |
 | **G2** — map renders in a native macOS window | ✅ Closed 2026-11-19 — ANGLE-on-Metal (built from source at a pinned commit) in the engine's GLES slot; real imagery, vector and terrain in a Swift/AppKit window with the JVM in-process and Apple Maps gestures; the exit run passes 21 of 21 with no on-screen miss ([G2 notes](dev/g2/NOTES.md)) |
-| **G3** — core client skeleton | 🔵 In progress — G3.0–G3.11 done, the G3 exit run next; see below ([G3 notes](dev/g3/NOTES.md)) |
+| **G3** — core client skeleton | ✅ Closed 2026-11-26 — two copies of the app enroll with OpenTAKServer into the Keychain, connect over TLS and see each other's contact, point on screen and chats (`make g3-exit`); G3.0–G3.11 built the client, see below ([G3 notes](dev/g3/NOTES.md)) |
 | **G4–G6** — data/import parity, first deployable client, the parity ladder to full ATAK-CIV | ⚪ Planned |
 
 ## Features in the app today (G3)
@@ -85,7 +85,7 @@ on every merge to `main` (`dev/docs-site/`, `make docs-site`).
 | [`dev/g1/NOTES.md`](dev/g1/NOTES.md) · [`dev/g2/NOTES.md`](dev/g2/NOTES.md) · [`dev/g3/NOTES.md`](dev/g3/NOTES.md) | Engineering notes per gate: how each milestone went — plans, decisions, traps, gate logs |
 | [`dev/spike/g0/NOTES.md`](dev/spike/g0/NOTES.md) · [`dev/spike/g55/NOTES.md`](dev/spike/g55/NOTES.md) | The G0 build spike, and the move of the baseline from 4.6 to 5.5 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: setup, the gate ladder, where changes land (patches/shadows/shim), CI contract, house style |
-| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit; Unreleased: G2 closed, G3.4–G3.11 |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history by gate — 0.1.0 G0 engine builds, 0.2.0 G1 headless + CoT, 0.3.0 G2 map renders, 0.3.1 window surfaces + hardening, 0.3.2 the G2 exit run + G3.0 app skeleton, 0.3.3 G3.1–G3.3 servers, identity and mesh + the license audit; Unreleased: G2 closed, G3.4–G3.11 and G3's exit run (G3 closed) |
 
 ## Local gates
 
