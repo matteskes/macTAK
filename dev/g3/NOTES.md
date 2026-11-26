@@ -231,7 +231,8 @@ Decided with the plan:
 - **SwiftUI for the panels; the map stays the AppKit Metal view**, hosted
   with `NSViewRepresentable`, so its render loop and input don't change.
 - **The exit runs against FreeTAKServer and OpenTAKServer**, both in
-  containers. G1 found OpenTAKServer stricter: it doesn't echo a client's
+  containers (narrowed to OpenTAKServer on 2026-11-26: FreeTAKServer has
+  no certificate enrollment, §The G3 exit). G1 found OpenTAKServer stricter: it doesn't echo a client's
   own events back, so it catches a round trip that only passes on the
   echo (`dev/g1/NOTES.md` §Round-trip contract).
 - **The exit runs over TLS with client certificates from the Keychain**
@@ -258,7 +259,7 @@ subclass, so G3.1 adds a small C++ shim that forwards them to Swift.
 | G3.9 | **points** (split 2026-11-20): map items kept across launches; dropping, editing and deleting points; points as CoT | an R&B line survives a relaunch; a dropped point reaches the other client |
 | G3.10 | routes: `b-m-r` made, edited, drawn and shared | a route render; one client's route on the other's map |
 | G3.11 | the Overlay Manager: a sidebar tree of map items by kind, shown or hidden, gone to, sent, deleted, searched (plan 2026-11-25) | a hidden item's pixels gone (CI); hand check |
-| Exit | `make g3-exit`: two app instances, TLS, FTS and OTS | each sees the other's contact, marker (on screen) and chat |
+| Exit | `make g3-exit`: two app instances, TLS, FTS and OTS (narrowed to OTS on 2026-11-26, §The G3 exit) | each sees the other's contact, marker (on screen) and chat |
 
 The numbers in bold refer to the sanity check's gaps (§Plan revision, below).
 Before the revision, the order was G3.2 the CoT model and markers, G3.3
@@ -3819,28 +3820,35 @@ drawn yet: the sidebar section is G3.11b.
 
 ## The G3 exit (plan approved 2026-11-26)
 
-The gate from §The plan: `make g3-exit` runs two app instances over TLS,
-with client certificates from the Keychain, against FreeTAKServer and
-OpenTAKServer. Each instance sees the other's contact, its marker on
-screen, and its chat.
+The gate from §The plan, narrowed (decision 4): `make g3-exit` runs two
+app instances over TLS, with client certificates from the Keychain,
+against OpenTAKServer. Each instance sees the other's contact, its
+marker on screen, and its chat.
 
 ### Decided with the plan (owner, 2026-11-26)
 
-1. **Both servers run in VMPal containers on the dev Mac**, one for
-   OpenTAKServer and one for FreeTAKServer, set up and pinned by
-   scripts in the repo. (The plan first said G1's arrangement; the owner
-   corrected it the same day.)
+1. **The server runs in VMPal's container engine on the dev Mac**, set
+   up and pinned by files in the repo. (The plan first said G1's
+   arrangement; the owner corrected it the same day.)
 2. **The run is fully scripted**, as G2's `make exit-run` is. The script
    launches the two instances, each in its own settings suite. A
    test-only launch flag has each one enroll, connect, drop a marker and
    send a chat, then write what it saw. The script checks those reports
    and the marker's pixels in a capture of each window, and prints PASS
    or FAIL.
-3. **Each instance enrolls with each server** by username and password
-   (G3.2c's path, `/Marti/api/tls/signClient/v2` on 8446) into the login
-   Keychain, so the run covers enrollment too.
+3. **Each instance enrolls** by username and password (G3.2c's path,
+   `/Marti/api/tls/signClient/v2` on 8446) into the login Keychain, so
+   the run covers enrollment too.
+4. **FreeTAKServer is dropped from the exit** (owner, 2026-11-26). It
+   has no certificate enrollment: at its newest release, 2.2.1 (May
+   2024), `signClient` and `signClient/v2` are unimplemented
+   code-generator stubs that return "do some magic!"
+   (`swagger_server/controllers/cert_manager_api_controller.py`), and its
+   default branch, last pushed October 2024, has no enrollment code.
+   OpenTAKServer is the stricter of the two anyway: it doesn't echo a
+   client's own events back (`dev/g1/NOTES.md` §Round-trip contract).
 
-### What the run checks, per server
+### What the run checks
 
 - **TLS with a Keychain identity.** Each instance enrolls, then connects
   on 8089 with the identity it got, and the server's status shows
@@ -3854,24 +3862,24 @@ screen, and its chat.
   one-to-one message to the other. Both arrive, and the one-to-one gets
   its delivered and read receipts back.
 
-The two servers differ in the way G1 found: OpenTAKServer doesn't echo a
-client's own events back, so a pass on it can't come from the echo.
+OpenTAKServer doesn't echo a client's own events back (G1), so a pass
+can't come from the echo.
 
 ### The PRs
 
 | PR | Branch | What | Gate |
 |---|---|---|---|
-| **a** | `g3/exit-servers` | the server side: OpenTAKServer's and FreeTAKServer's VMPal containers (pinned images, SSL on 8089, enrollment on 8446), a preflight for both (running, enrollment and SSL ports answer, versions recorded), and the exit's users on each server | the preflight passes against both servers |
+| **a** | `g3/exit-servers` | the server side: OpenTAKServer as a compose project in VMPal's engine (pinned images; SSL CoT on 8089, enrollment on 8446, the API on 8443, on the Mac's localhost), its exit users, and a preflight (running, the ports answer, a test enrollment signs, versions recorded) | the preflight passes |
 | **b** | `g3/exit-hook` | the app's test-only flag `--exit-script FILE`: steps read from a file (enroll, connect, wait for a contact, drop a point, send chats, wait for what the other sent) and a report of what the instance saw. Without the flag nothing changes | unit tests; a CI comms leg runs two instances' steps against the fake servers (`fake-enroll-server.py`, the fake TLS server) |
-| **c** | `g3/exit-run` | `make g3-exit` (`dev/g3/test/exit-run.sh`): both instances against FreeTAKServer, then OpenTAKServer; the reports checked; each window captured and the other's marker found in it; a log in `dev/g3/build/g3-exit.txt` | the run passes against both servers on the dev Mac, recorded in NOTES; the owner watches a run |
+| **c** | `g3/exit-run` | `make g3-exit` (`dev/g3/test/exit-run.sh`): both instances against OpenTAKServer; the reports checked; each window captured and the other's marker found in it; a log in `dev/g3/build/g3-exit.txt` | the run passes on the dev Mac, recorded in NOTES; the owner watches a run |
 
 Then a docs PR that closes G3.
 
 ### Rules for the run
 
-- **Passwords stay out of the repo.** The exit users' names and
-  passwords come from the environment (`MACTAK_EXIT_*`), and the logs
-  don't print them.
+- **Passwords stay out of the repo.** The exit users' password is
+  made once and kept in the login Keychain (generic password
+  `mactak-exit`), read from there by the scripts, and never printed.
 - **The instances' settings are their own.** The suites are
   `mactak-exit-a` and `mactak-exit-b`, so the owner's own settings and
   map items are untouched. The suite suffix also gives each instance its
@@ -3880,25 +3888,20 @@ Then a docs PR that closes G3.
 - **The run cleans up after itself.** The identities and truststores the
   run enrolled are deleted from the login Keychain at the end, by the
   fingerprints in the reports.
-- **The FreeTAKServer container restarts before each run**, for a clean
-  contact list (`dev/g1/NOTES.md` §Round-trip contract). OpenTAKServer
-  needs no reset.
 
 ### Risks to settle in PR a
 
-- **FreeTAKServer's enrollment.** G1 used FreeTAKServer over TCP only.
-  Whether the version installed serves `signClient/v2` on 8446 is
-  checked first. If it doesn't, the owner decides between a newer
-  version, and a data package for FreeTAKServer alone (G3.2b's import
-  path).
 - **Keychain prompts.** The ad-hoc-signed bundle exports its identity
   from the login keychain each time commo needs it (§G3.2b). A prompt
   would stop a scripted run, so PR b checks a fresh enrollment's export
   needs none.
-- **The containers must be up.** The preflight checks both are running
-  and answering, says plainly which isn't, and the run doesn't start.
-- **OpenTAKServer in one container.** It runs with RabbitMQ and its own
-  CA; PR a settles how those fit in a VMPal container.
+- **The server must be up.** The preflight checks each service is
+  running and answering, says plainly which isn't, and the run doesn't
+  start.
+- **OpenTAKServer is several containers.** Its own Docker setup
+  (OpenTAKServer-Docker) runs the app, the CoT parser, the SSL CoT
+  handler, nginx for enrollment, RabbitMQ and PostGIS as one compose
+  project; PR a cuts it down to what the exit needs.
 
 ### Not in the exit
 
