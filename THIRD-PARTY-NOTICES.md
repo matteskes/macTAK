@@ -6923,7 +6923,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## libmicrohttpd (static in commo) — 1.0.10
 
 - SPDX / terms: LGPL-2.1-or-later OR eCos-2.0
-- Origin: https://ftpmirror.gnu.org/libmicrohttpd/libmicrohttpd-1.0.10.tar.gz
+- Origin: https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.10.tar.gz
 - Shipped as: static archive inside Contents/Frameworks/libcommoncommo.dylib
 - Note: built without HTTPS by dev/g1/fetch-microhttpd.sh (eCos option also available). LGPL-2.1+ permits upgrading to LGPL-3.0 whose conversion clause lets it be part of this GPL-3.0 work; the license text ships and the pinned tarball + build script are the corresponding source
 

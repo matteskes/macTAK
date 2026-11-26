@@ -22,7 +22,14 @@ PREFIX="$G1/build-microhttpd/prefix"
 VERSION="1.0.10"
 # Homebrew's libmicrohttpd formula pins the same tarball and checksum
 SHA256="04bfe8ef75db7d629a33de767599765cecadc56274a39822d5d081030d577685"
-URL="https://ftpmirror.gnu.org/libmicrohttpd/libmicrohttpd-$VERSION.tar.gz"
+# GNU's own server first. ftpmirror.gnu.org redirects to a nearby volunteer
+# mirror, and on 2026-11-25 the one a CI runner was sent to had an expired
+# certificate (curl exit 60 on every retry, all sent to the same mirror), so
+# it is only the fallback. The checksum holds the tarball, whichever serves it.
+URLS=(
+  "https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-$VERSION.tar.gz"
+  "https://ftpmirror.gnu.org/libmicrohttpd/libmicrohttpd-$VERSION.tar.gz"
+)
 
 log() { printf '[g1-microhttpd] %s\n' "$*"; }
 die() { printf '[g1-microhttpd] FATAL: %s\n' "$*" >&2; exit 2; }
@@ -40,8 +47,16 @@ fi
 rm -rf "$WORK" "$PREFIX"
 mkdir -p "$WORK"
 tarball="$WORK/libmicrohttpd-$VERSION.tar.gz"
-log "fetching $URL"
-curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$tarball" "$URL"
+fetched=""
+for url in "${URLS[@]}"; do
+  log "fetching $url"
+  if curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$tarball" "$url"; then
+    fetched="$url"
+    break
+  fi
+  log "failed from $url"
+done
+[[ -n "$fetched" ]] || die "libmicrohttpd $VERSION couldn't be fetched from any of: ${URLS[*]}"
 echo "$SHA256  $tarball" | shasum -a 256 -c - >/dev/null || die "libmicrohttpd tarball checksum mismatch"
 tar -xzf "$tarball" -C "$WORK"
 
