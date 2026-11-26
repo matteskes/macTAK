@@ -19,6 +19,7 @@
 #     launch.json                      what the app boots with (LaunchConfig.swift)
 #   Contents/Resources/egm96-15.grid   the EGM96 geoid, for altitudes in MSL (G3.6)
 #   Contents/Resources/wmm_cof         5.5's World Magnetic Model (WMMHR-2025), for magnetic north (G3.8)
+#   Contents/Resources/AppIcon.icns    the app icon (CFBundleIconFile)
 #   Contents/Resources/licenses/       third-party notices, every component's
 #                                      license text and the GPL-3.0 source offer
 #                                      (dev/deps/stage-licenses.py, check-licenses.py)
@@ -112,6 +113,8 @@ cp -R "$DEPS/share/proj" "$ENGINE/proj"
 # the EGM96 geoid for altitudes in MSL (G3.6): the engine's own grid
 cp "$HERE/Resources/egm96-15.grid" "$CONTENTS/Resources/egm96-15.grid"
 cp "$HERE/Resources/wmm_cof" "$CONTENTS/Resources/wmm_cof"
+# the app icon (Finder, Dock, About): Info.plist's CFBundleIconFile
+cp "$HERE/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 
 # Third-party notices, every component's license text and the GPL-3.0
 # source offer (docs/license-audit.md): a pure function of licenses/,
