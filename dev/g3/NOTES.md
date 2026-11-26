@@ -203,7 +203,8 @@ G3.11 added 5.5's Overlay Manager as a section of the map's sidebar:
   item leaves the map, a route takes its points with it, and visibility
   is kept across launches in `cotevents` as each 5.5 importer takes it.
   A CI render step checks a hidden item's pixels go and come back. The
-  sidebar's Range & Bearing section folded into the tree (G3.11b, #264).
+  sidebar's Range & Bearing section folded into the tree. The owner
+  checked it by hand (G3.11b, #264).
 
 Not in G3.11: Alerts, Shapes other than R&B, File Overlays, Vehicles,
 Waypoints, Track History, the Other Overlays, multi-select Export,
@@ -3813,4 +3814,4 @@ drawn yet: the sidebar section is G3.11b.
 | A/B | a route not taking its points; `visible` not written; the restore ignoring `visible`: each fails its tests |
 | The app | builds and runs; the section lists four CoT markers sent to it, with counts and icons |
 | `make lint` | passes |
-| Hand check (owner) | no result recorded; the owner merged #264 on 2026-11-26 |
+| Hand check (owner, 2026-11-26, after the merge) | passes: the tree and its counts, search, the sorts, Show All and Self-Authored; the eye for an item, a list and a route with its points; click to go to and select, a marker's inspector, a route's actions; right-click actions; Multi-Select Delete; hidden items still hidden after a relaunch |
