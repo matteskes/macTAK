@@ -71,6 +71,15 @@ public final class EngineBridge {
     /** The self marker's icon in these colours, as 5.5 builds it ({@code base64://}). */
     public static String selfIconUri(int fill, int stroke) { return mactak.render.SelfIcon.uri(fill, stroke); }
 
+    /**
+     * The Overlay Manager's GoTo (G3.11b): fit {@code latLons} (lat, lon
+     * pairs) in the view as 5.5's MapTouchController.goTo does, a Marker
+     * into 1/18th of it, and focus a point item.
+     */
+    public static void goTo(double[] latLons, double altitude, boolean marker, boolean point) {
+        WindowApp.goTo(latLons, altitude, marker, point);
+    }
+
     /** Remove a marker. */
     public static void removeMarker(String uid) { WindowApp.removeMarker(uid); }
 
@@ -91,6 +100,16 @@ public final class EngineBridge {
 
     /** Where the altitude at (lat, lon) comes from: "DTED1", say, or "???" without elevation data. */
     public static String altitudeSource(double lat, double lon) { return WindowApp.altitudeSource(lat, lon); }
+
+    /**
+     * The view as 5.5's FOVFilter.MapState reads it (G3.11b): the corners
+     * UL, UR, LR, LL and the centre as lat, lon pairs (NaN off the world),
+     * then 1 when the map scrolls continuously; null before the first frame.
+     */
+    public static double[] viewState() { return WindowApp.viewState(); }
+
+    /** An asset's bytes ("icons/x.png" for asset://icons/x.png), or null (G3.11b: the Overlay Manager's icons). */
+    public static byte[] asset(String path) { return WindowApp.asset(path); }
 
     /** The marker within {@code radius} pixels of a pixel (upper-left origin), or null. */
     public static String markerAt(float x, float y, float radius) { return WindowApp.markerAt(x, y, radius); }

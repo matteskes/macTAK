@@ -3,10 +3,9 @@
 // - a toolbar button over the map starts the tool (5.5's R&B Line button)
 // - while it runs, 5.5's prompt shows at the top of the map with Cancel
 //   (Esc)
-// - the sidebar's Range & Bearing section lists the lines with their labels;
-//   a line's context menu sends it (G3.8d: to chosen contacts or everyone,
-//   as 5.5's Send) or deletes it, the header deletes them all. A line heard
-//   from another client says so.
+// - the lines are listed in the Overlay Manager (G3.11b: Shapes › Range &
+//   Bearing, as 5.5 lists them), whose row menu sends a line (G3.8d: to
+//   chosen contacts or everyone, as 5.5's Send) or deletes it.
 //
 // The tool and the lines are RangeBearingLines (MacTAKComms), which the
 // tests drive; MapMarkerSync draws them.
@@ -43,73 +42,6 @@ struct RangeBearingPrompt: View {
             .padding(.vertical, 8)
             .background(.regularMaterial, in: Capsule())
             .padding(.top, 12)
-        }
-    }
-}
-
-struct RangeBearingSection: View {
-    @ObservedObject var lines: RangeBearingLines
-    @EnvironmentObject private var connections: ServerConnections
-    @EnvironmentObject private var units: UnitPreferences
-    @State private var sendFailure: String?
-    @State private var sending: RangeBearingLine?
-
-    var body: some View {
-        Section {
-            if lines.lines.isEmpty {
-                Text("No lines").foregroundStyle(.secondary)
-            }
-            ForEach(lines.lines) { line in
-                VStack(alignment: .leading) {
-                    Text(line.received ? "\(line.title) (received)" : line.title)
-                    if let label = lines.labels[line.id] {
-                        Text(label).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    }
-                }
-                .contextMenu {
-                    Button("Send…") { sending = line }
-                    Button("Delete", role: .destructive) { lines.remove(id: line.id) }
-                }
-            }
-        } header: {
-            HStack {
-                Text("Range & Bearing")
-                Spacer()
-                if !lines.lines.isEmpty {
-                    Button { lines.removeAll() } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless)
-                        .help("Delete all range & bearing lines")
-                }
-            }
-        }
-        .sheet(item: $sending) { line in
-            SendItemSheet(title: line.title, contacts: connections.contacts) { choice in
-                sending = nil
-                switch choice {
-                case .everyone: send(line, to: nil)
-                case .contacts(let uids): send(line, to: uids)
-                case .cancel: break
-                }
-            }
-        }
-        .alert("Can't send the line", isPresented: Binding(get: { sendFailure != nil },
-                                                           set: { if !$0 { sendFailure = nil } })) {
-            Button("OK") { sendFailure = nil }
-        } message: {
-            Text(sendFailure ?? "")
-        }
-    }
-
-    /// `to` nil is everyone.
-    private func send(_ line: RangeBearingLine, to: [String]?) {
-        do {
-            try connections.share(line: line.id, to: to, style: units.rangeBearingStyle)
-        } catch ServerConnections.ShareError.notRunning {
-            sendFailure = "Nothing is connected: start the mesh or a server."
-        } catch ServerConnections.ShareError.noPlace {
-            sendFailure = "One of its markers has no position here."
-        } catch {
-            sendFailure = "\(error)"
         }
     }
 }

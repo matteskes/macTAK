@@ -18,7 +18,7 @@ import Foundation
 @MainActor
 final class MapItemSync {
     private let archive: MapItemArchive
-    private let importer: (String) -> MapItemArchive.Import
+    private let importer: (StoredMapItem) -> MapItemArchive.Import
     private let items: () -> [ArchivedItem]
     /// Whether changes are being written; false before `restore` and
     /// after `suspend`.
@@ -28,7 +28,7 @@ final class MapItemSync {
 
     /// `items` is every archived item as it is now; a change any of
     /// `changes` announces may have changed them.
-    init(archive: MapItemArchive, importer: @escaping (String) -> MapItemArchive.Import,
+    init(archive: MapItemArchive, importer: @escaping (StoredMapItem) -> MapItemArchive.Import,
          items: @escaping () -> [ArchivedItem], changes: [ObservableObjectPublisher]) {
         self.archive = archive
         self.importer = importer

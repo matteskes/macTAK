@@ -178,6 +178,7 @@ test-render:
 	bash dev/g2/render/test/markers.sh dev/g2/build/render-markers.png
 	bash dev/g2/render/test/lines.sh dev/g2/build/render-lines.png
 	bash dev/g2/render/test/routes.sh dev/g2/build/render-routes.png
+	bash dev/g2/render/test/visibility.sh dev/g2/build/render-visibility.png
 	bash dev/g2/fixtures/make-basemap.sh
 	bash dev/g2/render/run.sh --basemap dev/g2/build/fixtures/sf-graticule.mbtiles --layer dev/g1/headless/test/fixtures/sf-landmarks.geojson --out dev/g2/build/render-basemap.png
 	bash dev/g2/render/test/basemap-gate.sh

@@ -104,6 +104,8 @@ public final class WindowApp {
     /** The camera as the last frame drew it (G3.8b): clicks resolve against
      *  it on the AppKit main thread without waiting for the render thread. */
     private static volatile com.atakmap.map.MapSceneModel scene;
+    /** GLMapView.continuousScrollEnabled as the last frame drew (MapView.isContinuousScrollEnabled). */
+    private static volatile boolean continuousScroll = true;
     /** The first frame must show the attached content (the gates); false
      *  for the app, whose layers may keep loading after the first frame. */
     private static boolean contentGate = true;
@@ -221,6 +223,21 @@ public final class WindowApp {
         if (b != null) b.panTo(lat, lon);
     }
 
+    /**
+     * The Overlay Manager's GoTo (G3.11b, {@link GoTo}): fit the item's
+     * points in the view and, for a point item, focus it; on the render
+     * thread. Dropped before the map exists.
+     */
+    public static void goTo(double[] latLons, double altitude, boolean marker, boolean point) {
+        // the bridge is published after the view and the context: reading it first sees them
+        if (bridge == null) return;
+        final GLMapView v = view;
+        final EglRenderContext c = ctx;
+        if (v == null || c == null || latLons.length < 2) return;
+        c.queueEvent(() -> GoTo.goTo(v, c.getDpi(), latLons, altitude, marker, point));
+        c.requestRefresh();
+    }
+
     /** Add or move a marker (G3.7b, {@link MapMarkers#put}); dropped before the map exists. */
     public static void putMarker(String uid, double lat, double lon, double hae,
                                  String iconUri, int color, int width, int height, double rotation, String label) {
@@ -263,9 +280,42 @@ public final class WindowApp {
         return sm == null || m == null ? null : m.markerAt(sm, x, y, radius);
     }
 
+    /**
+     * What 5.5's FOVFilter.MapState reads off the map view (G3.11b): the
+     * scene's inverse at the surface's four corners and its middle (not a
+     * ray cast; a pixel off the world leaves its point NaN, as MapState's
+     * invalid GeoPoint), and whether the map scrolls continuously:
+     * {ulLat, ulLon, urLat, urLon, lrLat, lrLon, llLat, llLon, cLat, cLon,
+     * 1 or 0}; null before the first frame.
+     */
+    public static double[] viewState() {
+        final com.atakmap.map.MapSceneModel sm = scene;
+        if (sm == null) return null;
+        final float w = sm.width, h = sm.height;
+        final float[][] px = {{0, 0}, {w, 0}, {w, h}, {0, h}, {w / 2f, h / 2f}};
+        final double[] out = new double[11];
+        for (int i = 0; i < px.length; i++) {
+            final GeoPoint g = sm.inverse(new android.graphics.PointF(px[i][0], px[i][1]), GeoPoint.createMutable());
+            out[2 * i] = g == null ? Double.NaN : g.getLatitude();
+            out[2 * i + 1] = g == null ? Double.NaN : g.getLongitude();
+        }
+        out[10] = continuousScroll ? 1 : 0;
+        return out;
+    }
+
+    /** An asset's bytes (an "asset://" URI's path, from the classpath as the engine reads it), or null (G3.11b). */
+    public static byte[] asset(String path) {
+        try (java.io.InputStream in = ClasspathAssets.CONTEXT.getAssets().open(path)) {
+            return in.readAllBytes();
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+
     /** Keep the camera the frame just drew with (a fresh object per call). Render thread. */
     private static void publishScene() {
         scene = view.getMapSceneModel(false, com.atakmap.map.MapRenderer3.DisplayOrigin.UpperLeft);
+        continuousScroll = view.continuousScrollEnabled;
     }
 
     /** Whether markers can be drawn yet: the host resends them all once this turns true. */
