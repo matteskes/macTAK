@@ -105,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The route tool and route details (G3.10c).
     var routeEditor: RouteEditor { connections.routeEditor }
     let routeActions: RouteActions
+    /// The map tools, one running at a time; a click goes to the running one.
+    private let tools: MapTools
     private var mapChanges: [AnyCancellable] = []
     private let watcher: InterfaceWatcher
     /// The map's markers: the contacts and the self position (G3.7b).
@@ -153,33 +155,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 visibility: connections.visibility)
         pointActions = PointActions(editor: connections.pointEditor, rangeBearing: connections.rangeBearing)
         routeActions = RouteActions(editor: connections.routeEditor, routes: connections.routes)
+        tools = MapTools(routeEditor: connections.routeEditor, pointDropper: connections.pointDropper,
+                         rangeBearing: connections.rangeBearing, pointEditor: connections.pointEditor)
         overlayManager = OverlayManagerModel(connections: connections, host: host, units: units, settings: settings,
                                              pointActions: pointActions, routeActions: routeActions,
                                              icon: { [markers] uid in markers.icons[uid] })
         super.init()
-        let rangeBearing = rangeBearing, pointDropper = pointDropper, editor = pointEditor, markers = markers
+        let rangeBearing = rangeBearing, editor = pointEditor, markers = markers, tools = tools
         let pointActions = pointActions, routeEditor = routeEditor, routeActions = routeActions
-        let noTool = { pointDropper.selected == nil && rangeBearing.tool == .off && editor.moving == nil && routeEditor.editing == nil }
         // a running tool takes the click; else a click on a marker or a route shows it, on the map closes it
         host.onMapClick = { pick in
-            if routeEditor.editing != nil {
-                routeEditor.click(pick, checkpoint: NSEvent.modifierFlags.contains(.option))
-                return
-            }
-            var pick = pick
-            if case .item(let uid) = pick, let place = routeEditor.point(of: uid) {
-                // the other tools take a route's point as the ground there
-                guard !noTool() else { return routeEditor.inspect(routeEditor.route(withPoint: uid)?.id) }
-                pick = .ground(place)
-            }
-            if pointDropper.selected != nil {
-                if case .item(let uid) = pick, pointDropper.isPlacedHere(uid) { editor.inspect(uid) } else { pointDropper.click(pick) }
-            } else if rangeBearing.tool != .off {
-                rangeBearing.click(pick)
-            } else if editor.moving != nil {
-                editor.click(pick)
-            } else if case .item(let uid) = pick {
-                editor.inspect(uid)
+            if tools.click(pick, checkpoint: NSEvent.modifierFlags.contains(.option)) { return }
+            if case .item(let uid) = pick {
+                if routeEditor.point(of: uid) != nil {
+                    routeEditor.inspect(routeEditor.route(withPoint: uid)?.id)
+                } else {
+                    editor.inspect(uid)
+                }
             } else {
                 editor.inspect(nil)
                 routeEditor.inspect(nil)
@@ -190,14 +182,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.routeLineAt = { [markers] place, radius in RouteHit.nearest(markers.routeLines, to: place, within: radius) }
         host.onLineClick = { hit in
             if routeEditor.editing == hit.route { return true }
-            guard noTool() else { return false }
+            guard tools.isIdle else { return false }
             routeEditor.inspect(hit.route)
             return true
         }
         host.lineMenu = { hit in routeActions.lineMenu(for: hit) }
         // a marker drags to move while no tool runs; the edited route's points while the route tool does
         host.canDrag = { uid in
-            routeEditor.editing != nil ? routeEditor.canDrag(uid) : noTool() && editor.canMove(uid)
+            tools.active == .route ? routeEditor.canDrag(uid) : tools.isIdle && editor.canMove(uid)
         }
         host.onDragBegan = { uid in routeEditor.beginDrag(uid) }
         host.onDrag = { uid, point in
@@ -216,11 +208,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             connections.routes.objectWillChange.sink(receiveValue: refresh),
             routeEditor.objectWillChange.sink(receiveValue: refresh),
             connections.visibility.objectWillChange.sink(receiveValue: refresh),
-            // starting one map tool ends the others
-            rangeBearing.$tool.sink { if $0 != .off { pointDropper.end(); editor.endMove(); routeEditor.end() } },
-            pointDropper.$selected.sink { if $0 != nil { rangeBearing.endTool(); editor.endMove(); routeEditor.end() } },
-            editor.$moving.sink { if $0 != nil { rangeBearing.endTool(); pointDropper.end(); routeEditor.end() } },
-            routeEditor.$editing.sink { if $0 != nil { rangeBearing.endTool(); pointDropper.end(); editor.endMove() } },
             // the inspector shows a point or a route
             editor.$inspected.sink { if $0 != nil { routeEditor.inspect(nil) } },
             routeEditor.$inspected.sink { if $0 != nil { editor.inspect(nil) } },

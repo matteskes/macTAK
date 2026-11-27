@@ -20,6 +20,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the SA test, where A's reporter sends once on attach and then not for
   30 s, waits until B listens on the mesh SA port first
   (`TwoClients.isListening(onPort:)`).
+- One owner for the map tools, `MapTools` (G3 clean-code audit,
+  rigidity check). Starting a tool ends the one running, as 5.5's
+  `ToolManagerBroadcastReceiver` does, and a click on the map goes to the
+  running tool. Before, `MacTAKApp` had one subscription per tool that
+  ended each of the others by name (12 calls for 4 tools) and a click
+  chain that checked each tool in turn; a new tool had to touch all of
+  them. Now a tool is one case in `MapTools`. `MapToolsTests` covers
+  every start-while-another-runs pair, each tool's click, a route's
+  point as the ground, and the click with no tool running. Behaviour is
+  unchanged.
 
 ### Fixed
 
