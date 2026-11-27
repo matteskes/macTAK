@@ -8,6 +8,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+
+- Three comms tests no longer depend on timing (G3 clean-code audit,
+  fragility check). Each sent once after a fixed 0.5 s sleep, or waited
+  on a peer's first interface up, which is often its TCP listener and
+  not its mesh receiver; on a slow runner the one send went nowhere
+  (`SelfReportingTests.testADetailChangeReachesAPeerAtOnce` failed on
+  PR #275's CI that way). Now the tests the client sends from resend
+  until the peer has it (`resend(_:_:until:_:)`, for a `Recorder`), and
+  the SA test, where A's reporter sends once on attach and then not for
+  30 s, waits until B listens on the mesh SA port first
+  (`TwoClients.isListening(onPort:)`).
+
 ### Fixed
 
 - Quitting while a server's TLS handshake is still in flight no longer
