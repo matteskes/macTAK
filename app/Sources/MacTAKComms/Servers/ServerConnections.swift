@@ -339,7 +339,7 @@ public final class ServerConnections: ObservableObject {
             upEndpoints.remove(endpoint)
             if let id = server(endpoint), status[id] == .connected { status[id] = .connecting }
         case let .interfaceError(endpoint, code):
-            if let id = server(endpoint) { status[id] = .failed(Self.describe(code)) }
+            if let id = server(endpoint) { status[id] = .failed(CommoClient.describeInterfaceError(code)) }
         case let .cot(xml, endpoint):
             contacts.receive(xml, via: server(endpoint).map { .server($0) } ?? .mesh)
             markers.receive(xml)
@@ -518,15 +518,5 @@ public final class ServerConnections: ObservableObject {
 
     private func save() {
         settings.set(try? JSONEncoder().encode(servers), forKey: Self.serversKey)
-    }
-
-    /// commo's NetInterfaceErrorCode, by name (netinterface.h).
-    static func describe(_ code: Int32) -> String {
-        let names = ["can't resolve the host", "connection refused", "connection timed out",
-                     "the host is unreachable", "the server sent no certificate",
-                     "the server's certificate isn't trusted", "the TLS handshake failed",
-                     "the connection failed", "no data from the server in time", "an I/O error",
-                     "an internal error", "an error"]
-        return names.indices.contains(Int(code)) ? names[Int(code)] : "error \(code)"
     }
 }

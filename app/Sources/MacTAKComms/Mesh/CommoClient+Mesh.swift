@@ -116,16 +116,4 @@ extension CommoClient {
             sink.yield(.log(level: .warning, message: "mesh interface \(id) not removed: \(error)"))
         }
     }
-
-    /// Run a shim call that writes an interface id; returns the id.
-    static func endpoint(
-        _ body: (UnsafeMutablePointer<CChar>, Int, UnsafeMutablePointer<CChar>, Int) -> Int32
-    ) throws -> String {
-        var endpoint = [CChar](repeating: 0, count: 512)
-        let count = endpoint.count
-        try endpoint.withUnsafeMutableBufferPointer { out in
-            try check { err, len in body(out.baseAddress!, count, err, len) }
-        }
-        return String(cString: endpoint)
-    }
 }

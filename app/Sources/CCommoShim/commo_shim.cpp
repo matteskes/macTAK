@@ -220,6 +220,25 @@ struct mactak_commo {
     explicit mactak_commo(const mactak_commo_callbacks &cb) : forwarder(cb) {}
 };
 
+extern "C" const char *mactak_commo_interface_error_text(int code) {
+    using namespace netinterfaceenums;
+    switch (static_cast<NetInterfaceErrorCode>(code)) {
+        case ERR_CONN_NAME_RES_FAILED: return "can't resolve the host";
+        case ERR_CONN_REFUSED: return "connection refused";
+        case ERR_CONN_TIMEOUT: return "connection timed out";
+        case ERR_CONN_HOST_UNREACHABLE: return "the host is unreachable";
+        case ERR_CONN_SSL_NO_PEER_CERT: return "the server sent no certificate";
+        case ERR_CONN_SSL_PEER_CERT_NOT_TRUSTED: return "the server's certificate isn't trusted";
+        case ERR_CONN_SSL_HANDSHAKE: return "the TLS handshake failed";
+        case ERR_CONN_OTHER: return "the connection failed";
+        case ERR_IO_RX_DATA_TIMEOUT: return "no data from the server in time";
+        case ERR_IO: return "an I/O error";
+        case ERR_INTERNAL: return "an internal error";
+        case ERR_OTHER: return "an error";
+    }
+    return nullptr;
+}
+
 extern "C" int mactak_commo_init_libraries(char *err, size_t errlen) {
     static std::once_flag once;
     static int result = -1;

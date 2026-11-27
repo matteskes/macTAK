@@ -115,8 +115,8 @@ public final class MeshNetwork: ObservableObject {
                 interfaces[name] = .down
             }
         case let .interfaceError(id, code):
-            if id == tcpId, directTCP != nil { directTCP = .failed(ServerConnections.describe(code)) }
-            if let name = owners[id] { interfaces[name] = .failed(ServerConnections.describe(code)) }
+            if id == tcpId, directTCP != nil { directTCP = .failed(CommoClient.describeInterfaceError(code)) }
+            if let name = owners[id] { interfaces[name] = .failed(CommoClient.describeInterfaceError(code)) }
         default:
             break
         }

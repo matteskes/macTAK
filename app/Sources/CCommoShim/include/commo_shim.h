@@ -73,6 +73,10 @@ typedef struct {
                               const uint8_t *ca, size_t ca_len);
 } mactak_commo_callbacks;
 
+/// What an interface_error code means, in words; NULL for a code commo
+/// doesn't define.
+const char *mactak_commo_interface_error_text(int code);
+
 /// Initialize libxml2, OpenSSL and curl as commo expects (the work of the
 /// Java binding's Commo.initThirdpartyNativeLibraries), and ignore SIGPIPE
 /// for the whole process, as the JVM does: commo's socket writes don't

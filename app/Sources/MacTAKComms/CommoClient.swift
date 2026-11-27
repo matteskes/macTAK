@@ -38,6 +38,21 @@ public enum CommoTransport: Sendable {
     case ssl(TLSCredentials)
     /// TLS over QUIC (ALPN "takstream"), with a client certificate.
     case quic(TLSCredentials)
+
+    var kind: Int32 {
+        switch self {
+        case .tcp: Int32(MACTAK_COMMO_TCP)
+        case .ssl: Int32(MACTAK_COMMO_SSL)
+        case .quic: Int32(MACTAK_COMMO_QUIC)
+        }
+    }
+
+    var credentials: TLSCredentials? {
+        switch self {
+        case .tcp: nil
+        case let .ssl(credentials), let .quic(credentials): credentials
+        }
+    }
 }
 
 /// A client identity and the CA it trusts, as commo takes them: PKCS#12
@@ -127,34 +142,23 @@ public actor CommoClient {
     @discardableResult
     public func connect(host: String, port: Int, transport: CommoTransport = .tcp) throws -> String {
         let commo = try live()
-        var endpoint = [CChar](repeating: 0, count: 512)
-        let endpointCount = endpoint.count
-        try endpoint.withUnsafeMutableBufferPointer { out in
-            try CommoClient.check { err, len in
-                let kind: Int32, tls: TLSCredentials?
-                switch transport {
-                case .tcp: (kind, tls) = (Int32(MACTAK_COMMO_TCP), nil)
-                case let .ssl(credentials): (kind, tls) = (Int32(MACTAK_COMMO_SSL), credentials)
-                case let .quic(credentials): (kind, tls) = (Int32(MACTAK_COMMO_QUIC), credentials)
-                }
-                guard let tls else {
-                    return mactak_commo_add_streaming(commo, kind, host, Int32(port),
-                                                      nil, 0, nil, 0, nil, nil,
-                                                      out.baseAddress, endpointCount, err, len)
-                }
-                return tls.identity.withUnsafeBytes { id in
-                    tls.ca.withUnsafeBytes { caBytes in
-                        mactak_commo_add_streaming(
-                            commo, kind, host, Int32(port),
-                            id.bindMemory(to: UInt8.self).baseAddress, id.count,
-                            caBytes.bindMemory(to: UInt8.self).baseAddress, caBytes.count,
-                            tls.identityPassword, tls.caPassword,
-                            out.baseAddress, endpointCount, err, len)
-                    }
+        let kind = transport.kind
+        return try CommoClient.endpoint { out, count, err, len in
+            guard let tls = transport.credentials else {
+                return mactak_commo_add_streaming(commo, kind, host, Int32(port),
+                                                  nil, 0, nil, 0, nil, nil, out, count, err, len)
+            }
+            return tls.identity.withUnsafeBytes { id in
+                tls.ca.withUnsafeBytes { caBytes in
+                    mactak_commo_add_streaming(
+                        commo, kind, host, Int32(port),
+                        id.bindMemory(to: UInt8.self).baseAddress, id.count,
+                        caBytes.bindMemory(to: UInt8.self).baseAddress, caBytes.count,
+                        tls.identityPassword, tls.caPassword,
+                        out, count, err, len)
                 }
             }
         }
-        return String(cString: endpoint)
     }
 
     public func disconnect(endpoint: String) throws {
@@ -276,21 +280,45 @@ public actor CommoClient {
         try check { err, len in mactak_commo_init_libraries(err, len) }
     }
 
+    /// What commo's interface error code (CommoEvent.interfaceError) means.
+    static func describeInterfaceError(_ code: Int32) -> String {
+        mactak_commo_interface_error_text(code).map { String(cString: $0) } ?? "error \(code)"
+    }
+
     /// Run a shim call that reports failure as nonzero plus a message.
     static func check(_ body: (UnsafeMutablePointer<CChar>, Int) -> Int32) throws {
-        var err = [CChar](repeating: 0, count: 512)
-        let count = err.count
-        let rc = err.withUnsafeMutableBufferPointer { body($0.baseAddress!, count) }
-        if rc != 0 { throw CommoError(description: String(cString: err)) }
+        let (rc, message) = withText(body)
+        if rc != 0 { throw CommoError(description: message) }
     }
 
     /// Run a shim call that reports failure as NULL plus a message.
     private static func call(_ body: (UnsafeMutablePointer<CChar>, Int) -> OpaquePointer?) throws -> OpaquePointer {
-        var err = [CChar](repeating: 0, count: 512)
-        let count = err.count
-        let result = err.withUnsafeMutableBufferPointer { body($0.baseAddress!, count) }
-        guard let result else { throw CommoError(description: String(cString: err)) }
+        let (result, message) = withText(body)
+        guard let result else { throw CommoError(description: message) }
         return result
+    }
+
+    /// Run a shim call that writes an interface id; returns the id.
+    static func endpoint(
+        _ body: (UnsafeMutablePointer<CChar>, Int, UnsafeMutablePointer<CChar>, Int) -> Int32
+    ) throws -> String {
+        try withText { out, count in try check { err, len in body(out, count, err, len) } }.text
+    }
+
+    /// Room for the text a shim call writes back: an error message or an
+    /// interface id.
+    private static let textCapacity = 512
+
+    /// Run body with a buffer for the shim to write text into; returns
+    /// body's result and the text.
+    private static func withText<Result>(
+        _ body: (UnsafeMutablePointer<CChar>, Int) throws -> Result
+    ) rethrows -> (result: Result, text: String) {
+        var buffer = [CChar](repeating: 0, count: textCapacity)
+        return try buffer.withUnsafeMutableBufferPointer { buf in
+            let result = try body(buf.baseAddress!, buf.count)
+            return (result, String(cString: buf.baseAddress!))
+        }
     }
 }
 
