@@ -8,7 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Nothing yet.
+### Fixed
+
+- Quitting while a server's TLS handshake is still in flight no longer
+  crashes the app (#270). commo's `ContactManager` never unregistered
+  from the streaming layer, which could tell it a stream was up after it
+  was freed; commo patch 0010 unregisters it (dev/g3/NOTES.md, trap 23).
 
 ## [0.4.0] - 2026-11-26 — G3: the core client, and G2's gate closed
 
