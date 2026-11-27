@@ -69,6 +69,14 @@ final class FakeServer: @unchecked Sendable {
         return try FakeServer("/usr/bin/env", ["python3", script, String(port)])
     }
 
+    /// dev/g3/test/held-tls-server.py on `port`: each TLS handshake waits
+    /// until `releaseFile` exists (#270).
+    static func heldTLS(port: Int, pki: TestPKI, releaseFile: String) throws -> FakeServer {
+        let script = repoRoot.appendingPathComponent("dev/g3/test/held-tls-server.py").path
+        return try FakeServer("/usr/bin/env", ["python3", script, String(port),
+                                                pki.serverCert, pki.serverKey, releaseFile])
+    }
+
     /// dev/g3/test/fake-enroll-server.py on `port`: TAK Server's enrollment
     /// port, signing with `pki`'s CA, for `user` and `password`.
     /// `named`: serve the leaf that names 127.0.0.1, for the name checks.

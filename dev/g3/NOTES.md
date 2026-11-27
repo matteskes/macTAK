@@ -229,8 +229,9 @@ which SF Symbols stand in.
 
 Found on the way: ATAK's default Dynamic rate reports a still client to
 the server every 180 s, so the exit sets the Constant rate (3 s); two
-copies importing one CA raced in the Keychain (fixed); and commo crashes
-when a connecting server is removed and the app quits at once (#270).
+copies importing one CA raced in the Keychain (fixed); and commo crashed
+when a server's TLS handshake finished during the quit (#270, fixed
+2026-11-27: trap 23, commo patch 0010).
 
 Next: G4 (`docs/roadmap.md`).
 
@@ -2457,6 +2458,29 @@ user icon sets.
   (trap 15) works in the app's JVM. The icon size needs no change:
   the 2525D provider's `GLRenderGlobals.getRelativeScaling()` returns
   `DisplaySettings.getRelativeScaling()`, the 2525C one's.
+
+- **23 — a stream that came up while commo shut down crashed it** (#270,
+  2026-11-27, branch `fix/commo-quit-crash`). `ContactManager`'s
+  constructor registers it with the streaming layer for interface
+  status, and its destructor never unregisters it. `CommoImpl`'s
+  destructor deletes it before `dgMgmt`, `tcpMgmt`, `quicMgmt` and
+  `streamMgmt`, and the streaming layer's connection thread runs until
+  that last delete (0.5 to 1.2 s on the dev Mac). A TLS handshake that
+  finished in that window called `interfaceUp` on the freed
+  `ContactManager`: SIGSEGV in `fireInterfaceChange`, or SIGBUS through
+  a freed vtable, on commo's connection thread. The crash in #270's
+  cleanup copy was this: its saved server's handshake finished during the
+  quit. Removing the server first doesn't matter; quitting while a
+  handshake is in flight is enough. The bug is in 5.5's commo (unchanged
+  at the pin). Commo patch 0010 unregisters the listener in the
+  destructor, before `stopThreads()`. That call takes the mutex
+  `fireInterfaceChange` holds, so after it returns, nothing calls the
+  `ContactManager` again.
+  `QuitRaceTests` connects to `dev/g3/test/held-tls-server.py`, which
+  holds each handshake until a file exists, and releases it 20 ms into
+  `shutdown()`. A/B: without 0010 it killed the test runner (signal 11
+  or 10) in 10 of 10 runs, and in 21 of 21 for releases from 0 to
+  400 ms; with 0010 it passed 10 of 10, and 21 of 21.
 
 ## G3.8 — range and bearing (plan approved 2026-11-20)
 

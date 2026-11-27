@@ -1,0 +1,15 @@
+diff --git a/core/impl/contactmanager.cpp b/core/impl/contactmanager.cpp
+--- a/core/impl/contactmanager.cpp
++++ b/core/impl/contactmanager.cpp
+@@ -61,6 +61,11 @@
+     // De-register as a listener
+     dgMgr->removeDatagramReceiver(this);
+     streamMgmt->removeStreamingMessageListener(this);
++    // macTAK: the constructor registers for interface status too, and
++    // CommoImpl deletes us before streamMgmt, whose connection thread
++    // still runs: a stream that comes up in between called interfaceUp
++    // on freed memory (dev/g3/NOTES.md, trap 23)
++    streamMgmt->removeInterfaceStatusListener(this);
+ 
+     stopThreads();
+ 
