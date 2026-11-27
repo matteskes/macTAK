@@ -26,12 +26,11 @@ enum TwoClients {
         await b.commo.startReporting(.every(seconds: 1))
         try await b.commo.connect(host: "127.0.0.1", port: port, transport: transport("b"))
         try await b.seen.wait("B's interface up", timeout: 15, isInterfaceUp)
-        try await Task.sleep(for: CommoClient.sendableDelay)
         let markerUid = "\(uidB)-m1"
-        try await b.commo.broadcast(marker(uid: markerUid))
+        try await resend("A gets B's marker", { try await b.commo.broadcast(marker(uid: markerUid)) },
+                         until: a.seen) { isCot($0, uid: markerUid) }
 
         try await a.seen.wait("A sees B as a contact", timeout: 15) { $0 == .contactAdded(uid: uidB) }
-        try await a.seen.wait("A gets B's marker", timeout: 15) { isCot($0, uid: markerUid) }
         try await b.seen.wait("B gets A's presence", timeout: 15) { isCot($0, uid: uidA) }
 
         await a.close()
@@ -53,6 +52,16 @@ enum TwoClients {
         func close() async {
             await commo.shutdown()
             await drain.value   // events end on shutdown
+        }
+    }
+
+    /// An inbound mesh interface up on `port`: the client hears that port's
+    /// multicast from then on. Its first interface up is often its TCP
+    /// listener, not this.
+    static func isListening(onPort port: Int) -> @Sendable (CommoEvent) -> Bool {
+        { event in
+            guard case let .interfaceUp(endpoint) = event else { return false }
+            return endpoint.hasPrefix("in:") && endpoint.hasSuffix(":\(port)")
         }
     }
 
@@ -80,6 +89,8 @@ actor Recorder {
     private var events: [CommoEvent] = []
 
     func add(_ e: CommoEvent) { events.append(e) }
+
+    func contains(_ match: @Sendable (CommoEvent) -> Bool) -> Bool { events.contains(where: match) }
 
     func wait(_ what: String, timeout: TimeInterval,
               _ match: @Sendable (CommoEvent) -> Bool) async throws {
