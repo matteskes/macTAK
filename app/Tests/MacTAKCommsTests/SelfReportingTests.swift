@@ -39,14 +39,15 @@ final class SelfReportingTests: XCTestCase {
         let cServer = try await c.commo.connect(host: "127.0.0.1", port: port)
         try await a.seen.wait("A on the server", timeout: 15) { $0 == .interfaceUp(endpoint: aServer) }
         try await c.seen.wait("C on the server", timeout: 15) { $0 == .interfaceUp(endpoint: cServer) }
-        try await b.seen.wait("B's mesh up", timeout: 15, TwoClients.isInterfaceUp)
-        try await Task.sleep(for: CommoClient.sendableDelay)
+        try await b.seen.wait("B hears the mesh", timeout: 15, TwoClients.isListening(onPort: MeshTests.saPort))
 
         let toServer = "\(a.commo.uid)-server", toMesh = "\(a.commo.uid)-mesh"
-        try await a.commo.broadcast(TwoClients.marker(uid: toServer), via: .server)
-        try await a.commo.broadcast(TwoClients.marker(uid: toMesh), via: .mesh)
-        try await c.seen.wait("C gets the server broadcast", timeout: 15) { TwoClients.isCot($0, uid: toServer) }
-        try await b.seen.wait("B gets the mesh broadcast", timeout: 15) { TwoClients.isCot($0, uid: toMesh) }
+        try await resend("C gets the server broadcast",
+                         { try await a.commo.broadcast(TwoClients.marker(uid: toServer), via: .server) },
+                         until: c.seen) { TwoClients.isCot($0, uid: toServer) }
+        try await resend("B gets the mesh broadcast",
+                         { try await a.commo.broadcast(TwoClients.marker(uid: toMesh), via: .mesh) },
+                         until: b.seen) { TwoClients.isCot($0, uid: toMesh) }
         try await b.seen.never("B gets the server broadcast", within: 2) { TwoClients.isCot($0, uid: toServer) }
         try await c.seen.never("C gets the mesh broadcast", within: 2) { TwoClients.isCot($0, uid: toMesh) }
     }
@@ -55,6 +56,9 @@ final class SelfReportingTests: XCTestCase {
         let a = try client("a"), b = try client("b")
         try await a.commo.startMesh(MeshTests.config(slot: 1), interfaces: ["lo0"])
         try await b.commo.startMesh(MeshTests.config(slot: 2), interfaces: ["lo0"])
+        // A reports once as it attaches, then not for 30 s: B must hear the
+        // mesh first, or the test waits on a report that went nowhere
+        try await b.seen.wait("B hears the mesh", timeout: 15, TwoClients.isListening(onPort: MeshTests.saPort))
         let settings = MemorySettings()
         let me = SelfReporter.testing(settings, uid: a.commo.uid)
         reporters.append(me)

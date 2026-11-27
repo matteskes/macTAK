@@ -31,6 +31,19 @@ func resend(_ what: String, timeout: TimeInterval = 15, _ send: () throws -> Voi
     }
 }
 
+/// Calls `send` once a second until `seen` has an event that matches;
+/// throws after `timeout`. For a broadcast the test makes itself: one sent
+/// before the peer can hear it is lost, as a datagram is.
+func resend(_ what: String, timeout: TimeInterval = 15, _ send: () async throws -> Void,
+            until seen: Recorder, _ match: @escaping @Sendable (CommoEvent) -> Bool) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while await !seen.contains(match) {
+        guard Date() < deadline else { throw timedOut(what, after: timeout) }
+        try await send()
+        for _ in 0..<10 where await !seen.contains(match) { try await Task.sleep(for: .milliseconds(100)) }
+    }
+}
+
 private func timedOut(_ what: String, after timeout: TimeInterval) -> CommoError {
     CommoError(description: "timed out after \(Int(timeout)) s waiting for: \(what)")
 }
