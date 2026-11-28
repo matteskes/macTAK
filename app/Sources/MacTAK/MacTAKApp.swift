@@ -149,10 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections = ServerConnections(settings: settings, identities: .login, me: me, mesh: mesh,
                                         chatStore: chatStore, mapItemStore: mapItemStore)
         watcher = InterfaceWatcher { mesh.refresh() }
-        markers = MapMarkerSync(host: host, contacts: connections.contacts, cotMarkers: connections.markers,
-                                me: me, rangeBearing: connections.rangeBearing, routes: connections.routes,
-                                routeEditor: connections.routeEditor, units: units,
-                                visibility: connections.visibility)
+        markers = MapMarkerSync(host: host, items: connections.items, me: me,
+                                routeEditor: connections.routeEditor, units: units)
         pointActions = PointActions(editor: connections.pointEditor, rangeBearing: connections.rangeBearing)
         routeActions = RouteActions(editor: connections.routeEditor, routes: connections.routes)
         tools = MapTools(routeEditor: connections.routeEditor, pointDropper: connections.pointDropper,
@@ -161,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                              pointActions: pointActions, routeActions: routeActions,
                                              icon: { [markers] uid in markers.icons[uid] })
         super.init()
-        let rangeBearing = rangeBearing, editor = pointEditor, markers = markers, tools = tools
+        let editor = pointEditor, markers = markers, tools = tools
         let pointActions = pointActions, routeEditor = routeEditor, routeActions = routeActions
         // a running tool takes the click; else a click on a marker or a route shows it, on the map closes it
         host.onMapClick = { pick in
@@ -199,15 +197,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // a placed or moved point says where its altitude came from
         connections.mapLocator.altitudeSource = { [host] p in host.altitudeSource(at: p) }
         // a click, a delete, a placed point or a tool starting shows at once, not at the next tick
-        let refresh: (()) -> Void = { _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { markers.refresh() } }
-        }
         mapChanges = [
-            rangeBearing.objectWillChange.sink(receiveValue: refresh),
-            connections.markers.objectWillChange.sink(receiveValue: refresh),
-            connections.routes.objectWillChange.sink(receiveValue: refresh),
-            routeEditor.objectWillChange.sink(receiveValue: refresh),
-            connections.visibility.objectWillChange.sink(receiveValue: refresh),
+            connections.items.changed.sink { markers.refresh() },
+            routeEditor.objectWillChange.sink { _ in
+                DispatchQueue.main.async { MainActor.assumeIsolated { markers.refresh() } }
+            },
             // the inspector shows a point or a route
             editor.$inspected.sink { if $0 != nil { routeEditor.inspect(nil) } },
             routeEditor.$inspected.sink { if $0 != nil { editor.inspect(nil) } },
