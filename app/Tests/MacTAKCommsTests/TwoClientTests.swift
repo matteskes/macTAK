@@ -1,6 +1,6 @@
 // Two CommoClients through dev/g1/headless/fake-cot-server.py over plain
 // TCP (G3.1): the round trip in Support/TwoClients.swift, plus the
-// client's own refusals.
+// client's own refusals and how it words commo's interface errors.
 
 import Foundation
 import XCTest
@@ -23,5 +23,14 @@ final class TwoClientTests: XCTestCase {
         } catch let error as CommoError {
             XCTAssertEqual(error.description, "commo is shut down")
         }
+    }
+
+    func testInterfaceErrorsAreWordedByCommosName() {
+        // netinterface.h's NetInterfaceErrorCode, first and last
+        XCTAssertEqual(CommoClient.describeInterfaceError(0), "can't resolve the host")
+        XCTAssertEqual(CommoClient.describeInterfaceError(1), "connection refused")
+        XCTAssertEqual(CommoClient.describeInterfaceError(11), "an error")
+        XCTAssertEqual(CommoClient.describeInterfaceError(12), "error 12", "a code commo doesn't define")
+        XCTAssertEqual(CommoClient.describeInterfaceError(-1), "error -1")
     }
 }

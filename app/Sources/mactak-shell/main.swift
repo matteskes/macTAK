@@ -183,7 +183,8 @@ guard !(o.tour && (o.gestures || o.resizeTo != nil)) else {
     fputs("\(SHELL): --tour excludes --gestures and --resize-to\n", stderr); exit(2)
 }
 // the scripted phase runs inside the linger: keep the window up past it
-if o.liveMs > 0 { o.lingerMs = max(o.lingerMs, o.liveMs + 2000) }
+let liveTailMs: Int64 = 2000
+if o.liveMs > 0 { o.lingerMs = max(o.lingerMs, o.liveMs + liveTailMs) }
 
 // ---- JVM bootstrap and the engine facade (MacTAKCore) ---------------------
 
@@ -323,12 +324,23 @@ final class Shell: NSObject, NSApplicationDelegate {
     var lingerDeadline: Date?
     var stopRequestedByUs = false
     var stopRequestedAt: Date?
-    var lastSt = -1
+    var lastPhase: EngineBridge.Phase?
     var scriptedResizeAt: Date?
     var started = false                 // EngineBridge.start returned
     var view: MetalView?
     var gestureScript: GestureScript?
     var gestureTimer: Timer?
+
+    /// How often the poll timer ticks, and its slack.
+    static let pollInterval: TimeInterval = 0.1
+    static let pollTolerance: TimeInterval = 0.02
+    /// The gesture script's step timer (twice a 60 Hz frame).
+    static let gestureInterval: TimeInterval = 1.0 / 120.0
+    /// How long the render thread gets to wind down after the linger
+    /// (tick), and after a user quit (applicationShouldTerminate, which
+    /// pumps the run loop itself meanwhile).
+    static let lingerTeardownLimit: TimeInterval = 30
+    static let quitTeardownLimit: TimeInterval = 10
 
     init(window: NSWindow, opt: ShellOptions, engine: EngineBridge) {
         self.window = window
@@ -337,26 +349,27 @@ final class Shell: NSObject, NSApplicationDelegate {
     }
 
     func tick() {
-        let st = Int(engine.pollStatus().rawValue)
-        if st != lastSt {
-            print("\(SHELL): poll → \(st)")
-            lastSt = st
+        let phase = engine.pollStatus()
+        if phase != lastPhase {
+            print("\(SHELL): poll → \(phase.rawValue)")
+            lastPhase = phase
         }
-        if st == 1 && !frameDoneLogged {                       // PHASE_FRAME_DONE
+        if phase == .frameDone && !frameDoneLogged {
             frameDoneLogged = true
             if opt.gestures || opt.tour, let v = view {
                 let script = GestureScript(window: window, view: v, tour: opt.tour)
                 gestureScript = script
                 print("\(SHELL): live script: posting \(opt.tour ? "the exit-run tour" : "gestures") into the window")
-                let t = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] tm in
+                let t = Timer(timeInterval: Self.gestureInterval, repeats: true) { [weak self] tm in
                     if script.tick() { tm.invalidate(); self?.gestureScript = nil; print("\(SHELL): gestures posted") }
                 }
                 RunLoop.main.add(t, forMode: .common)
                 gestureTimer = t
             }
             if let (rw, rh) = opt.resizeTo {
-                scriptedResizeAt = Date().addingTimeInterval(Double(opt.liveMs) / 2000.0)
-                print("\(SHELL): live script: resizing the window to \(rw)x\(rh) pt in \(Double(opt.liveMs) / 2000.0) s")
+                let halfway = Double(opt.liveMs) / 1000.0 / 2
+                scriptedResizeAt = Date().addingTimeInterval(halfway)
+                print("\(SHELL): live script: resizing the window to \(rw)x\(rh) pt in \(halfway) s")
             }
             if opt.wait {
                 print("\(SHELL): frame done — keeping the window up (--wait); close it to exit")
@@ -365,7 +378,7 @@ final class Shell: NSObject, NSApplicationDelegate {
                 print("\(SHELL): frame done — closing in \(Double(opt.lingerMs) / 1000.0) s (run with --wait or --linger N to change)")
             }
         }
-        if st == 2 {                                           // PHASE_EXITED
+        if phase == .exited {
             if !frameDoneLogged { print("\(SHELL): render failed — closing the window") }
             NSApp.terminate(nil)      // shouldTerminate: EXITED → .terminateNow
             return
@@ -386,11 +399,11 @@ final class Shell: NSObject, NSApplicationDelegate {
             stopRequestedByUs = true
             stopRequestedAt = Date()
         }
-        if stopRequestedByUs, st != 2, let t0 = stopRequestedAt,
-           Date().timeIntervalSince(t0) > 30 {
+        if stopRequestedByUs, phase != .exited, let t0 = stopRequestedAt,
+           Date().timeIntervalSince(t0) > Self.lingerTeardownLimit {
             // Teardown should take well under a second; a hang here means the
             // engine stalled on the render thread. Report and get out.
-            fputs("\(SHELL): teardown did not finish within 30 s — exiting anyway\n", stderr)
+            fputs("\(SHELL): teardown did not finish within \(Int(Self.lingerTeardownLimit)) s — exiting anyway\n", stderr)
             exit(engine.exitCode())
         }
     }
@@ -406,12 +419,12 @@ final class Shell: NSObject, NSApplicationDelegate {
         engine.stop()
         if !stopRequestedByUs { stopRequestedByUs = true }
         stopRequestedAt = Date()
-        let deadline = Date().addingTimeInterval(10)
+        let deadline = Date().addingTimeInterval(Self.quitTeardownLimit)
         while engine.pollStatus() != .exited && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
         }
         if engine.pollStatus() != .exited {
-            fputs("\(SHELL): teardown did not finish within 10 s — exiting anyway\n", stderr)
+            fputs("\(SHELL): teardown did not finish within \(Int(Self.quitTeardownLimit)) s — exiting anyway\n", stderr)
             exit(engine.exitCode())
         }
         print("\(SHELL): teardown complete — terminating")
@@ -516,8 +529,8 @@ NotificationCenter.default.addObserver(shell, selector: #selector(Shell.occlusio
 // returning .terminateLater runs it in NSModalPanelRunLoopMode, where timers
 // in .default never fire (the reply would never happen). Schedule the poll
 // tick in .common so it fires through the handshake too.
-let timer = Timer(timeInterval: 0.1, repeats: true) { _ in shell.tick() }
-timer.tolerance = 0.02
+let timer = Timer(timeInterval: Shell.pollInterval, repeats: true) { _ in shell.tick() }
+timer.tolerance = Shell.pollTolerance
 RunLoop.main.add(timer, forMode: .common)
 app.run()
 

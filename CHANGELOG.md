@@ -10,6 +10,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `CommoClient` and the shell harness, tidied (G3 clean-code audit, items
+  b and c). `CommoClient`'s three shim-call helpers share one text buffer
+  with a named size instead of four copies of `512`, and `connect()` goes
+  through the same `endpoint` helper the mesh uses. commo's interface
+  error codes are now worded in the shim, by commo's own enum names,
+  instead of by position in a Swift array (`describeInterfaceError`,
+  tested at both ends of the table). In `mactak-shell`, `tick()` compares
+  `EngineBridge.Phase` values instead of the integers 1 and 2, and its
+  timer intervals and teardown limits have names. Every log line stays
+  the same.
 - Three comms tests no longer depend on timing (G3 clean-code audit,
   fragility check). Each sent once after a fixed 0.5 s sleep, or waited
   on a peer's first interface up, which is often its TCP listener and
