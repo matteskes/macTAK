@@ -39,20 +39,17 @@ public final class OverlayManager: ObservableObject {
     private let pointEditor: PointEditor
     /// The R&B endpoints deleted from the list, by item id.
     @Published public private(set) var removedEndpoints: Set<String> = []
-    private var watches: [AnyCancellable] = []
-    private var prunePending = false
+    private var watch: AnyCancellable?
 
-    public init(contacts: ContactStore, markers: CotMarkerStore, rangeBearing: RangeBearingLines, routes: Routes,
-                routeEditor: RouteEditor, pointEditor: PointEditor, visibility: MapVisibility) {
-        self.contacts = contacts
-        self.markers = markers
-        self.rangeBearing = rangeBearing
-        self.routes = routes
+    public init(items: MapItems, routeEditor: RouteEditor, pointEditor: PointEditor) {
+        contacts = items.contacts
+        markers = items.markers
+        rangeBearing = items.rangeBearing
+        routes = items.routes
+        visibility = items.visibility
         self.routeEditor = routeEditor
         self.pointEditor = pointEditor
-        self.visibility = visibility
-        watches = [contacts.objectWillChange, markers.objectWillChange, rangeBearing.objectWillChange,
-                   routes.objectWillChange].map { $0.sink { [weak self] _ in self?.schedulePrune() } }
+        watch = items.changed.sink { [weak self] in self?.prune() }
     }
 
     // MARK: - the items
@@ -125,17 +122,6 @@ public final class OverlayManager: ObservableObject {
     }
 
     // MARK: - forgetting what left
-
-    private func schedulePrune() {
-        guard !prunePending else { return }
-        prunePending = true
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                self?.prunePending = false
-                self?.prune()
-            }
-        }
-    }
 
     /// Forgets the visibility of what left the map, and the deleted
     /// endpoints of lines that are gone.

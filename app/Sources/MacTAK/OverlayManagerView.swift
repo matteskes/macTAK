@@ -92,10 +92,8 @@ final class OverlayManagerModel: ObservableObject {
         self.routeActions = routeActions
         self.icon = icon
         showAll = !settings.bool(forKey: Self.fovFilterKey)
-        watches = [connections.contacts.objectWillChange, connections.markers.objectWillChange,
-                   connections.rangeBearing.objectWillChange, connections.routes.objectWillChange,
-                   connections.visibility.objectWillChange, overlays.objectWillChange,
-                   connections.pointEditor.objectWillChange]
+        watches = [connections.items.changed.sink { [weak self] in self?.refresh() }]
+            + [overlays.objectWillChange, connections.pointEditor.objectWillChange]
             .map { $0.sink { [weak self] _ in self?.scheduleRefresh() } }
         // the view moves and things move: the filter and the distances follow (onMapMoved)
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in

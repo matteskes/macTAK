@@ -77,18 +77,16 @@ final class MapMarkerSync {
     private var symbolIcons: [String: String?] = [:]
     private var selfIcon: String?
 
-    init(host: EngineHost, contacts: ContactStore, cotMarkers: CotMarkerStore, me: SelfReporter,
-         rangeBearing: RangeBearingLines, routes: Routes, routeEditor: RouteEditor, units: UnitPreferences,
-         visibility: MapVisibility) {
+    init(host: EngineHost, items: MapItems, me: SelfReporter, routeEditor: RouteEditor, units: UnitPreferences) {
         self.host = host
-        self.contacts = contacts
-        self.cotMarkers = cotMarkers
+        contacts = items.contacts
+        cotMarkers = items.markers
         self.me = me
-        self.rangeBearing = rangeBearing
-        self.routes = routes
+        rangeBearing = items.rangeBearing
+        routes = items.routes
         self.routeEditor = routeEditor
         self.units = units
-        self.visibility = visibility
+        visibility = items.visibility
         host.unclickable = [Self.rabStartUID]
     }
 

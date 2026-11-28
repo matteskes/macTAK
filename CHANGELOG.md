@@ -10,6 +10,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The map's items in one place, `MapItems` (G3 clean-code re-audit,
+  N1). The contacts, CoT markers, R&B lines, routes, which of them are
+  hidden, and `MapLocator` now live in one type in `MacTAKComms`, and
+  everything that follows them asks it. Before, about eight places listed
+  the stores one by one: `ServerConnections` (handing heard CoT to each
+  store, the archive's change list, what is kept and how it comes back),
+  `OverlayManager`, the Overlay Manager's model, `MapMarkerSync` and
+  `MacTAKApp`. A new kind of item, as G4's imports will add, now joins in
+  `MapItems` alone. `MapItems.changed` fires once after any item changes,
+  this client included, coalesced to one per turn of the main queue and
+  after the change has landed. Before, each follower deferred its own work
+  that way. Two followers now hear more than before: the map also redraws
+  at once when a contact or this client changes, not at the next
+  one-second tick, and the Overlay Manager also prunes when visibility
+  changes. `ServerConnections` keeps its `contacts`, `markers`,
+  `rangeBearing`, `routes`, `visibility` and `mapLocator` properties as
+  forwards to `items`, so callers are unchanged; moving them over is the
+  re-audit's N7.
 - `CommoClient` and the shell harness, tidied (G3 clean-code audit, items
   b and c). `CommoClient`'s three shim-call helpers share one text buffer
   with a named size instead of four copies of `512`, and `connect()` goes

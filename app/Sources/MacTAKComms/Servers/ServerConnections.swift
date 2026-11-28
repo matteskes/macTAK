@@ -62,32 +62,26 @@ public final class ServerConnections: ObservableObject {
     public var callsign: String { me.details.callsign }
 
     public let me: SelfReporter
-    /// Who this client hears, on any server or the mesh (G3.4c).
-    public let contacts: ContactStore
-    /// The CoT markers it hears that aren't contacts (G3.7c).
-    public let markers: CotMarkerStore
+    /// The map's items: contacts, CoT markers, R&B lines, routes, and
+    /// which are hidden (MapItems).
+    public let items: MapItems
     /// GeoChat, when the app gave a ChatStore (G3.5b).
     public let chat: ChatService?
-    /// Range and bearing lines, made here or heard (G3.8c/d).
-    public let rangeBearing = RangeBearingLines()
-    /// Routes, made here or heard (G3.10a).
-    public let routes: Routes
+    // The stores in `items`, by their old names here.
+    public var contacts: ContactStore { items.contacts }
+    public var markers: CotMarkerStore { items.markers }
+    public var rangeBearing: RangeBearingLines { items.rangeBearing }
+    public var routes: Routes { items.routes }
+    public var visibility: MapVisibility { items.visibility }
+    public var mapLocator: MapLocator { items.locator }
     /// The route tool and the route details (G3.10c).
     public let routeEditor: RouteEditor
     /// The Point Dropper tool (G3.9b).
     public let pointDropper: PointDropper
     /// Editing the CoT markers (G3.9c).
     public let pointEditor: PointEditor
-    /// Where a click on the map is, for the Point Dropper and Move (G3.9d);
-    /// the app gives it the engine's altitude source.
-    public let mapLocator: MapLocator
-    /// Which map items are hidden (G3.11b), kept across launches for the
-    /// archived ones.
-    public let visibility = MapVisibility()
     /// What the Overlay Manager's rows do to the items (G3.11b).
     public let overlays: OverlayManager
-    /// Keeps the archived items across launches, when a store was given.
-    private var mapItems: MapItemSync?
     private var detailsWatch: AnyCancellable?
     private let settings: SettingsStore
     private let identities: IdentityStore
@@ -112,12 +106,12 @@ public final class ServerConnections: ObservableObject {
         self.identities = identities
         self.me = me
         self.mesh = mesh
-        let contacts = ContactStore(selfUID: me.details.uid)
-        self.contacts = contacts
-        let markers = CotMarkerStore(selfUID: me.details.uid) { contacts[$0] != nil }
-        self.markers = markers
-        let mapLocator = MapLocator(markers: markers, contacts: contacts, me: me)
-        self.mapLocator = mapLocator
+        // a line's ends follow its markers, contacts and this client; the
+        // kept items come back here
+        let items = MapItems(me: me, store: mapItemStore)
+        self.items = items
+        let markers = items.markers, routes = items.routes, rangeBearing = items.rangeBearing
+        let mapLocator = items.locator
         let locate = { [mapLocator] (pick: MapPick) in mapLocator.locate(pick) }
         // setAuthorInformation: production_time is a CoordinatedTime, milliseconds
         let author: (Date) -> Author = { now in
@@ -130,14 +124,11 @@ public final class ServerConnections: ObservableObject {
             deviceCallsign: { me.details.callsign },
             legacyNaming: { ["1", "true"].contains(settings.string(forKey: PointNaming.legacyPointDropNamingKey)?.lowercased()) })
         pointEditor = PointEditor(markers: markers, locate: locate)
-        let routes = Routes()
-        self.routes = routes
         routeEditor = RouteEditor(routes: routes, locate: locate)
-        overlays = OverlayManager(contacts: contacts, markers: markers, rangeBearing: rangeBearing, routes: routes,
-                                  routeEditor: routeEditor, pointEditor: pointEditor, visibility: visibility)
+        overlays = OverlayManager(items: items, routeEditor: routeEditor, pointEditor: pointEditor)
         rangeBearing.author = { author(Date()) }
         routes.author = { author(Date()) }
-        let chat = chatStore.map { ChatService(store: $0, contacts: contacts, identity: { me.chatIdentity }) }
+        let chat = chatStore.map { ChatService(store: $0, contacts: items.contacts, identity: { me.chatIdentity }) }
         self.chat = chat
         // A new team or role changes which rooms take messages.
         detailsWatch = me.details.objectWillChange.sink { _ in
@@ -149,22 +140,12 @@ public final class ServerConnections: ObservableObject {
             servers = decoded
         }
         for server in servers { status[server.id] = .off }
-        // a line's ends follow its markers, contacts and this client
-        mapItems = mapItemStore.map { store in
-            MapItemSync(archive: MapItemArchive(store: store, selfUID: me.details.uid),
-                        importer: { [unowned self] item in importKept(item) },
-                        items: { [unowned self] in archivedItems() },
-                        changes: [markers.objectWillChange, rangeBearing.objectWillChange,
-                                  routes.objectWillChange, contacts.objectWillChange, me.objectWillChange,
-                                  visibility.objectWillChange])
-        }
-        mapItems?.restore()
     }
 
     /// Starts commo, connects every enabled server, and starts the mesh.
     public func start() throws {
         guard client == nil else { return }
-        if mapItems?.isKeeping == false { mapItems?.restore() }
+        items.startKeeping()
         let client = try CommoClient(uid: uid, callsign: callsign)
         self.client = client
         listener = Task { [weak self] in
@@ -177,14 +158,13 @@ public final class ServerConnections: ObservableObject {
         expiry = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.expiryPeriod)
-                self?.contacts.expire()
-                self?.markers.expire()
+                self?.items.expire()
             }
         }
     }
 
     public func stop() async {
-        mapItems?.suspend()
+        items.suspendKeeping()
         await mesh?.detach()
         me.detach()
         chat?.detach()
@@ -195,8 +175,7 @@ public final class ServerConnections: ObservableObject {
         endpoints.removeAll()
         upEndpoints.removeAll()
         for server in servers { status[server.id] = .off }
-        contacts.removeAll()
-        markers.removeAll()
+        items.removeHeard()
     }
 
     // MARK: - the list
@@ -341,11 +320,8 @@ public final class ServerConnections: ObservableObject {
         case let .interfaceError(endpoint, code):
             if let id = server(endpoint) { status[id] = .failed(CommoClient.describeInterfaceError(code)) }
         case let .cot(xml, endpoint):
-            contacts.receive(xml, via: server(endpoint).map { .server($0) } ?? .mesh)
-            markers.receive(xml)
+            items.receive(xml, via: server(endpoint).map { .server($0) } ?? .mesh)
             chat?.receive(xml)
-            rangeBearing.receive(xml, isMarker: isMarker)
-            routes.receive(xml, isItem: isMarker)
         case let .contactRemoved(uid):
             contacts.remove(uid)
         default:
@@ -364,7 +340,7 @@ public final class ServerConnections: ObservableObject {
                       at now: Date = Date()) throws {
         guard let client else { throw ShareError.notRunning }
         guard let line = rangeBearing[id] else { throw ShareError.noLine }
-        guard let event = lineEvent(line) else { throw ShareError.noPlace }
+        guard let event = items.lineEvent(line) else { throw ShareError.noPlace }
         send(event(style, now).xml(), to: contacts, on: client)
     }
 
@@ -376,12 +352,7 @@ public final class ServerConnections: ObservableObject {
     public func share(route id: String, to contacts: [String]? = nil, at now: Date = Date()) throws {
         guard let client else { throw ShareError.notRunning }
         guard let route = routes[id] else { throw ShareError.noRoute }
-        send(routeEvent(route, at: now).xml(), to: contacts, on: client)
-    }
-
-    /// The route as 5.5 writes it, with where its centre's altitude comes from.
-    private func routeEvent(_ route: Route, at now: Date) -> CotEvent {
-        RouteEvent.make(route, center: route.center.map(mapLocator.elevationSource), now: now)
+        send(items.routeEvent(route, at: now).xml(), to: contacts, on: client)
     }
 
     /// Send the CoT marker `uid` as it is now, edits included (5.5's Send
@@ -407,20 +378,6 @@ public final class ServerConnections: ObservableObject {
         }
     }
 
-    /// The line as 5.5 writes it (u-rb-a, RangeBearingEvent), its ends
-    /// where they are now, for a style and a time; nil when an end has no
-    /// place here (its contact just went).
-    private func lineEvent(_ line: RangeBearingLine) -> ((RangeBearing.Style, Date) -> CotEvent)? {
-        guard let start = place(line.start), let end = place(line.end) else { return nil }
-        let startUID = namedUID(line.start), endUID = namedUID(line.end)
-        return { style, now in
-            RangeBearingEvent.make(uid: line.id, title: line.title, start: start, end: end,
-                                   startUID: startUID, endUID: endUID, style: style,
-                                   color: line.color, weight: line.weight, archive: line.archived,
-                                   creator: line.creator, now: now)
-        }
-    }
-
     /// A marker's event as sent now: timed now, stale as long after as it was.
     static func outgoing(_ event: CotEvent, at now: Date) -> CotEvent {
         var e = event
@@ -430,87 +387,10 @@ public final class ServerConnections: ObservableObject {
         return e
     }
 
-    /// Where an end is now: its place, or its marker's, contact's or this client's.
-    private func place(_ end: RangeBearingEnd) -> CotPoint? {
-        switch end {
-        case .point(let p): return p
-        case .item(let id):
-            return markers[id]?.point ?? contacts[id]?.point ?? (id == uid ? me.location?.point : nil)
-        }
-    }
-
-    /// 5.5's isEndpointSerializable: only a CoT marker's uid is written.
-    private func namedUID(_ end: RangeBearingEnd) -> String? {
-        if case .item(let id) = end, markers[id] != nil { return id }
-        return nil
-    }
-
-    /// Whether a uid is something a line's end can be tied to here: a CoT
-    /// marker, a contact or this client.
-    private func isMarker(_ id: String) -> Bool {
-        markers[id] != nil || contacts[id] != nil || id == uid
-    }
-
     // MARK: - kept map items
 
-    /// Takes one kept item back through the importers: the markers, the
-    /// routes, then the lines, which defer while a marker they name isn't
-    /// in yet. Each takes the row's `visible` as 5.5's importers take the
-    /// StateSaver's extra: a marker always (MarkerImporter), a route as a
-    /// shape, its points with it (DrawingImporter), a line when it is
-    /// first added (RangeAndBearingImporter), which a kept one is.
-    private func importKept(_ kept: StoredMapItem) -> MapItemArchive.Import {
-        let xml = kept.event
-        let marker = markers.receive(xml)
-        if marker { visibility.set(kept.uid, visible: kept.visible) }
-        if routes.restore(xml, isItem: isMarker, selfUID: uid) == .restored {
-            if let route = routes[kept.uid], visibility.isVisible(route.id) != kept.visible {
-                visibility.set([route.id] + route.points.map(\.uid), visible: kept.visible)
-            }
-            return .taken
-        }
-        switch rangeBearing.restore(xml, isMarker: isMarker, selfUID: uid) {
-        case .restored:
-            visibility.set(kept.uid, visible: kept.visible)
-            return .taken
-        case .deferred: return .deferred
-        case .ignored: return marker ? .taken : .ignored
-        }
-    }
-
     /// Writes the archived items that changed now.
-    func syncArchive() { mapItems?.sync() }
-
-    /// The archived markers as they came, the routes as 5.5 writes them,
-    /// and the archived lines as 5.5 stores them (u-rb-a, units as 5.5's defaults: a line keeps none of
-    /// its own here). A line with an end that has no place right now
-    /// (its contact just went) is left as last stored.
-    private func archivedItems() -> [ArchivedItem] {
-        let kept = markers.markers.compactMap { m in
-            m.archivedEvent.map { xml in
-                ArchivedItem(uid: m.uid, type: m.type, signature: xml, visible: visibility.isVisible(m.uid)) { xml }
-            }
-        }
-        let lines = rangeBearing.lines.filter(\.archived).map { line -> ArchivedItem in
-            guard let event = lineEvent(line) else {
-                return ArchivedItem(uid: line.id, type: RangeBearingEvent.type, signature: nil) { "" }
-            }
-            return ArchivedItem(uid: line.id, type: RangeBearingEvent.type,
-                                signature: event(.atak, Date(timeIntervalSince1970: 0)).xml(),
-                                visible: visibility.isVisible(line.id)) { event(.atak, Date()).xml() }
-        }
-        // the centre's altitude source is looked up only when a route is written
-        // a route the tool is still drawing, under two points, isn't kept: 5.5
-        // removes it if the tool ends there (RouteEditTool.onToolEnd)
-        let keptRoutes = routes.routes.filter { $0.archived && $0.points.count >= 2 }.map { route in
-            ArchivedItem(uid: route.id, type: Route.type,
-                         signature: RouteEvent.make(route, center: nil, now: Date(timeIntervalSince1970: 0)).xml(),
-                         visible: visibility.isVisible(route.id)) {
-                self.routeEvent(route, at: Date()).xml()
-            }
-        }
-        return kept + lines + keptRoutes
-    }
+    func syncArchive() { items.syncArchive() }
 
     private func setCallsign(_ callsign: String) {
         me.details.callsign = callsign

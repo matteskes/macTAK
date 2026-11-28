@@ -2,15 +2,15 @@
 // of ServerConnections by the G3 clean-code audit:
 //
 // - `restore` takes the kept items back through the importer and starts
-//   keeping: from then on, any change the watched publishers announce
-//   schedules one sync, coalesced, run after the change has landed
-//   (objectWillChange fires before it does).
+//   keeping: from then on, each time MapItems says the items changed, the
+//   archive is synced (that signal already comes after the change has
+//   landed, one per turn of the main queue).
 // - `suspend` writes once more and stops keeping, so clearing the items
 //   afterwards (ServerConnections.stop) doesn't remove them from the
 //   store; the next `restore` starts again.
 //
-// What the importer takes and what the items are stays with the owner,
-// which knows the markers and lines.
+// What the importer takes and what the items are stays with MapItems,
+// which knows the markers, lines and routes.
 
 import Combine
 import Foundation
@@ -23,17 +23,16 @@ final class MapItemSync {
     /// Whether changes are being written; false before `restore` and
     /// after `suspend`.
     private(set) var isKeeping = false
-    private var syncPending = false
-    private var watches: [AnyCancellable] = []
+    private var watch: AnyCancellable?
 
-    /// `items` is every archived item as it is now; a change any of
-    /// `changes` announces may have changed them.
+    /// `items` is every archived item as it is now; each `changed` may
+    /// have changed them.
     init(archive: MapItemArchive, importer: @escaping (StoredMapItem) -> MapItemArchive.Import,
-         items: @escaping () -> [ArchivedItem], changes: [ObservableObjectPublisher]) {
+         items: @escaping () -> [ArchivedItem], changed: AnyPublisher<Void, Never>) {
         self.archive = archive
         self.importer = importer
         self.items = items
-        watches = changes.map { $0.sink { [weak self] _ in self?.scheduleSync() } }
+        watch = changed.sink { [weak self] in self?.sync() }
     }
 
     /// Takes the kept items back and starts keeping.
@@ -52,16 +51,5 @@ final class MapItemSync {
     func suspend() {
         sync()
         isKeeping = false
-    }
-
-    private func scheduleSync() {
-        guard isKeeping, !syncPending else { return }
-        syncPending = true
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                self?.syncPending = false
-                self?.sync()
-            }
-        }
     }
 }
