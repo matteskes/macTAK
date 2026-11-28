@@ -121,7 +121,7 @@ final class MapMarkerSync {
         }
         for w in drawn.flatMap({ $0.graphics.waypoints + $0.graphics.vertices }) where want[w.uid] == nil {
             // a marker with its uid draws as itself
-            want[w.uid] = Marker(lat: w.point.lat, lon: w.point.lon, hae: Self.hae(w.point), icon: w.icon,
+            want[w.uid] = Marker(lat: w.point.lat, lon: w.point.lon, hae: w.point.validAltitude, icon: w.icon,
                                  rotation: nil, label: w.label)
         }
         icons = want.mapValues(\.icon)
@@ -170,16 +170,16 @@ final class MapMarkerSync {
         var want: [String: Marker] = [:]
         for m in cotMarkers.markers {
             let icon = MarkerIcons.icon(m.traits, stale: m.isStale(at: now)) { symbolIcon($0, engine) }
-            want[m.uid] = Marker(lat: m.point.lat, lon: m.point.lon, hae: Self.hae(m.point), icon: icon,
+            want[m.uid] = Marker(lat: m.point.lat, lon: m.point.lon, hae: m.point.validAltitude, icon: icon,
                                  rotation: nil, label: m.label)
         }
         for c in contacts.contacts {
             let icon = MarkerIcons.contact(c, stale: c.isStale(at: now)) { symbolIcon($0, engine) }
-            want[c.uid] = Marker(lat: c.point.lat, lon: c.point.lon, hae: Self.hae(c.point), icon: icon,
+            want[c.uid] = Marker(lat: c.point.lat, lon: c.point.lon, hae: c.point.validAltitude, icon: icon,
                                  rotation: nil, label: c.callsign)
         }
         if let p = rangeBearing.startPoint {
-            want[Self.rabStartUID] = Marker(lat: p.lat, lon: p.lon, hae: Self.hae(p),
+            want[Self.rabStartUID] = Marker(lat: p.lat, lon: p.lon, hae: p.validAltitude,
                                             icon: MarkerIcon(uri: "asset://icons/reference_point.png",
                                                              color: Self.rabColor),
                                             rotation: nil, label: nil)
@@ -189,7 +189,7 @@ final class MapMarkerSync {
             selfIcon = uri
             let course = me.track.course
             want[me.details.uid] = Marker(
-                lat: location.point.lat, lon: location.point.lon, hae: Self.hae(location.point),
+                lat: location.point.lat, lon: location.point.lon, hae: location.point.validAltitude,
                 icon: MarkerIcon(uri: uri, width: SelfMarker.width, height: SelfMarker.height),
                 rotation: course.isFinite ? course : nil, label: nil)
         }
@@ -212,10 +212,6 @@ final class MapMarkerSync {
         let s = Data(png).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
         return "base64://" + s
-    }
-
-    private static func hae(_ p: CotPoint) -> Double? {
-        p.hae == CotPoint.unknown ? nil : p.hae
     }
 }
 

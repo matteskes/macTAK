@@ -45,9 +45,6 @@ public struct ArchivedItem {
 
 @MainActor
 public final class MapItemArchive {
-    /// What one kept event came to when taken back.
-    public enum Import: Equatable, Sendable { case taken, deferred, ignored }
-
     private let store: MapItemStore
     private let selfUID: String
     /// The signature each stored item was written with.
@@ -62,18 +59,18 @@ public final class MapItemArchive {
     /// then counts `current` (the items as the import left them) as
     /// written. Returns how many were taken.
     @discardableResult
-    public func restore(_ importer: (StoredMapItem) -> Import, current: () -> [ArchivedItem]) -> Int {
+    public func restore(_ importer: (StoredMapItem) -> ImportResult, current: () -> [ArchivedItem]) -> Int {
         let kept = (try? store.items()) ?? []
         var taken = 0
         var deferred: [StoredMapItem] = []
         for item in kept where item.uid != selfUID {
             switch importer(item) {
-            case .taken: taken += 1
+            case .success: taken += 1
             case .deferred: deferred.append(item)
-            case .ignored: break
+            case .failure: break
             }
         }
-        for item in deferred where importer(item) == .taken { taken += 1 }
+        for item in deferred where importer(item) == .success { taken += 1 }
         written = Dictionary(current().compactMap { item in item.written.map { (item.uid, $0) } },
                              uniquingKeysWith: { a, _ in a })
         return taken

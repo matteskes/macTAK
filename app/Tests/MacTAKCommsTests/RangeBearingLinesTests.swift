@@ -166,27 +166,12 @@ final class RangeBearingReceiveTests: XCTestCase {
         XCTAssertFalse(rab.receive(xml(uid: mine.id)) { _ in false }, "the same again changes nothing")
     }
 
-    private func delete(_ uid: String, force: Bool) -> String {
-        var d = CotDetail("detail")
-        var link = CotDetail("link")
-        link["uid"] = uid; link["relation"] = "none"; link["type"] = "none"
-        d.add(link)
-        if force { d.add(CotDetail("__forcedelete")) }
-        return CotEvent(uid: "del", type: CotMarkerStore.deleteType, time: now, stale: now, how: "h-g-i-g-o",
-                        point: here, detail: d).xml()
-    }
-
-    /// CotDeleteImporter: only a force delete removes a line, any line.
-    func testOnlyAForceDeleteRemovesALine() {
+    func testRemoveSaysWhetherTheLineWasHere() {
         let rab = RangeBearingLines()
         rab.receive(xml()) { _ in false }
-        let mine = rab.add(start: .point(here), end: .point(there))
-        XCTAssertFalse(rab.receive(delete("remote-1", force: false)) { _ in false })
-        XCTAssertNotNil(rab["remote-1"], "a plain delete only greys markers")
-        XCTAssertTrue(rab.receive(delete("remote-1", force: true)) { _ in false })
+        XCTAssertTrue(rab.remove(id: "remote-1"))
         XCTAssertNil(rab["remote-1"])
-        XCTAssertTrue(rab.receive(delete(mine.id, force: true)) { _ in false })
-        XCTAssertNil(rab[mine.id], "a line made here goes too")
+        XCTAssertFalse(rab.remove(id: "remote-1"))
     }
 
     func testColourWeightAndCreatorComeWithIt() {
@@ -229,28 +214,30 @@ final class RangeBearingReceiveTests: XCTestCase {
         XCTAssertEqual(rab["kept"]?.archived, true, "an update without <archive/> doesn't unkeep it")
     }
 
-    func testRestoreDefersUntilItsMarkerIsIn() {
+    func testRestoreDefersUntilItsMarkerIsIn() throws {
         let rab = RangeBearingLines()
         var markers: Set<String> = []
-        let kept = xml(endUID: "m1", archive: true)
+        let kept = try CotEvent.parse(xml(endUID: "m1", archive: true))
         XCTAssertEqual(rab.restore(kept, isMarker: markers.contains, selfUID: "me"), .deferred)
         guard case .point = rab["remote-1"]?.end else { return XCTFail("a fixed end meanwhile") }
         markers.insert("m1")
-        XCTAssertEqual(rab.restore(kept, isMarker: markers.contains, selfUID: "me"), .restored)
+        XCTAssertEqual(rab.restore(kept, isMarker: markers.contains, selfUID: "me"), .success)
         XCTAssertEqual(rab["remote-1"]?.end, .item("m1"), "tied once the marker is in")
         XCTAssertEqual(rab.lines.count, 1)
     }
 
-    func testARestoredLineIsThisClientsWhenItMadeIt() {
+    func testARestoredLineIsThisClientsWhenItMadeIt() throws {
         let rab = RangeBearingLines()
         let mine = Author(uid: "me", type: "a-f-G-U-C", callsign: "ME", time: now)
         let theirs = Author(uid: "peer", type: "a-f-G-U-C", callsign: "PEER", time: now)
-        rab.restore(xml(uid: "a", archive: true, creator: mine), isMarker: { _ in false }, selfUID: "me")
-        rab.restore(xml(uid: "b", archive: true, creator: theirs), isMarker: { _ in false }, selfUID: "me")
+        rab.restore(try CotEvent.parse(xml(uid: "a", archive: true, creator: mine)), isMarker: { _ in false },
+                    selfUID: "me")
+        rab.restore(try CotEvent.parse(xml(uid: "b", archive: true, creator: theirs)), isMarker: { _ in false },
+                    selfUID: "me")
         XCTAssertEqual(rab["a"]?.received, false)
         XCTAssertEqual(rab["b"]?.received, true)
         XCTAssertEqual(rab["a"]?.archived, true)
-        let sa = CotEvent(uid: "c", type: "a-f-G-U-C", time: now, stale: now, how: "m-g", point: here).xml()
-        XCTAssertEqual(rab.restore(sa, isMarker: { _ in false }, selfUID: "me"), .ignored)
+        let sa = CotEvent(uid: "c", type: "a-f-G-U-C", time: now, stale: now, how: "m-g", point: here)
+        XCTAssertEqual(rab.restore(sa, isMarker: { _ in false }, selfUID: "me"), .failure)
     }
 }

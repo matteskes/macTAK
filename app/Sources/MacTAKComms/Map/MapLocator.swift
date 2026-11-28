@@ -35,7 +35,7 @@ public final class MapLocator {
     public func locate(_ pick: MapPick) -> SourcedPoint? {
         switch pick {
         case .ground(let p):
-            return .clicked(p, altitudeSource: p.hae == CotPoint.unknown ? nil : altitudeSource?(p))
+            return .clicked(p, altitudeSource: p.validAltitude == nil ? nil : altitudeSource?(p))
         case .item(let uid):
             if let m = markers[uid] {
                 return SourcedPoint(m.point, precision: PrecisionLocation(m.event.detail(PrecisionLocation.elementName)))

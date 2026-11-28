@@ -1,6 +1,6 @@
 // RoutesTests.swift — the routes this client has (G3.10a): one made here
 // (named, authored, archived, its ends waypoints), routes heard (added,
-// updated, refused, removed by a force delete only), and G3.10a's gate
+// updated, refused, removed; a delete task is MapItemsTests'), and G3.10a's gate
 // that a route survives a relaunch, each launch a ServerConnections as the
 // app makes it on the same statesaver file.
 
@@ -93,33 +93,23 @@ final class RoutesTests: XCTestCase {
         XCTAssertFalse(routes.receive("<event/>") { _ in false })
     }
 
-    private func delete(_ uid: String, force: Bool) -> String {
-        var d = CotDetail("detail")
-        var link = CotDetail("link")
-        link["uid"] = uid; link["relation"] = "none"; link["type"] = "none"
-        d.add(link)
-        if force { d.add(CotDetail("__forcedelete")) }
-        return CotEvent(uid: "del", type: CotMarkerStore.deleteType, time: now, stale: now, how: "h-g-i-g-o",
-                        point: place(0), detail: d).xml()
-    }
-
-    func testOnlyAForceDeleteRemovesARoute() {
+    func testRemoveSaysWhetherTheRouteWasHere() {
         let routes = Routes(newID: numbered())
         routes.receive(heard()) { _ in false }
-        let mine = routes.add(points: [.waypoint(place(0), uid: "a"), .waypoint(place(1), uid: "b")])
-        XCTAssertFalse(routes.receive(delete("remote-1", force: false)) { _ in false })
-        XCTAssertNotNil(routes["remote-1"], "a plain delete only greys markers")
-        XCTAssertTrue(routes.receive(delete("remote-1", force: true)) { _ in false })
+        XCTAssertTrue(routes.remove(id: "remote-1"))
         XCTAssertNil(routes["remote-1"])
-        XCTAssertTrue(routes.receive(delete(mine.id, force: true)) { _ in false })
-        XCTAssertNil(routes[mine.id], "a route made here goes too")
+        XCTAssertFalse(routes.remove(id: "remote-1"))
     }
 
-    func testARestoredRouteIsMineWhenIMadeIt() {
+    func testARestoredRouteIsMineWhenIMadeIt() throws {
         let routes = Routes(newID: numbered())
-        XCTAssertEqual(routes.restore(heard(uid: "mine", creator: "me"), isItem: { _ in false }, selfUID: "me"), .restored)
-        XCTAssertEqual(routes.restore(heard(uid: "theirs"), isItem: { _ in false }, selfUID: "me"), .restored)
-        XCTAssertEqual(routes.restore("<event/>", isItem: { _ in false }, selfUID: "me"), .ignored)
+        func restore(_ xml: String) throws -> ImportResult {
+            routes.restore(try CotEvent.parse(xml), isItem: { _ in false }, selfUID: "me")
+        }
+        XCTAssertEqual(try restore(heard(uid: "mine", creator: "me")), .success)
+        XCTAssertEqual(try restore(heard(uid: "theirs")), .success)
+        let sa = CotEvent(uid: "sa", type: "a-f-G-U-C", time: now, stale: now, how: "m-g", point: place(0))
+        XCTAssertEqual(routes.restore(sa, isItem: { _ in false }, selfUID: "me"), .failure)
         XCTAssertEqual(routes["mine"]?.received, false)
         XCTAssertEqual(routes["theirs"]?.received, true)
     }

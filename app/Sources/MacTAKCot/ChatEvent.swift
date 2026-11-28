@@ -209,7 +209,7 @@ enum ChatEvent {
     static func event(uid: String, type: String, how: String, sender: ChatSender, at now: Date,
                       detail: CotDetail) -> CotEvent {
         var e = CotEvent(uid: uid, type: type, time: now, stale: now.addingTimeInterval(ChatRoom.staleInterval),
-                         how: how, point: sender.point, detail: detail)
+                         how: how, point: CotPoint(mapPoint: sender.point), detail: detail)
         e.access = Cot.undefinedAccess
         return e
     }

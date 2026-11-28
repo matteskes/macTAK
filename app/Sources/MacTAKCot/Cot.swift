@@ -41,6 +41,10 @@ public enum Cot {
         return timeFormat.date(from: text) ?? wholeSecondTimeFormat.date(from: text)
     }
 
+    /// A time as Java's milliseconds since 1970 (CoordinatedTime's
+    /// getMilliseconds), for arithmetic 5.5 does in whole milliseconds.
+    public static func millis(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 * 1000).rounded()) }
+
     /// A number as a plain decimal (no exponent), as CoT parsers expect.
     public static func number(_ value: Double) -> String {
         guard value.isFinite else { return "0.0" }

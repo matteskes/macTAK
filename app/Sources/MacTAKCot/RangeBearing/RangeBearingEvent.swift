@@ -75,7 +75,7 @@ public enum RangeBearingEvent {
         if archive { detail.add(CotDetail("archive")) }
         if let creator { detail.add(creator.creatorDetail) }
         return CotEvent(uid: uid, type: type, time: now, stale: now.addingTimeInterval(24 * 3600), how: how,
-                        point: start, detail: detail)
+                        point: CotPoint(mapPoint: start), detail: detail)
     }
 
     /// What a received line says.

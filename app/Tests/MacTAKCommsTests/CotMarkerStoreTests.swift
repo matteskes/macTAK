@@ -1,7 +1,8 @@
 // G3.7c: received CoT markers. An atom with no <contact endpoint> is a
 // marker and keeps the details 5.5 picks its icon from; a contact's SA, its
 // own uid and anything else are not; it goes stale and is removed on 5.5's
-// clock; a delete task stales or removes it.
+// clock; a delete task can stale it (`forceStale`, MapItems routes the
+// task) unless it doesn't go stale by time.
 
 import Foundation
 import XCTest
@@ -18,11 +19,6 @@ final class CotMarkerStoreTests: XCTestCase {
             + " stale='\(Cot.time(t0.addingTimeInterval(staleAfter)))' how='\(how)'>"
             + "<point lat='37.7955' lon='-122.3937' hae='5' ce='9999999' le='9999999'/>"
             + "<detail>\(detail)</detail></event>"
-    }
-
-    private func delete(_ uid: String, force: Bool) -> String {
-        event("del-1", type: CotMarkerStore.deleteType, how: "h-g-i-g-o",
-              detail: "<link uid='\(uid)' relation='none' type='none'/>" + (force ? "<__forcedelete/>" : ""))
     }
 
     func testAnAtomWithNoEndpointIsAMarkerWithItsDetails() throws {
@@ -84,18 +80,32 @@ final class CotMarkerStoreTests: XCTestCase {
         XCTAssertNil(store["m"])
     }
 
-    func testADeleteTaskStalesAMarkerOrWithForceRemovesIt() throws {
+    func testForceStaleMakesAMarkerStaleNowOnce() throws {
         let store = CotMarkerStore(selfUID: "me") { _ in false }
         store.receive(event("a"), at: t0)
-        store.receive(event("b"), at: t0)
         let later = t0.addingTimeInterval(10)
-        XCTAssertTrue(store.receive(delete("a", force: false), at: later))
+        XCTAssertTrue(store.forceStale("a", at: later))
         let a = try XCTUnwrap(store["a"])
         XCTAssertTrue(a.isStale(at: later))
         XCTAssertEqual(a.removeAt, later.addingTimeInterval(ContactStore.removeAfterStale))
-        XCTAssertTrue(store.receive(delete("b", force: true), at: later))
+        XCTAssertFalse(store.forceStale("a", at: later), "already stale")
+        XCTAssertFalse(store.forceStale("nobody", at: later))
+    }
+
+    func testAMarkerThatDoesntStaleByTimeIgnoresForceStale() {
+        let store = CotMarkerStore(selfUID: "me") { _ in false }
+        store.receive(event("spot", type: "b-m-p-s-m"), at: t0)
+        XCTAssertFalse(store["spot"]?.archived ?? true, "a Spot Map point, not archived")
+        XCTAssertFalse(store.forceStale("spot", at: t0), "5.5's refresher skips a marker with no autoStaleDuration")
+        XCTAssertEqual(store["spot"]?.isStale(at: t0), false)
+    }
+
+    func testRemoveSaysWhetherTheMarkerWasHere() {
+        let store = CotMarkerStore(selfUID: "me") { _ in false }
+        store.receive(event("b"), at: t0)
+        XCTAssertTrue(store.remove(uid: "b"))
         XCTAssertNil(store["b"])
-        XCTAssertFalse(store.receive(delete("nobody", force: true), at: later))
+        XCTAssertFalse(store.remove(uid: "b"))
     }
 
     // G3.9a: a marker that came with <archive/> is kept across launches,
@@ -111,9 +121,7 @@ final class CotMarkerStoreTests: XCTestCase {
         XCTAssertFalse(k.isStale(at: t0.addingTimeInterval(86_400 * 365)))
         store.expire(at: t0.addingTimeInterval(86_400 * 365))
         XCTAssertNotNil(store["k"])
-        XCTAssertFalse(store.receive(delete("k", force: false), at: t0), "only a force delete")
-        XCTAssertTrue(store.receive(delete("k", force: true), at: t0))
-        XCTAssertNil(store["k"])
+        XCTAssertFalse(store.forceStale("k", at: t0), "only a force delete")
     }
 
     func testOnceArchivedAnUpdateWithoutItStaysKept() throws {

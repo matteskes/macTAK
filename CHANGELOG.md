@@ -10,6 +10,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The altitude checks and the stale time are 5.5's, once each (G3
+  clean-code audit, item d). Seven places checked an altitude or an
+  error against CoT's unknown value (`9999999`) themselves. Now the CoT side uses
+  `CotPoint.isInvalid`, the kernel's own test, and the map, the reports
+  and the Overlay Manager use `CotPoint.validAltitude`, 5.5's
+  `GeoPoint.isAltitudeValid` (the existing `Altitude.isValid`). The
+  contacts and the CoT markers each worked out 5.5's `autoStaleDuration`;
+  both now use `CotEvent.autoStaleDuration`, a port of `MarkerImporter`'s
+  arithmetic. `Cot.millis` gives a time as Java's milliseconds.
+- One delete task importer, as 5.5 has (G3 clean-code re-audit, N2).
+  The CoT markers, the R&B lines and the routes each read a delete task
+  (`t-x-d-d`) themselves, three copies of 5.5's `CotDeleteImporter`
+  checks. Now `CotDelete` (in `MacTAKCot`) reads the task as the
+  importer does, and `MapItems.importDelete` acts on it once, for every
+  kind of item: a force delete removes the item the task names, and a
+  plain one makes a marker or contact stale. The routes, the R&B lines
+  and the archive also had their own copy of 5.5's `ImportResult`; they
+  share one now, with 5.5's names (`success`, `deferred`, `failure`).
+  `MapItems` parses each heard event once and hands it to every store.
+  Before, each store parsed the XML again.
 - The team default and the chat's repeats, named once (G3 clean-code
   audit, item d). The default team, `"Cyan"`, was typed in three places;
   it is now `GroupDetail.defaultTeam`, named after 5.5's `locationTeam`
@@ -74,6 +94,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- An altitude outside −14,000…76,000 m is now no altitude on the map
+  side, as in 5.5 (found porting the checks, item d). Before, only CoT's
+  unknown value counted as none, so such an altitude reached the map's
+  markers, Go To, the self report's altitude-change check and the
+  placed position's altitude source. CoT itself still keeps the value as
+  it came, as the kernel does. Every event made here now writes such an
+  altitude as unknown, as 5.5's `CotPoint(GeoPoint)` does: the self
+  report, a chat message's point, a placed or moved point, and an R&B
+  line's start.
+- A marker's or contact's stale time is now 5.5's to the millisecond
+  (item d). 5.5 works out 1.5 × (stale − start) in whole milliseconds,
+  rounding down; macTAK worked in fractions of a second.
+- A delete task now reaches every kind of map item, as in 5.5 (found
+  porting `CotDeleteImporter` once, N2). A force delete naming a contact
+  now removes it, and a plain one makes the contact stale; before,
+  contacts ignored delete tasks. A plain delete task no longer makes a
+  Spot Map point stale: 5.5's refresher skips a marker it doesn't time
+  out, as it already skipped an archived one here.
 - A chat message, receipt or group that can't be saved now says so in
   the chat window with 5.5's own words ("Chat issue - data not saved.
   Clear your chat if this continues after a restart under Chat

@@ -20,9 +20,27 @@ public struct CotPoint: Sendable, Equatable {
 
     public init(lat: Double, lon: Double, hae: Double = unknown, ce: Double = unknown, le: Double = unknown) {
         self.lat = lat; self.lon = lon
-        self.hae = hae.isNaN ? Self.unknown : hae
-        self.ce = ce.isNaN ? Self.unknown : ce
-        self.le = le.isNaN ? Self.unknown : le
+        self.hae = Self.isInvalid(hae) ? Self.unknown : hae
+        self.ce = Self.isInvalid(ce) ? Self.unknown : ce
+        self.le = Self.isInvalid(le) ? Self.unknown : le
+    }
+
+    /// The kernel's CotPoint.isInvalid: a hae, ce or le CoT marks unknown
+    /// (9999999) or that isn't a number. CoT keeps any other value as it
+    /// came; the map's side checks the altitude's range (`validAltitude`).
+    public static func isInvalid(_ value: Double) -> Bool { value == unknown || value.isNaN }
+
+    /// The altitude as 5.5's map side takes it (CotPoint.toGeoPoint, then
+    /// GeoPoint.isAltitudeValid): nil when CoT marks it unknown or it is
+    /// outside −14000…76000 m.
+    public var validAltitude: Double? { Altitude.isValid(hae) ? hae : nil }
+
+    /// The kernel's CotPoint(GeoPoint): a point from the map side as CoT
+    /// writes it, its altitude unknown unless GeoPoint.isAltitudeValid
+    /// (ce and le are already checked by CotPoint.isInvalid). Every event
+    /// made here writes its point through this, as 5.5's do.
+    public init(mapPoint p: CotPoint) {
+        self.init(lat: p.lat, lon: p.lon, hae: p.validAltitude ?? Self.unknown, ce: p.ce, le: p.le)
     }
 
     public var isValid: Bool { (-90...90).contains(lat) && (-180...180).contains(lon) }
@@ -65,6 +83,17 @@ public struct CotEvent: Sendable, Equatable {
             && !type.trimmingCharacters(in: .whitespaces).isEmpty
             && !how.trimmingCharacters(in: .whitespaces).isEmpty
             && point.isValid
+    }
+
+    /// 5.5's MarkerImporter autoStaleDuration: how long after it arrives a
+    /// marker or contact goes stale. 3 × (stale − start) / 2, in whole
+    /// milliseconds as Java's long division leaves it, and 0 when stale is
+    /// before start ("some systems are generating a negative number").
+    /// The app's MarkerImporter sets none on a special type; the stores
+    /// decide that.
+    public var autoStaleDuration: TimeInterval {
+        let millis = (3 * (Cot.millis(stale) - Cot.millis(start))) / 2
+        return TimeInterval(max(0, millis)) / 1000
     }
 
     /// The first element under <detail> with this name.

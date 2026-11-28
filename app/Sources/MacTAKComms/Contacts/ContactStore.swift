@@ -8,7 +8,7 @@
 // Stale and removal follow ATAK 5.5 (MarkerImporter, CotMarkerRefresher),
 // timed by this Mac's clock from when the SA arrived, so a peer with a
 // skewed clock still goes stale on time:
-//   - stale 1.5 × (stale − start) after its last SA (autoStaleDuration)
+//   - stale 1.5 × (stale − start) after its last SA (CotEvent.autoStaleDuration)
 //   - removed 5 minutes after it went stale (expireStaleItemsTime) or when
 //     commo reports the contact gone.
 // A stale contact stays in the list, greyed, as ATAK greys its marker.
@@ -77,10 +77,10 @@ public final class ContactStore: ObservableObject {
     /// Takes in a CoT event commo received over `path`; anything but a
     /// contact's SA is ignored. Returns whether it was one.
     @discardableResult
-    public func receive(_ xml: String, via path: Contact.Path, at now: Date = Date()) -> Bool {
-        guard let event = try? CotEvent.parse(xml, now: now), event.uid != selfUID, Self.isContactSA(event),
+    public func receive(_ event: CotEvent, via path: Contact.Path, at now: Date = Date()) -> Bool {
+        guard event.uid != selfUID, Self.isContactSA(event),
               let contact = event.detail("contact"), let endpoint = contact["endpoint"] else { return false }
-        let autoStale = max(0, event.stale.timeIntervalSince(event.start) * 1.5)
+        let autoStale = event.autoStaleDuration
         var paths = byUID[event.uid]?.paths ?? []
         paths.insert(path)
         let staleAt = now.addingTimeInterval(autoStale)
@@ -96,15 +96,33 @@ public final class ContactStore: ObservableObject {
         return true
     }
 
+    /// A delete task without <__forcedelete> (CotDeleteImporter's
+    /// forceStale, which 5.5 sets on any marker, a contact's included): the
+    /// contact `uid` is stale now and is removed on the stale clock, unless
+    /// it already is stale. A newer SA brings it back. Returns whether it
+    /// changed.
+    @discardableResult
+    public func forceStale(_ uid: String, at now: Date) -> Bool {
+        guard var contact = byUID[uid], !contact.isStale(at: now) else { return false }
+        contact.staleAt = now
+        contact.removeAt = now.addingTimeInterval(Self.removeAfterStale)
+        byUID[uid] = contact
+        publish()
+        return true
+    }
+
     /// Whether an event is a contact's SA: an atom with a <contact endpoint>.
     public static func isContactSA(_ event: CotEvent) -> Bool {
         event.type.hasPrefix("a-") && event.detail("contact")?["endpoint"]?.isEmpty == false
     }
 
-    /// commo reports the contact gone.
-    public func remove(_ uid: String) {
-        guard byUID.removeValue(forKey: uid) != nil else { return }
+    /// commo reports the contact gone, or a force delete names it. Returns
+    /// whether it was here.
+    @discardableResult
+    public func remove(_ uid: String) -> Bool {
+        guard byUID.removeValue(forKey: uid) != nil else { return false }
         publish()
+        return true
     }
 
     /// Drops what has been stale long enough; the app calls it every few

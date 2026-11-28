@@ -256,8 +256,7 @@ public actor CommoClient {
 
     private func tick() {
         guard handle != nil, var rate = reporting else { return }
-        let hae = selfReport.location?.point.hae
-        let altitude = hae.flatMap { $0 == CotPoint.unknown ? nil : $0 }
+        let altitude = selfReport.location?.point.validAltitude
         let now = Int64(ProcessInfo.processInfo.systemUptime * 1000)
         let due = rate.tick(now: now, altitude: altitude, speed: selfReport.track.speed)
         reporting = rate
