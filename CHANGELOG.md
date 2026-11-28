@@ -69,10 +69,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - A received chat message that can't be saved now says so in the chat
-  window ("Chat issue - data not saved.", 5.5's own words), instead of
-  vanishing without a trace (item d). 5.5 also suggests clearing the
-  chat under Chat Preferences; macTAK has no such setting yet, so that
-  part is left out.
+  window with 5.5's own words ("Chat issue - data not saved. Clear your
+  chat if this continues after a restart under Chat Preferences."),
+  instead of vanishing without a trace (item d). The store errors are
+  logged with 5.5's log text too. 5.5's Chat Preferences control that
+  clears the chat (`ChatPrefsFragment.clearChatHistory`) isn't in
+  macTAK yet.
 - Quitting while a server's TLS handshake is still in flight no longer
   crashes the app (#270). commo's `ContactManager` never unregistered
   from the streaming layer, which could tell it a stream was up after it

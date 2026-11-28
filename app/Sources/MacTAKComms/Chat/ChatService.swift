@@ -264,10 +264,11 @@ public final class ChatService: ObservableObject {
         changed()
     }
 
-    /// 5.5's toast when a received message isn't saved (chat_text14).
-    /// Not as 5.5: its advice to clear the chat under Chat Preferences
-    /// (clear_db_file) is left out, as macTAK has no such setting yet.
-    static let notSaved = "Chat issue - data not saved."
+    /// 5.5's toast when a received message isn't saved (ChatDatabase:
+    /// chat_text14 then clear_db_file), word for word.
+    static let notSaved = "Chat issue - data not saved. "
+        + "Clear your chat if this continues after a restart under Chat Preferences.\n"
+        + "This will result in the loss of data"
 
     /// HierarchyParser, for groups one level under Groups, and 5.5's legacy
     /// groups.
@@ -338,7 +339,9 @@ public final class ChatService: ObservableObject {
         do {
             return try call()
         } catch {
-            NSLog("ChatService: couldn't \(what): \(error). Clear your DB file if this continues.")
+            // 5.5's Log.e text, then what failed
+            NSLog("ChatService: Experienced an issue with the SQL Query.  "
+                  + "Clear your DB file if this continues (\(what): \(error))")
             return nil
         }
     }
