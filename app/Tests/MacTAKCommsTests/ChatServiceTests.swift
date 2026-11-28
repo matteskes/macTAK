@@ -315,6 +315,37 @@ final class ChatServiceTests: XCTestCase {
         XCTAssertTrue(a.lines(ChatRoom.allChatRooms)[0].outgoing)
     }
 
+    /// 5.5's Chat Preferences › Clear History (GeoChatService.clearMessageDB,
+    /// ChatDatabase.clearAll): the history and the user groups go, and, as
+    /// 5.5 deletes the file securely, nothing of them is left on disk.
+    func testClearHistoryRemovesTheHistoryAndGroupsFromDisk() async throws {
+        let (a, b, _) = try three()
+        try a.chat.send("secret-words", to: ChatRoom.allChatRooms)
+        a.chat.createGroup(name: "Squad", members: [b.uid])
+        await net.settle()
+        XCTAssertFalse(a.lines(ChatRoom.allChatRooms).isEmpty)
+        try a.chat.clearHistory()
+        XCTAssertTrue(a.lines(ChatRoom.allChatRooms).isEmpty)
+        XCTAssertFalse(a.chat.conversations.contains { $0.kind == .group }, "the user group went too")
+        for suffix in ["", "-wal"] {
+            let data = (try? Data(contentsOf: URL(fileURLWithPath: a.url.path + suffix))) ?? Data()
+            XCTAssertNil(data.range(of: Data("secret-words".utf8)), "left in the file\(suffix)")
+            XCTAssertNil(data.range(of: Data("Squad".utf8)), "left in the file\(suffix)")
+        }
+    }
+
+    /// A clear that fails part way may already have removed lines: the rooms
+    /// are rebuilt anyway, so the window doesn't show what's gone.
+    func testAFailedClearStillRebuildsTheRooms() async throws {
+        let (a, _, _) = try three()
+        try a.chat.send("x", to: ChatRoom.allChatRooms)
+        await net.settle()
+        XCTAssertNotNil(a.chat.conversation(ChatRoom.allChatRooms)?.lastMessage)
+        _ = try SQLiteDatabase(url: a.url, schema: "DROP TABLE Groups;")   // Chat goes, then Groups fails
+        XCTAssertThrowsError(try a.chat.clearHistory())
+        XCTAssertNil(a.chat.conversation(ChatRoom.allChatRooms)?.lastMessage)
+    }
+
     /// Clean-code audit d: a received message the store can't save says so
     /// with 5.5's toast text (ChatDatabase, chat_text14), not silently.
     func testAMessageThatCantBeSavedSaysSo() async throws {

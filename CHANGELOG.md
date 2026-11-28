@@ -8,6 +8,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+
+- Chat Preferences › History Preferences › Clear History, as 5.5 has it
+  (`ChatPrefsFragment`). A new Chat Preferences tab in Settings asks
+  "Are you sure you want to clear chat history?" (Yes / No), then removes
+  the whole chat history and every user group, as 5.5's
+  `GeoChatService.clearMessageDB` does, and shows "Chat History deleted"
+  for 2 seconds, as 5.5's short toast does. 5.5 deletes the chat file
+  securely; macTAK overwrites the cleared rows and empties the write-ahead
+  log, so nothing cleared stays on disk. The chat's "data not saved"
+  message names this setting.
+
 ### Changed
 
 - The altitude checks and the stale time are 5.5's, once each (G3
@@ -121,8 +133,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   silently. Now a message is sent even when it can't be kept, as 5.5's
   `persistMessage` sends it. The store errors
   are logged with 5.5's log text too, including `removeGroup`'s own.
-  5.5's Chat Preferences control that clears the chat
-  (`ChatPrefsFragment.clearChatHistory`) isn't in macTAK yet.
 - Quitting while a server's TLS handshake is still in flight no longer
   crashes the app (#270). commo's `ContactManager` never unregistered
   from the streaming layer, which could tell it a stream was up after it
