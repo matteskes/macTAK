@@ -248,16 +248,14 @@ final class OverlayManagerModel: ObservableObject {
         let marker = connections.contacts[item.id] != nil || connections.markers[item.id] != nil
         switch item.location {
         case .point(let p):
-            host.goTo([p], altitude: Self.altitude(p), marker: marker, point: true)
+            host.goTo([p], altitude: p.validAltitude, marker: marker, point: true)
         case .line(let points):
             let route = connections.routes[item.id]?.points.map(\.point) ?? points
-            host.goTo(route, altitude: route.compactMap(Self.altitude).max(), marker: false, point: false)
+            host.goTo(route, altitude: route.compactMap(\.validAltitude).max(), marker: false, point: false)
         case nil:
             break
         }
     }
-
-    private static func altitude(_ p: CotPoint) -> Double? { p.hae == CotPoint.unknown ? nil : p.hae }
 
     // MARK: - a route's actions
 

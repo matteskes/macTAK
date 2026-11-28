@@ -15,7 +15,7 @@
 //
 // Stale and removal follow 5.5 (MarkerImporter, CotMarkerRefresher), timed
 // by this Mac's clock from when the event arrived, as contacts are:
-//   - stale 1.5 × (stale − start) after it arrived (autoStaleDuration)
+//   - stale 1.5 × (stale − start) after it arrived (CotEvent.autoStaleDuration)
 //   - removed 5 minutes after it went stale (expireStaleItemsTime, with
 //     expireEverything on, 5.5's default).
 // A delete task (t-x-d-d) reaches a marker through MapItems.importDelete:
@@ -113,7 +113,7 @@ public final class CotMarkerStore: ObservableObject {
         let archivedEvent = Self.archivedEvent(event, xml: event == heard ? xml : event.xml(),
                                                wasArchived: byUID[event.uid]?.archived == true)
         let staleAt = archivedEvent != nil || Self.isSpotMap(event.type) ? .distantFuture
-            : now.addingTimeInterval(max(0, event.stale.timeIntervalSince(event.start) * 1.5))
+            : now.addingTimeInterval(event.autoStaleDuration)
         byUID[event.uid] = Self.marker(event, archivedEvent: archivedEvent, lastHeard: now, staleAt: staleAt)
         publish()
         return true

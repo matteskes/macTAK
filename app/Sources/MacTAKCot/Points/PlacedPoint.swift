@@ -71,6 +71,6 @@ public enum PlacedPoint {
         color["argb"] = String(kind.argb.androidColor)
         detail.add(color)
         return CotEvent(uid: uid, type: kind.type, time: now, stale: now.addingTimeInterval(staleSeconds),
-                        how: how, point: place.point, detail: detail)
+                        how: how, point: CotPoint(mapPoint: place.point), detail: detail)
     }
 }

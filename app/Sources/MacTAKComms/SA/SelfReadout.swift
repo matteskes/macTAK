@@ -34,6 +34,6 @@ public struct SelfReadout: Equatable, Sendable {
         altitude = Altitude.isValid(p.hae) ? units.altitude(p) : "--- ft MSL"
         heading = Motion.heading(track.course)
         speed = units.speedUnits.format(track.speed)
-        accuracy = Motion.accuracy(p.ce == CotPoint.unknown ? .nan : p.ce)
+        accuracy = Motion.accuracy(CotPoint.isInvalid(p.ce) ? .nan : p.ce)
     }
 }

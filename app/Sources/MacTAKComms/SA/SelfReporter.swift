@@ -163,6 +163,6 @@ public final class SelfReporter: ObservableObject {
     }
 
     static func text(_ p: CotPoint) -> String {
-        p.hae == CotPoint.unknown ? "\(p.lat),\(p.lon)" : "\(p.lat),\(p.lon),\(p.hae)"
+        p.validAltitude.map { "\(p.lat),\(p.lon),\($0)" } ?? "\(p.lat),\(p.lon)"
     }
 }
