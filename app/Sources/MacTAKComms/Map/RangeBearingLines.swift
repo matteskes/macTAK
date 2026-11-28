@@ -11,16 +11,15 @@
 // - when a marker an end is tied to goes away, the line stays and that end
 //   stays where the marker last was (removePoint).
 //
-// Shared lines (G3.8d), as 5.5's RangeAndBearingImporter and
-// CotDeleteImporter take them: a u-rb-a event adds a line or updates the
+// Shared lines (G3.8d), as 5.5's RangeAndBearingImporter takes them:
+// a u-rb-a event adds a line or updates the
 // one with its uid, whoever made it. An end is the marker the event names
 // when this client has it; otherwise a new line's end is a fixed place, and
 // an existing line keeps an end tied to a marker (5.5 moves that marker to
 // the event's place; this doesn't move others' markers) and moves a fixed
 // end to the event's place. A live import naming a marker this client
 // hasn't heard isn't retried (5.5 retries only when loading saved state).
-// A delete task with <__forcedelete> removes the line it names, made here
-// or not; one without only greys markers, so it leaves lines alone.
+// A delete task removes a line through MapItems.importDelete.
 //
 // Kept across launches (G3.9a): a line the tool makes is archived, as 5.5
 // makes it persistent; a received one is when it came with <archive/>.
@@ -160,33 +159,29 @@ public final class RangeBearingLines: ObservableObject {
     public subscript(id: String) -> RangeBearingLine? { lines.first { $0.id == id } }
 
     /// Takes in a CoT event commo received: a u-rb-a line is added or
-    /// updated, a force-delete task naming a line removes it; anything else
-    /// is ignored. `isMarker` says whether a uid is a marker this client
-    /// has. Returns whether the lines changed.
+    /// updated; anything else is ignored. `isMarker` says whether a uid is
+    /// a marker this client has. Returns whether the lines changed.
     @discardableResult
-    public func receive(_ xml: String, isMarker: (String) -> Bool) -> Bool {
-        guard let event = try? CotEvent.parse(xml) else { return false }
-        if event.type == CotMarkerStore.deleteType { return delete(event) }
+    public func receive(_ event: CotEvent, isMarker: (String) -> Bool) -> Bool {
         guard let r = RangeBearingEvent.parse(event) else { return false }
         return take(r, isMarker: isMarker, received: true)
     }
 
-    /// What `restore` made of a kept event (5.5's ImportResult).
-    public enum RestoreResult: Equatable, Sendable {
-        case restored
-        /// A marker it names isn't here yet: try again later.
-        case deferred
-        /// Not a line.
-        case ignored
+    /// `receive` for the event's XML.
+    @discardableResult
+    public func receive(_ xml: String, isMarker: (String) -> Bool) -> Bool {
+        guard let event = try? CotEvent.parse(xml) else { return false }
+        return receive(event, isMarker: isMarker)
     }
 
     /// Takes back a line kept across launches. It is this client's own
-    /// (not shown as received) when its creator is `selfUID`.
-    public func restore(_ xml: String, isMarker: (String) -> Bool, selfUID: String) -> RestoreResult {
-        guard let event = try? CotEvent.parse(xml), let r = RangeBearingEvent.parse(event) else { return .ignored }
+    /// (not shown as received) when its creator is `selfUID`; deferred
+    /// while a marker it names isn't here yet.
+    public func restore(_ event: CotEvent, isMarker: (String) -> Bool, selfUID: String) -> ImportResult {
+        guard let r = RangeBearingEvent.parse(event) else { return .failure }
         take(r, isMarker: isMarker, received: r.creator?.uid != selfUID)
         let missing = [r.anchorUID, r.rangeUID].contains { $0.map { !isMarker($0) } ?? false }
-        return missing ? .deferred : .restored
+        return missing ? .deferred : .success
     }
 
     /// Adds the line `r` says, or updates the one with its uid.
@@ -215,19 +210,13 @@ public final class RangeBearingLines: ObservableObject {
         return true
     }
 
-    /// CotDeleteImporter: a link with a uid, relation and type, and
-    /// <__forcedelete>, removes that line.
-    private func delete(_ event: CotEvent) -> Bool {
-        guard let link = event.detail("link"), let uid = link["uid"], !uid.isEmpty,
-              link["relation"]?.isEmpty == false, link["type"]?.isEmpty == false,
-              event.detail("__forcedelete") != nil, self[uid] != nil else { return false }
-        remove(id: uid)
-        return true
-    }
-
-    public func remove(id: String) {
+    /// Removes the line `id`; returns whether it was here.
+    @discardableResult
+    public func remove(id: String) -> Bool {
+        guard self[id] != nil else { return false }
         lines.removeAll { $0.id == id }
         labels[id] = nil
+        return true
     }
 
     public func removeAll() {

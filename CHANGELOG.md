@@ -10,6 +10,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- One delete task importer, as 5.5 has (G3 clean-code re-audit, N2).
+  The CoT markers, the R&B lines and the routes each read a delete task
+  (`t-x-d-d`) themselves, three copies of 5.5's `CotDeleteImporter`
+  checks. Now `CotDelete` (in `MacTAKCot`) reads the task as the
+  importer does, and `MapItems.importDelete` acts on it once, for every
+  kind of item: a force delete removes the item the task names, and a
+  plain one makes a marker or contact stale. The routes, the R&B lines
+  and the archive also had their own copy of 5.5's `ImportResult`; they
+  share one now, with 5.5's names (`success`, `deferred`, `failure`).
+  `MapItems` parses each heard event once and hands it to every store.
+  Before, each store parsed the XML again.
 - The map's items in one place, `MapItems` (G3 clean-code re-audit,
   N1). The contacts, CoT markers, R&B lines, routes, which of them are
   hidden, and `MapLocator` now live in one type in `MacTAKComms`, and
@@ -61,6 +72,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A delete task now reaches every kind of map item, as in 5.5 (found
+  porting `CotDeleteImporter` once, N2). A force delete naming a contact
+  now removes it, and a plain one makes the contact stale; before,
+  contacts ignored delete tasks. A plain delete task no longer makes a
+  Spot Map point stale: 5.5's refresher skips a marker it doesn't time
+  out, as it already skipped an archived one here.
 - Quitting while a server's TLS handshake is still in flight no longer
   crashes the app (#270). commo's `ContactManager` never unregistered
   from the streaming layer, which could tell it a stream was up after it

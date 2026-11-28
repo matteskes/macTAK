@@ -1,7 +1,8 @@
 // MapItems (G3 clean-code re-audit, N1): the one place the map's item
 // kinds are listed. A change to any of them gives one `changed`, after the
-// change has landed; a CoT event commo heard reaches each kind; and a line's
-// end can be tied to a contact, a marker or this client.
+// change has landed; a CoT event commo heard reaches each kind; a delete
+// task reaches whichever kind has the item (N2); and a line's end can be
+// tied to a contact, a marker or this client.
 
 import Combine
 import Foundation
@@ -60,6 +61,51 @@ final class MapItemsTests: XCTestCase {
         XCTAssertNotNil(items.contacts["peer"])
         XCTAssertNotNil(items.markers["m1"])
         XCTAssertEqual(items.rangeBearing["line-1"]?.end, .item("m1"), "the line's end is tied to the marker heard")
+    }
+
+    // N2: a delete task (t-x-d-d) as 5.5's CotDeleteImporter takes it,
+    // across every kind of item.
+
+    private func delete(_ uid: String, force: Bool) -> String {
+        "<event version='2.0' uid='del-1' type='\(CotDelete.type)' time='\(Cot.time(t0))' start='\(Cot.time(t0))'"
+            + " stale='\(Cot.time(t0.addingTimeInterval(20)))' how='h-g-i-g-o'>"
+            + "<point lat='0' lon='0' hae='0' ce='9999999' le='9999999'/>"
+            + "<detail><link uid='\(uid)' relation='none' type='none'/>"
+            + (force ? "<__forcedelete/>" : "") + "</detail></event>"
+    }
+
+    /// A contact, a marker, a line and a route, all heard at t0.
+    private func oneOfEachKind() -> (line: String, route: String) {
+        items.receive(sa("peer"), via: .mesh, at: t0)
+        items.receive(marker("m1"), via: .mesh, at: t0)
+        items.receive(line(endUID: "m1"), via: .mesh, at: t0)
+        let route = items.routes.add(points: [.waypoint(here, uid: "a"), .waypoint(there, uid: "b")])
+        return ("line-1", route.id)
+    }
+
+    func testAForceDeleteRemovesTheItemItNamesOfAnyKind() {
+        let (line, route) = oneOfEachKind()
+        for uid in ["peer", "m1", line, route] {
+            items.receive(delete(uid, force: true), via: .mesh, at: t0)
+        }
+        XCTAssertNil(items.contacts["peer"], "a contact too: 5.5 removes any map item")
+        XCTAssertNil(items.markers["m1"])
+        XCTAssertNil(items.rangeBearing[line])
+        XCTAssertNil(items.routes[route], "a route made here goes too")
+    }
+
+    func testAPlainDeleteStalesAMarkerOrContactAndLeavesLinesAndRoutes() throws {
+        let (line, route) = oneOfEachKind()
+        let later = t0.addingTimeInterval(10)
+        for uid in ["peer", "m1", line, route] {
+            items.receive(delete(uid, force: false), via: .mesh, at: later)
+        }
+        XCTAssertEqual(items.markers["m1"]?.isStale(at: later), true)
+        let peer = try XCTUnwrap(items.contacts["peer"])
+        XCTAssertTrue(peer.isStale(at: later), "a contact is a marker in 5.5: forceStale reaches it")
+        XCTAssertEqual(peer.removeAt, later.addingTimeInterval(ContactStore.removeAfterStale))
+        XCTAssertNotNil(items.rangeBearing[line], "forceStale is for markers only")
+        XCTAssertNotNil(items.routes[route])
     }
 
     func testALinesEndCanBeAContactAMarkerOrThisClient() {

@@ -11,8 +11,10 @@
 //   and details included), on the main queue after the change has landed,
 //   coalesced to one per turn of the queue: objectWillChange fires before
 //   a change, so each follower used to defer its own work the same way;
-// - `receive` hands a CoT event commo heard to each kind, `expire` and
-//   `removeHeard` do the stale-time and stop work;
+// - `receive` reads a CoT event commo heard once and hands it to each
+//   kind, or, a delete task, takes it as 5.5's CotDeleteImporter does
+//   (`importDelete`); `expire` and `removeHeard` do the stale-time and
+//   stop work;
 // - the archive (G3.9a): what is kept across launches (`archivedItems`)
 //   and how a kept one comes back (`importKept`), with the events 5.5
 //   writes for a line and a route, which Send uses too.
@@ -80,12 +82,40 @@ public final class MapItems {
 
     // MARK: - what commo hears
 
-    /// Hands a CoT event heard `via` a server or the mesh to each kind.
-    public func receive(_ xml: String, via path: Contact.Path) {
-        contacts.receive(xml, via: path)
-        markers.receive(xml)
-        rangeBearing.receive(xml, isMarker: isMapItem)
-        routes.receive(xml, isItem: isMapItem)
+    /// Hands a CoT event heard `via` a server or the mesh to each kind,
+    /// or takes it as a delete task.
+    public func receive(_ xml: String, via path: Contact.Path, at now: Date = Date()) {
+        guard let event = try? CotEvent.parse(xml, now: now) else { return }
+        if let task = CotDelete.parse(event) {
+            importDelete(task, at: now)
+            return
+        }
+        contacts.receive(event, via: path, at: now)
+        markers.receive(event, xml: xml, at: now)
+        rangeBearing.receive(event, isMarker: isMapItem)
+        routes.receive(event, isItem: isMapItem)
+    }
+
+    /// 5.5's CotDeleteImporter: a force delete removes the item the task
+    /// names, whatever kind it is; otherwise, or when no item has its uid,
+    /// a marker or contact it names goes stale now (staleRemoteDisconnects,
+    /// on by default).
+    ///
+    /// Not as 5.5: there is no findAssocShape step, which swaps a shape's
+    /// part (a shape's centre marker, an R&B end marker) for the shape, as
+    /// no part of an item is an item of its own here yet; and no item here
+    /// sets remoteDelete false (5.5's own location marker does, which isn't
+    /// one of these).
+    func importDelete(_ task: CotDelete, at now: Date) {
+        if task.force, remove(task.uid) { return }
+        if !markers.forceStale(task.uid, at: now) {
+            contacts.forceStale(task.uid, at: now)
+        }
+    }
+
+    /// Removes the item `uid` of any kind; returns whether one was here.
+    private func remove(_ uid: String) -> Bool {
+        markers.remove(uid: uid) || contacts.remove(uid) || rangeBearing.remove(id: uid) || routes.remove(id: uid)
     }
 
     /// Whether a uid is something a line's end or a route's point can be
@@ -165,22 +195,23 @@ public final class MapItems {
     /// StateSaver's extra: a marker always (MarkerImporter), a route as a
     /// shape, its points with it (DrawingImporter), a line when it is
     /// first added (RangeAndBearingImporter), which a kept one is.
-    private func importKept(_ kept: StoredMapItem) -> MapItemArchive.Import {
+    private func importKept(_ kept: StoredMapItem) -> ImportResult {
         let xml = kept.event
-        let marker = markers.receive(xml)
+        guard let event = try? CotEvent.parse(xml) else { return .failure }
+        let marker = markers.receive(event, xml: xml)
         if marker { visibility.set(kept.uid, visible: kept.visible) }
-        if routes.restore(xml, isItem: isMapItem, selfUID: selfUID) == .restored {
+        if routes.restore(event, isItem: isMapItem, selfUID: selfUID) == .success {
             if let route = routes[kept.uid], visibility.isVisible(route.id) != kept.visible {
                 visibility.set([route.id] + route.points.map(\.uid), visible: kept.visible)
             }
-            return .taken
+            return .success
         }
-        switch rangeBearing.restore(xml, isMarker: isMapItem, selfUID: selfUID) {
-        case .restored:
+        switch rangeBearing.restore(event, isMarker: isMapItem, selfUID: selfUID) {
+        case .success:
             visibility.set(kept.uid, visible: kept.visible)
-            return .taken
+            return .success
         case .deferred: return .deferred
-        case .ignored: return marker ? .taken : .ignored
+        case .failure: return marker ? .success : .failure
         }
     }
 

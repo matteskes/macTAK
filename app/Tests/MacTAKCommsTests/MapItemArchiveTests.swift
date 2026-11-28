@@ -86,8 +86,8 @@ final class MapItemArchiveTests: XCTestCase {
             let event = item.event
             tries[event, default: 0] += 1
             switch event {
-            case "taken-1": return .taken
-            case "late-1": return tries[event] == 1 ? .deferred : .taken
+            case "taken-1": return .success
+            case "late-1": return tries[event] == 1 ? .deferred : .success
             default: return .deferred
             }
         }, current: { [] })
@@ -128,7 +128,7 @@ final class MapItemArchiveTests: XCTestCase {
             link["uid"] = "hostile-1"; link["relation"] = "none"; link["type"] = "none"
             detail.add(link)
             detail.add(CotDetail("__forcedelete"))
-            receive(c, CotEvent(uid: "del", type: CotMarkerStore.deleteType, time: now, stale: now,
+            receive(c, CotEvent(uid: "del", type: CotDelete.type, time: now, stale: now,
                                 how: "h-g-i-g-o", point: here, detail: detail).xml())
             c.syncArchive()
         }

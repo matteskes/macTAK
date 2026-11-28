@@ -9,9 +9,7 @@
 //   made it (RouteImporter, RouteEvent.read); a route 5.5 refuses (fewer
 //   than two points, a colour that isn't a number) changes nothing. Its
 //   ends and names are put right as for a new one;
-// - a delete task with <__forcedelete> removes the route it names, made
-//   here or not; one without only greys markers, so it leaves routes
-//   alone (CotDeleteImporter);
+// - a delete task removes a route through MapItems.importDelete;
 // - routes are kept across launches (Route sets archive): the
 //   MapItemArchive stores them and gives them back through `restore`,
 //   after the markers (5.5's query order puts b-m-r last), so a link to a
@@ -73,26 +71,27 @@ public final class Routes: ObservableObject {
     }
 
     /// Takes in a CoT event commo received: a b-m-r route is added or
-    /// updated, a force-delete task naming a route removes it; anything
-    /// else is ignored. `isItem` says whether a uid is a map item here.
-    /// Returns whether the routes changed.
+    /// updated; anything else is ignored. `isItem` says whether a uid is a
+    /// map item here. Returns whether the routes changed.
+    @discardableResult
+    public func receive(_ event: CotEvent, isItem: (String) -> Bool) -> Bool {
+        take(event, isItem: isItem, received: true)
+    }
+
+    /// `receive` for the event's XML.
     @discardableResult
     public func receive(_ xml: String, isItem: (String) -> Bool) -> Bool {
         guard let event = try? CotEvent.parse(xml) else { return false }
-        if event.type == CotMarkerStore.deleteType { return delete(event) }
-        return take(event, isItem: isItem, received: true)
+        return receive(event, isItem: isItem)
     }
-
-    /// What `restore` made of a kept event.
-    public enum RestoreResult: Equatable, Sendable { case restored, ignored }
 
     /// Takes back a route kept across launches. It is this client's own
     /// (not shown as received) when its creator is `selfUID`.
-    public func restore(_ xml: String, isItem: (String) -> Bool, selfUID: String) -> RestoreResult {
-        guard let event = try? CotEvent.parse(xml), event.type == Route.type else { return .ignored }
+    public func restore(_ event: CotEvent, isItem: (String) -> Bool, selfUID: String) -> ImportResult {
+        guard event.type == Route.type else { return .failure }
         let mine = Author(creator: event.detail("creator"), orTime: event.time)?.uid == selfUID
         take(event, isItem: isItem, received: !mine)
-        return self[event.uid] != nil ? .restored : .ignored
+        return self[event.uid] != nil ? .success : .failure
     }
 
     @discardableResult
@@ -113,18 +112,12 @@ public final class Routes: ObservableObject {
         return true
     }
 
-    /// CotDeleteImporter: a link with a uid, relation and type, and
-    /// <__forcedelete>, removes that route.
-    private func delete(_ event: CotEvent) -> Bool {
-        guard let link = event.detail("link"), let uid = link["uid"], !uid.isEmpty,
-              link["relation"]?.isEmpty == false, link["type"]?.isEmpty == false,
-              event.detail("__forcedelete") != nil, self[uid] != nil else { return false }
-        remove(id: uid)
-        return true
-    }
-
-    public func remove(id: String) {
+    /// Removes the route `id`; returns whether it was here.
+    @discardableResult
+    public func remove(id: String) -> Bool {
+        guard self[id] != nil else { return false }
         routes.removeAll { $0.id == id }
+        return true
     }
 
     public func removeAll() {

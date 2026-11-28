@@ -104,14 +104,7 @@ final class PointDropperTests: XCTestCase {
         XCTAssertEqual(r.traits.color, 0xFFFF_0000)
         XCTAssertEqual(MarkerIcons.icon(r.traits, stale: false) { _ in nil },
                        MarkerIcon(uri: "asset://icons/reference_point.png", color: 0xFFFF_0000))
-        markers.receive(CotEvent(uid: "theirs", type: CotMarkerStore.deleteType, time: t, stale: t, how: "h-g-i-g-o",
-                                 detail: {
-                                     var d = CotDetail("detail")
-                                     var link = CotDetail("link")
-                                     link["uid"] = "theirs"; link["relation"] = "none"; link["type"] = "none"
-                                     d.add(link); d.add(CotDetail("__forcedelete"))
-                                     return d
-                                 }()).xml(), at: t)
+        markers.remove(uid: "theirs")
         tool.begin(.spotMap(.white))
         XCTAssertEqual(tool.click(.ground(there), at: t)?.label, "W 1", "the lowest free number")
     }
