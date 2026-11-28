@@ -100,7 +100,7 @@ extension SelfEvent.Location {
         case .provider:
             return PrecisionLocation(geopointSource: PrecisionLocation.gps, altitudeSource: PrecisionLocation.gps)
         case .manual:
-            let altitudeKnown = point.hae != CotPoint.unknown
+            let altitudeKnown = point.validAltitude != nil
             return PrecisionLocation(geopointSource: PrecisionLocation.user,
                                      altitudeSource: altitudeKnown ? PrecisionLocation.user : PrecisionLocation.unknown)
         }

@@ -8,7 +8,7 @@
 // Stale and removal follow ATAK 5.5 (MarkerImporter, CotMarkerRefresher),
 // timed by this Mac's clock from when the SA arrived, so a peer with a
 // skewed clock still goes stale on time:
-//   - stale 1.5 × (stale − start) after its last SA (autoStaleDuration)
+//   - stale 1.5 × (stale − start) after its last SA (CotEvent.autoStaleDuration)
 //   - removed 5 minutes after it went stale (expireStaleItemsTime) or when
 //     commo reports the contact gone.
 // A stale contact stays in the list, greyed, as ATAK greys its marker.
@@ -80,7 +80,7 @@ public final class ContactStore: ObservableObject {
     public func receive(_ event: CotEvent, via path: Contact.Path, at now: Date = Date()) -> Bool {
         guard event.uid != selfUID, Self.isContactSA(event),
               let contact = event.detail("contact"), let endpoint = contact["endpoint"] else { return false }
-        let autoStale = max(0, event.stale.timeIntervalSince(event.start) * 1.5)
+        let autoStale = event.autoStaleDuration
         var paths = byUID[event.uid]?.paths ?? []
         paths.insert(path)
         let staleAt = now.addingTimeInterval(autoStale)

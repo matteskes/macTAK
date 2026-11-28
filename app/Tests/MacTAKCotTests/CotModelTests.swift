@@ -43,6 +43,37 @@ final class CotModelTests: XCTestCase {
         XCTAssertEqual(nan.point.ce, CotPoint.unknown)
     }
 
+    // d: the kernel's CotPoint.isInvalid on the CoT side, and the map side's
+    // GeoPoint.isAltitudeValid range on top (validAltitude).
+
+    func testCotKeepsAnyAltitudeButTheMapTakesOnlyGeoPointsRange() throws {
+        XCTAssertTrue(CotPoint.isInvalid(CotPoint.unknown))
+        XCTAssertTrue(CotPoint.isInvalid(.nan))
+        XCTAssertFalse(CotPoint.isInvalid(80_000), "CoT keeps it as it came")
+        let high = try CotEvent.parse(event("<point lat='1' lon='2' hae='80000'/>")).point
+        XCTAssertEqual(high.hae, 80_000)
+        XCTAssertNil(high.validAltitude, "above GeoPoint's 76000 m")
+        XCTAssertNil(CotPoint(lat: 1, lon: 2, hae: -14_001).validAltitude, "below −14000 m")
+        XCTAssertEqual(CotPoint(lat: 1, lon: 2, hae: -14_000).validAltitude, -14_000)
+        XCTAssertEqual(CotPoint(lat: 1, lon: 2, hae: 76_000).validAltitude, 76_000)
+        XCTAssertNil(CotPoint(lat: 1, lon: 2).validAltitude, "unknown")
+    }
+
+    // d: MarkerImporter's autoStaleDuration, (3 × (stale − start)) / 2 in
+    // Java's whole milliseconds.
+
+    func testAutoStaleIsOneAndAHalfTimesInWholeMilliseconds() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        func autoStale(after millis: Double) -> TimeInterval {
+            CotEvent(uid: "u", type: "a-f-G", time: start, stale: start.addingTimeInterval(millis / 1000),
+                     how: "m-g").autoStaleDuration
+        }
+        XCTAssertEqual(autoStale(after: 60_000), 90)
+        XCTAssertEqual(autoStale(after: 1), 0.001, "3 / 2 is 1 in Java's long division, not 1.5")
+        XCTAssertEqual(autoStale(after: 3), 0.004, "9 / 2 is 4")
+        XCTAssertEqual(autoStale(after: -5_000), 0, "a stale before the start is 0")
+    }
+
     func testReadsTimesWithAndWithoutFractions() throws {
         let e = try CotEvent.parse("<event uid='u' type='t' time='2026-11-17T12:00:00Z' start='2026-11-17T12:00:00.5Z' stale='junk' how='m-g'/>",
                                    now: Date(timeIntervalSince1970: 0))
@@ -89,6 +120,8 @@ final class CotModelTests: XCTestCase {
         XCTAssertEqual(s.precision, PrecisionLocation(geopointSource: "USER", altitudeSource: "???"))
         s.location = .init(point: CotPoint(lat: 1, lon: 2, hae: 30), source: .manual)
         XCTAssertEqual(s.precision?.altitudeSource, "USER")
+        s.location = .init(point: CotPoint(lat: 1, lon: 2, hae: 80_000), source: .manual)
+        XCTAssertEqual(s.precision?.altitudeSource, "???", "outside GeoPoint's range is no altitude")
         s.location?.source = .provider
         XCTAssertEqual(s.how, "m-g")
         XCTAssertEqual(s.precision, PrecisionLocation(geopointSource: "GPS", altitudeSource: "GPS"))
