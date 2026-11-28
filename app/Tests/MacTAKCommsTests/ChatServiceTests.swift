@@ -315,6 +315,25 @@ final class ChatServiceTests: XCTestCase {
         XCTAssertTrue(a.lines(ChatRoom.allChatRooms)[0].outgoing)
     }
 
+    /// 5.5's Chat Preferences › Clear History (GeoChatService.clearMessageDB,
+    /// ChatDatabase.clearAll): the history and the user groups go, and, as
+    /// 5.5 deletes the file securely, nothing of them is left on disk.
+    func testClearHistoryRemovesTheHistoryAndGroupsFromDisk() async throws {
+        let (a, b, _) = try three()
+        try a.chat.send("secret-words", to: ChatRoom.allChatRooms)
+        a.chat.createGroup(name: "Squad", members: [b.uid])
+        await net.settle()
+        XCTAssertFalse(a.lines(ChatRoom.allChatRooms).isEmpty)
+        try a.chat.clearHistory()
+        XCTAssertTrue(a.lines(ChatRoom.allChatRooms).isEmpty)
+        XCTAssertFalse(a.chat.conversations.contains { $0.kind == .group }, "the user group went too")
+        for suffix in ["", "-wal"] {
+            let data = (try? Data(contentsOf: URL(fileURLWithPath: a.url.path + suffix))) ?? Data()
+            XCTAssertNil(data.range(of: Data("secret-words".utf8)), "left in the file\(suffix)")
+            XCTAssertNil(data.range(of: Data("Squad".utf8)), "left in the file\(suffix)")
+        }
+    }
+
     /// Clean-code audit d: a received message the store can't save says so
     /// with 5.5's toast text (ChatDatabase, chat_text14), not silently.
     func testAMessageThatCantBeSavedSaysSo() async throws {

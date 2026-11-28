@@ -11,7 +11,8 @@
 // A failed query or write doesn't stop the chat, as in ChatDatabase: each
 // is logged with 5.5's Log.e text and a reader gets nothing back. A message
 // or group that can't be saved (5.5's addChat and addGroup) also reports
-// 5.5's toast through `onNotSaved`. Only opening the file throws.
+// 5.5's toast through `onNotSaved`. Only opening the file and clearing it
+// (clearAll, whose error 5.5's Chat Preferences catches) throw.
 //
 // The app keeps one file per settings suite in Application Support; tests
 // use a temporary file. It is used from the main actor only.
@@ -170,6 +171,23 @@ public final class ChatStore {
             try db.run("DELETE FROM Groups WHERE conversationId = ?", [uid])
             try db.run("DELETE FROM Chat WHERE conversationId = ?", [uid])
         }
+    }
+
+    /// ChatDatabase.clearAll: every message and user group goes. 5.5
+    /// deletes the file with IOProvider.SECURE_DELETE and makes a new one;
+    /// here the rows go with SQLite's secure_delete on (freed pages are
+    /// overwritten), the file is vacuumed and the write-ahead log emptied,
+    /// so what was cleared isn't left on disk either. Unlike the other
+    /// calls it throws: 5.5's ChatPrefsFragment catches a clear's error.
+    public func clearAll() throws {
+        try db.exec("""
+            PRAGMA secure_delete=ON;
+            DELETE FROM Chat;
+            DELETE FROM Groups;
+            VACUUM;
+            PRAGMA wal_checkpoint(TRUNCATE);
+            PRAGMA secure_delete=OFF;
+            """)
     }
 
     public func groups() -> [ChatGroup] {

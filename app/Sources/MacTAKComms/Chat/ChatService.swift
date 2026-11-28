@@ -169,6 +169,14 @@ public final class ChatService: ObservableObject {
         changed()
     }
 
+    /// 5.5's GeoChatService.clearMessageDB (Chat Preferences › Clear
+    /// History): the history and the user groups go, and the rooms are
+    /// rebuilt, as ChatDatabase.clearAll's fireChatDatabaseChanged has them.
+    public func clearHistory() throws {
+        try store.clearAll()
+        changed()
+    }
+
     // MARK: - user groups
 
     /// A group made here: its members and this client.

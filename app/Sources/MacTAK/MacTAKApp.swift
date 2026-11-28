@@ -71,9 +71,12 @@ struct MacTAKApp: App {
                     .tabItem { Label("Units", systemImage: "ruler") }
                 GeocoderSettings()
                     .tabItem { Label("Address Lookup", systemImage: "mappin.and.ellipse") }
+                ChatSettings()
+                    .tabItem { Label("Chat Preferences", systemImage: "bubble.left.and.bubble.right") }
             }
             .environmentObject(delegate.units)
             .environmentObject(delegate.geocoders)
+            .environmentObject(delegate.connections)
         }
     }
 }
