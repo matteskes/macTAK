@@ -8,6 +8,11 @@
 // `outgoing`, and `seen` (shown on this Mac, which 5.5 keeps in the
 // conversation's unread count instead).
 //
+// A failed query or write doesn't stop the chat, as in ChatDatabase: each
+// is logged with 5.5's Log.e text and a reader gets nothing back. A message
+// or group that can't be saved (5.5's addChat and addGroup) also reports
+// 5.5's toast through `onNotSaved`. Only opening the file throws.
+//
 // The app keeps one file per settings suite in Application Support; tests
 // use a temporary file. It is used from the main actor only.
 
@@ -64,6 +69,15 @@ public struct ChatGroup: Sendable, Equatable, Identifiable {
 public typealias ChatStoreError = SQLiteError
 
 public final class ChatStore {
+    /// 5.5's toast when ChatDatabase.addChat or addGroup fails (chat_text14
+    /// then clear_db_file), word for word.
+    public static let notSaved = "Chat issue - data not saved. "
+        + "Clear your chat if this continues after a restart under Chat Preferences.\n"
+        + "This will result in the loss of data"
+
+    /// Told `notSaved` when a message or group can't be saved.
+    public var onNotSaved: ((String) -> Void)?
+
     private let db: SQLiteDatabase
 
     /// The app's store for a settings suite: Application Support/macTAK/
@@ -88,66 +102,122 @@ public final class ChatStore {
 
     // MARK: - messages
 
-    /// Adds a line, or replaces the one with its message id.
-    public func save(_ line: ChatLine) throws {
-        try db.run("""
-            INSERT OR REPLACE INTO Chat(messageId, conversationId, conversationName, senderUid, senderCallsign,
-              message, sentTime, receiveTime, readTime, status, outgoing, seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-            """, [line.messageId, line.conversationId, line.conversationName, line.senderUid, line.senderCallsign,
-                  line.text, Self.millis(line.sentTime), line.receiveTime.map(Self.millis),
-                  line.readTime.map(Self.millis), Self.statusName(line.status), line.outgoing ? 1 : 0,
-                  line.seen ? 1 : 0])
+    /// Adds a line, or replaces the one with its message id (addChat).
+    public func save(_ line: ChatLine) {
+        added {
+            try db.run("""
+                INSERT OR REPLACE INTO Chat(messageId, conversationId, conversationName, senderUid, senderCallsign,
+                  message, sentTime, receiveTime, readTime, status, outgoing, seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """, [line.messageId, line.conversationId, line.conversationName, line.senderUid,
+                      line.senderCallsign, line.text, Self.millis(line.sentTime), line.receiveTime.map(Self.millis),
+                      line.readTime.map(Self.millis), Self.statusName(line.status), line.outgoing ? 1 : 0,
+                      line.seen ? 1 : 0])
+        }
     }
 
-    public func line(_ messageId: String) throws -> ChatLine? {
-        try lines("WHERE messageId = ?", [messageId]).first
+    public func line(_ messageId: String) -> ChatLine? {
+        logged(nil) { try lines("WHERE messageId = ?", [messageId]).first }
     }
 
     /// A conversation's lines, oldest first.
-    public func history(_ conversationId: String) throws -> [ChatLine] {
-        try lines("WHERE conversationId = ? ORDER BY sentTime, rowid", [conversationId])
+    public func history(_ conversationId: String) -> [ChatLine] {
+        logged([]) { try lines("WHERE conversationId = ? ORDER BY sentTime, rowid", [conversationId]) }
+    }
+
+    /// Marks a conversation's unseen incoming lines seen, and returns them,
+    /// oldest first. 5.5 keeps "read" on the shown line only, so this write
+    /// has no toast.
+    public func markSeen(_ conversationId: String) -> [ChatLine] {
+        let unseen = logged([]) {
+            try lines("WHERE conversationId = ? AND \(Self.unseen) ORDER BY sentTime, rowid", [conversationId])
+        }
+        guard !unseen.isEmpty else { return [] }
+        logged(()) { try db.run("UPDATE Chat SET seen = 1 WHERE conversationId = ? AND \(Self.unseen)",
+                                [conversationId]) }
+        return unseen.map { var line = $0; line.seen = true; return line }
     }
 
     /// Every conversation with lines, with its name and unread count.
-    public func conversations() throws -> [(id: String, name: String, unread: Int, last: Date)] {
-        var out: [(String, String, Int, Date)] = []
-        try db.query("""
-            SELECT conversationId, conversationName, SUM(CASE WHEN outgoing = 0 AND seen = 0 THEN 1 ELSE 0 END),
-              MAX(sentTime) FROM Chat GROUP BY conversationId
-            """, []) { row in
-            out.append((row.text(0), row.text(1), Int(row.int(2)), Self.date(row.int(3))))
-        }
-        return out.map { (id: $0.0, name: $0.1, unread: $0.2, last: $0.3) }
-    }
-
-    // MARK: - groups
-
-    public func save(_ group: ChatGroup) throws {
-        let members = String(data: try JSONEncoder().encode(group.members), encoding: .utf8)!
-        try db.run("""
-            INSERT OR REPLACE INTO Groups(conversationId, conversationName, createdLocally, destinations, parent)
-            VALUES(?,?,?,?,?)
-            """, [group.uid, group.name, group.createdLocally ? 1 : 0, members, ChatRoom.userGroups])
-    }
-
-    /// Removes a group and its history, as ChatDatabase.removeGroup does.
-    public func removeGroup(_ uid: String) throws {
-        try db.run("DELETE FROM Groups WHERE conversationId = ?", [uid])
-        try db.run("DELETE FROM Chat WHERE conversationId = ?", [uid])
-    }
-
-    public func groups() throws -> [ChatGroup] {
-        var out: [ChatGroup] = []
-        try db.query("SELECT conversationId, conversationName, createdLocally, destinations FROM Groups ORDER BY rowid",
-                  []) { row in
-            let members = (try? JSONDecoder().decode([String].self, from: Data(row.text(3).utf8))) ?? []
-            out.append(ChatGroup(uid: row.text(0), name: row.text(1),
-                                 members: members, createdLocally: row.int(2) != 0))
+    public func conversations() -> [(id: String, name: String, unread: Int, last: Date)] {
+        var out: [(id: String, name: String, unread: Int, last: Date)] = []
+        logged(()) {
+            try db.query("""
+                SELECT conversationId, conversationName, SUM(CASE WHEN \(Self.unseen) THEN 1 ELSE 0 END),
+                  MAX(sentTime) FROM Chat GROUP BY conversationId
+                """, []) { row in
+                out.append((id: row.text(0), name: row.text(1), unread: Int(row.int(2)), last: Self.date(row.int(3))))
+            }
         }
         return out
     }
 
+    // MARK: - groups
+
+    /// Adds a group, or replaces the one with its uid (addGroup).
+    public func save(_ group: ChatGroup) {
+        added {
+            let members = String(data: try JSONEncoder().encode(group.members), encoding: .utf8)!
+            try db.run("""
+                INSERT OR REPLACE INTO Groups(conversationId, conversationName, createdLocally, destinations, parent)
+                VALUES(?,?,?,?,?)
+                """, [group.uid, group.name, group.createdLocally ? 1 : 0, members, ChatRoom.userGroups])
+        }
+    }
+
+    /// Removes a group and its history, as ChatDatabase.removeGroup does.
+    public func removeGroup(_ uid: String) {
+        logged((), log: Self.removeGroupFailed) {
+            try db.run("DELETE FROM Groups WHERE conversationId = ?", [uid])
+            try db.run("DELETE FROM Chat WHERE conversationId = ?", [uid])
+        }
+    }
+
+    public func groups() -> [ChatGroup] {
+        var out: [ChatGroup] = []
+        logged(()) {
+            try db.query("""
+                SELECT conversationId, conversationName, createdLocally, destinations FROM Groups ORDER BY rowid
+                """, []) { row in
+                let members = (try? JSONDecoder().decode([String].self, from: Data(row.text(3).utf8))) ?? []
+                out.append(ChatGroup(uid: row.text(0), name: row.text(1),
+                                     members: members, createdLocally: row.int(2) != 0))
+            }
+        }
+        return out
+    }
+
+    // MARK: - failures
+
+    /// 5.5's Log.e text for a failed ChatDatabase query.
+    static let queryFailed = "Experienced an issue with the SQL Query.  Clear your DB file if this continues"
+    /// 5.5's Log.e text when ChatDatabase.removeGroup fails.
+    static let removeGroupFailed = "Failed to delete invalid Chat Group."
+
+    /// A call whose failure the chat goes on without: logged, then `fallback`.
+    @discardableResult
+    private func logged<T>(_ fallback: T, log text: String = queryFailed, _ call: () throws -> T) -> T {
+        do {
+            return try call()
+        } catch {
+            NSLog("ChatStore: \(text) (\(error))")
+            return fallback
+        }
+    }
+
+    /// A write 5.5 makes through addChat or addGroup: logged, and toasted.
+    private func added(_ write: () throws -> Void) {
+        do {
+            try write()
+        } catch {
+            NSLog("ChatStore: \(Self.queryFailed) (\(error))")
+            onNotSaved?(Self.notSaved)
+        }
+    }
+
     // MARK: - rows
+
+    /// An incoming line not yet shown: what the unread count counts.
+    private static let unseen = "outgoing = 0 AND seen = 0"
 
     private func lines(_ clause: String, _ args: [Any?]) throws -> [ChatLine] {
         var out: [ChatLine] = []

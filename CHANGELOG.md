@@ -15,8 +15,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it is now `GroupDetail.defaultTeam`, named after 5.5's `locationTeam`
   preference default. In `ChatService`, the delivered and read receipts
   are sent by one `sendReceipt`, and the three "everyone but me" filters
-  are one `others`. The chat's thirteen store calls that dropped their
-  errors (`try?`) now log them as 5.5's `ChatDatabase` does.
+  are one `others`. The chat's store errors are handled in `ChatStore`
+  itself, as 5.5's `ChatDatabase` handles its own: no store call throws
+  any more (only opening the file does), so `ChatService` has no
+  error handling of its own, and `createGroup` and `deleteGroup` no
+  longer throw. Before, the thirteen calls dropped their errors (`try?`)
+  in `ChatService`. "Unread" is now written once, in the store:
+  `markSeen` marks a room's unseen incoming lines and returns them for
+  the read receipts.
 - The map's items in one place, `MapItems` (G3 clean-code re-audit,
   N1). The contacts, CoT markers, R&B lines, routes, which of them are
   hidden, and `MapLocator` now live in one type in `MacTAKComms`, and
@@ -68,14 +74,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- A received chat message, receipt or group that can't be saved now
-  says so in the chat window with 5.5's own words ("Chat issue - data
-  not saved. Clear your chat if this continues after a restart under
-  Chat Preferences."), instead of vanishing without a trace (item d), as
-  5.5's `addChat` and `addGroup` do. The store errors are logged with
-  5.5's log text too, including `removeGroup`'s own. 5.5's Chat Preferences control that
-  clears the chat (`ChatPrefsFragment.clearChatHistory`) isn't in
-  macTAK yet.
+- A chat message, receipt or group that can't be saved now says so in
+  the chat window with 5.5's own words ("Chat issue - data not saved.
+  Clear your chat if this continues after a restart under Chat
+  Preferences."), as 5.5's `addChat` and `addGroup` do (item d). Before,
+  a received one vanished without a trace, a message being sent wasn't
+  sent at all (only a log line said so), and a new group failed
+  silently. Now a message is sent even when it can't be kept, as 5.5's
+  `persistMessage` sends it. The store errors
+  are logged with 5.5's log text too, including `removeGroup`'s own.
+  5.5's Chat Preferences control that clears the chat
+  (`ChatPrefsFragment.clearChatHistory`) isn't in macTAK yet.
 - Quitting while a server's TLS handshake is still in flight no longer
   crashes the app (#270). commo's `ContactManager` never unregistered
   from the streaming layer, which could tell it a stream was up after it

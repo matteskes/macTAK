@@ -122,7 +122,7 @@ private struct ChatBrowser: View {
                     ForEach(chat.conversations.filter { $0.kind == .group }) { room in
                         RoomRow(room: room).tag(room.id)
                             .contextMenu {
-                                Button("Delete Group", role: .destructive) { try? chat.deleteGroup(room.id) }
+                                Button("Delete Group", role: .destructive) { chat.deleteGroup(room.id) }
                             }
                     }
                 } header: {
@@ -308,10 +308,9 @@ private struct NewGroupSheet: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                 Button("Create") {
-                    if let group = try? chat.createGroup(name: name.trimmingCharacters(in: .whitespaces),
-                                                         members: Array(members)) {
-                        selection.room = group.uid
-                    }
+                    let group = chat.createGroup(name: name.trimmingCharacters(in: .whitespaces),
+                                                 members: Array(members))
+                    selection.room = group.uid
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
