@@ -35,6 +35,14 @@ public struct CotPoint: Sendable, Equatable {
     /// outside −14000…76000 m.
     public var validAltitude: Double? { Altitude.isValid(hae) ? hae : nil }
 
+    /// The kernel's CotPoint(GeoPoint): a point from the map side as CoT
+    /// writes it, its altitude unknown unless GeoPoint.isAltitudeValid
+    /// (ce and le are already checked by CotPoint.isInvalid). Every event
+    /// made here writes its point through this, as 5.5's do.
+    public init(mapPoint p: CotPoint) {
+        self.init(lat: p.lat, lon: p.lon, hae: p.validAltitude ?? Self.unknown, ce: p.ce, le: p.le)
+    }
+
     public var isValid: Bool { (-90...90).contains(lat) && (-180...180).contains(lon) }
 
     /// The kernel rounds as it writes: 7 decimals for lat and lon, 4 for hae

@@ -88,7 +88,7 @@ public struct SelfEvent: Sendable, Equatable {
         detail.add(status)
         detail.add(track.detail)
         return CotEvent(uid: uid, type: type, time: now, stale: now.addingTimeInterval(stale),
-                        how: how, point: location?.point ?? .zero, detail: detail)
+                        how: how, point: location.map { CotPoint(mapPoint: $0.point) } ?? .zero, detail: detail)
     }
 }
 

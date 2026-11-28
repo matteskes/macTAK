@@ -93,7 +93,7 @@ extension CotEvent {
     public mutating func move(to place: SourcedPoint) {
         guard isMovable, place.point.isValid else { return }
         if !AddressDetail.sameLocation(point, place.point) { removeDetails(AddressDetail.elementName) }
-        point = place.point
+        point = CotPoint(mapPoint: place.point)
         removeDetails(PrecisionLocation.elementName)
         if let precision = place.precision?.detail { replaceDetail(precision) }
     }

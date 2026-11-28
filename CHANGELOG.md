@@ -86,7 +86,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unknown value counted as none, so such an altitude reached the map's
   markers, Go To, the self report's altitude-change check and the
   placed position's altitude source. CoT itself still keeps the value as
-  it came, as the kernel does.
+  it came, as the kernel does. Every event made here now writes such an
+  altitude as unknown, as 5.5's `CotPoint(GeoPoint)` does: the self
+  report, a chat message's point, a placed or moved point, and an R&B
+  line's start.
 - A marker's or contact's stale time is now 5.5's to the millisecond
   (item d). 5.5 works out 1.5 × (stale − start) in whole milliseconds,
   rounding down; macTAK worked in fractions of a second.

@@ -59,6 +59,17 @@ final class CotModelTests: XCTestCase {
         XCTAssertNil(CotPoint(lat: 1, lon: 2).validAltitude, "unknown")
     }
 
+    /// The kernel's CotPoint(GeoPoint): an event made here writes an
+    /// altitude outside GeoPoint's range as unknown.
+    func testAnEventMadeHereWritesAnAltitudeOutOfRangeAsUnknown() {
+        XCTAssertEqual(CotPoint(mapPoint: CotPoint(lat: 1, lon: 2, hae: 80_000, ce: 5)),
+                       CotPoint(lat: 1, lon: 2, ce: 5))
+        XCTAssertEqual(CotPoint(mapPoint: CotPoint(lat: 1, lon: 2, hae: 30)).hae, 30)
+        var s = SelfEvent(uid: "u", callsign: "c")
+        s.location = .init(point: CotPoint(lat: 1, lon: 2, hae: 80_000), source: .manual)
+        XCTAssertEqual(s.event(stale: 60).point.hae, CotPoint.unknown, "the self report")
+    }
+
     // d: MarkerImporter's autoStaleDuration, (3 × (stale − start)) / 2 in
     // Java's whole milliseconds.
 
