@@ -334,6 +334,18 @@ final class ChatServiceTests: XCTestCase {
         }
     }
 
+    /// A clear that fails part way may already have removed lines: the rooms
+    /// are rebuilt anyway, so the window doesn't show what's gone.
+    func testAFailedClearStillRebuildsTheRooms() async throws {
+        let (a, _, _) = try three()
+        try a.chat.send("x", to: ChatRoom.allChatRooms)
+        await net.settle()
+        XCTAssertNotNil(a.chat.conversation(ChatRoom.allChatRooms)?.lastMessage)
+        _ = try SQLiteDatabase(url: a.url, schema: "DROP TABLE Groups;")   // Chat goes, then Groups fails
+        XCTAssertThrowsError(try a.chat.clearHistory())
+        XCTAssertNil(a.chat.conversation(ChatRoom.allChatRooms)?.lastMessage)
+    }
+
     /// Clean-code audit d: a received message the store can't save says so
     /// with 5.5's toast text (ChatDatabase, chat_text14), not silently.
     func testAMessageThatCantBeSavedSaysSo() async throws {

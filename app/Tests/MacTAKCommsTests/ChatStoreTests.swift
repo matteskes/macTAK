@@ -110,6 +110,18 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(toasts, [ChatStore.notSaved, ChatStore.notSaved])
     }
 
+    /// clearAll turns secure_delete on for itself only: macOS's SQLite starts
+    /// at FAST (2), and later deletes must keep it, a failed clear too.
+    func testClearAllPutsSecureDeleteBack() throws {
+        let store = try ChatStore(url: url)
+        let before = try store.secureDelete()
+        try store.clearAll()
+        XCTAssertEqual(try store.secureDelete(), before)
+        _ = try SQLiteDatabase(url: url, schema: "DROP TABLE Groups;")
+        XCTAssertThrowsError(try store.clearAll())
+        XCTAssertEqual(try store.secureDelete(), before, "after a failed clear")
+    }
+
     func testAnUnwritablePathIsAnError() {
         XCTAssertThrowsError(try ChatStore(url: URL(fileURLWithPath: "/nonexistent-dir/chat.sqlite")))
     }

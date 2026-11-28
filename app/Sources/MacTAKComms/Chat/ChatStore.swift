@@ -177,17 +177,36 @@ public final class ChatStore {
     /// deletes the file with IOProvider.SECURE_DELETE and makes a new one;
     /// here the rows go with SQLite's secure_delete on (freed pages are
     /// overwritten), the file is vacuumed and the write-ahead log emptied,
-    /// so what was cleared isn't left on disk either. Unlike the other
+    /// so what was cleared isn't left on disk either. secure_delete goes back
+    /// to what it was (macOS's SQLite starts at FAST). Unlike the other
     /// calls it throws: 5.5's ChatPrefsFragment catches a clear's error.
     public func clearAll() throws {
+        let previous = try secureDelete()
+        try db.exec("PRAGMA secure_delete=ON")
+        defer {
+            do {
+                try db.exec("PRAGMA secure_delete=\(Self.secureDeleteModes[previous])")
+            } catch {
+                NSLog("ChatStore: secure_delete not restored (\(error))")
+            }
+        }
         try db.exec("""
-            PRAGMA secure_delete=ON;
             DELETE FROM Chat;
             DELETE FROM Groups;
             VACUUM;
             PRAGMA wal_checkpoint(TRUNCATE);
-            PRAGMA secure_delete=OFF;
             """)
+    }
+
+    /// SQLite's secure_delete modes by the number `PRAGMA secure_delete`
+    /// reads back. Set by name: SQLite reads a 2 as a boolean, so as ON.
+    private static let secureDeleteModes = ["OFF", "ON", "FAST"]
+
+    /// This connection's secure_delete: 0 off, 1 on, 2 fast.
+    func secureDelete() throws -> Int {
+        var mode = 0
+        try db.query("PRAGMA secure_delete", []) { mode = Int($0.int(0)) }
+        return mode
     }
 
     public func groups() -> [ChatGroup] {

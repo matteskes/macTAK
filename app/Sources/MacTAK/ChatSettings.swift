@@ -13,6 +13,9 @@ struct ChatSettings: View {
     @State private var confirming = false
     /// What 5.5 toasts after a clear, while it shows.
     @State private var toast: String?
+    /// Counts the toasts, so each one, even with the same words, gets its
+    /// own 2 seconds.
+    @State private var toasts = 0
 
     /// Toast.LENGTH_SHORT.
     private static let toastSeconds = 2.0
@@ -34,7 +37,7 @@ struct ChatSettings: View {
             Button("Yes", role: .destructive) { clearChatHistory() }
             Button("No", role: .cancel) {}
         }
-        .task(id: toast) {
+        .task(id: toasts) {
             guard toast != nil else { return }
             try? await Task.sleep(for: .seconds(Self.toastSeconds))   // cancelled: a newer toast replaced it
             if !Task.isCancelled { toast = nil }
@@ -50,9 +53,14 @@ struct ChatSettings: View {
         do {
             try chat.clearHistory()
             NSLog("ChatPrefsFragment: Cleared the Chat DB.")
-            toast = "Chat History deleted"
+            show("Chat History deleted")
         } catch {
             NSLog("ChatPrefsFragment: Error clearing chat message from Chat DB: \(error)")
         }
+    }
+
+    private func show(_ text: String) {
+        toast = text
+        toasts += 1
     }
 }
