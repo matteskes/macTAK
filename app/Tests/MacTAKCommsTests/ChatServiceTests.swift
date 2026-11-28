@@ -326,6 +326,31 @@ final class ChatServiceTests: XCTestCase {
         XCTAssertNil(a.chat.lastError, "the sender's own store is fine")
     }
 
+    /// 5.5 saves a receipt's status through addChat, so its failure gets the
+    /// same toast.
+    func testAReceiptThatCantBeSavedSaysSo() async throws {
+        let (a, b, _) = try three()
+        try a.chat.send("x", to: b.uid)
+        _ = try SQLiteDatabase(url: a.url, schema: """
+            CREATE TRIGGER broken BEFORE INSERT ON Chat BEGIN SELECT RAISE(ABORT, 'broken'); END;
+            """)   // A's store breaks after its own line is kept
+        await net.settle()
+        XCTAssertEqual(a.chat.lastError, ChatService.notSaved)
+        XCTAssertNil(b.chat.lastError)
+    }
+
+    /// 5.5's HierarchyParser saves a received group through addGroup, which
+    /// toasts on failure.
+    func testAGroupThatCantBeSavedSaysSo() async throws {
+        let (a, b, c) = try three()
+        let group = try a.chat.createGroup(name: "Recon", members: [b.uid, c.uid])
+        _ = try SQLiteDatabase(url: b.url, schema: "DROP TABLE Groups;")   // B's groups break
+        try a.chat.send("recon group up", to: group.uid)
+        await net.settle()
+        XCTAssertEqual(b.chat.lastError, ChatService.notSaved)
+        XCTAssertNil(c.chat.lastError)
+    }
+
     func testOldGeoChatIsResolvedByCallsign() throws {
         let (a, b, _) = try three()
         let t = Cot.time(Date())

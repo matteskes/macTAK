@@ -214,7 +214,7 @@ public final class ChatService: ObservableObject {
               line.status.takes(status) else { return }
         line.status = status
         if status == .delivered { line.receiveTime = time } else if status == .read { line.readTime = time }
-        stored("save a receipt") { try store.save(line) }
+        saved("save a receipt") { try store.save(line) }
         changed()
     }
 
@@ -230,7 +230,7 @@ public final class ChatService: ObservableObject {
         guard senderUid != me.sender.uid, !senderUid.isEmpty else { return }
 
         if let deleted = chat.deleteChild {
-            stored("remove group \(deleted)") { try store.removeGroup(deleted) }
+            stored("remove group \(deleted)", log: Self.removeGroupFailed) { try store.removeGroup(deleted) }
             refresh()
             return
         }
@@ -258,14 +258,12 @@ public final class ChatService: ObservableObject {
             line.status = .delivered
             sendReceipt(.delivered, for: line, me: me, at: now)
         }
-        if stored("save a received message", { try store.save(line) }) == nil {
-            lastError = Self.notSaved
-        }
+        saved("save a received message") { try store.save(line) }
         changed()
     }
 
-    /// 5.5's toast when a received message isn't saved (ChatDatabase:
-    /// chat_text14 then clear_db_file), word for word.
+    /// 5.5's toast when ChatDatabase.addChat or addGroup fails (chat_text14
+    /// then clear_db_file), word for word.
     static let notSaved = "Chat issue - data not saved. "
         + "Clear your chat if this continues after a restart under Chat Preferences.\n"
         + "This will result in the loss of data"
@@ -285,7 +283,7 @@ public final class ChatService: ObservableObject {
                     members.append(uid)
                 }
                 let group = ChatGroup(uid: node.uid, name: node.name, members: members, createdLocally: false)
-                stored("save group \(group.uid)") { try store.save(group) }
+                saved("save group \(group.uid)") { try store.save(group) }
             }
             refresh()
             return
@@ -297,7 +295,7 @@ public final class ChatService: ObservableObject {
         var members = chat.destinations
         if !members.contains(senderUid) { members.append(senderUid) }
         let group = ChatGroup(uid: conversationId, name: chat.chatroom, members: members, createdLocally: false)
-        stored("save group \(group.uid)") { try store.save(group) }
+        saved("save group \(group.uid)") { try store.save(group) }
         refresh()
     }
 
@@ -332,18 +330,28 @@ public final class ChatService: ObservableObject {
         send(xml, toMembers: [line.senderUid], me: me)
     }
 
-    /// A ChatStore call whose failure the chat goes on without: logged, as
-    /// 5.5's ChatDatabase logs an SQLiteException, and nil.
+    /// 5.5's Log.e text for a failed ChatDatabase query.
+    private nonisolated static let queryFailed =
+        "Experienced an issue with the SQL Query.  Clear your DB file if this continues"
+    /// 5.5's Log.e text when ChatDatabase.removeGroup fails.
+    private nonisolated static let removeGroupFailed = "Failed to delete invalid Chat Group."
+
+    /// A ChatStore call whose failure the chat goes on without: logged with
+    /// 5.5's text for it, then what failed, and nil.
     @discardableResult
-    private func stored<T>(_ what: String, _ call: () throws -> T) -> T? {
+    private func stored<T>(_ what: String, log: String = queryFailed, _ call: () throws -> T) -> T? {
         do {
             return try call()
         } catch {
-            // 5.5's Log.e text, then what failed
-            NSLog("ChatService: Experienced an issue with the SQL Query.  "
-                  + "Clear your DB file if this continues (\(what): \(error))")
+            NSLog("ChatService: \(log) (\(what): \(error))")
             return nil
         }
+    }
+
+    /// A ChatStore write that 5.5 makes through addChat or addGroup: when it
+    /// fails, the chat window shows 5.5's toast too.
+    private func saved(_ what: String, _ call: () throws -> Void) {
+        if stored(what, call) == nil { lastError = Self.notSaved }
     }
 
     private func dispatch(_ body: @escaping @Sendable (ChatTransport) async throws -> Void) {

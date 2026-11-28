@@ -68,11 +68,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- A received chat message that can't be saved now says so in the chat
-  window with 5.5's own words ("Chat issue - data not saved. Clear your
-  chat if this continues after a restart under Chat Preferences."),
-  instead of vanishing without a trace (item d). The store errors are
-  logged with 5.5's log text too. 5.5's Chat Preferences control that
+- A received chat message, receipt or group that can't be saved now
+  says so in the chat window with 5.5's own words ("Chat issue - data
+  not saved. Clear your chat if this continues after a restart under
+  Chat Preferences."), instead of vanishing without a trace (item d), as
+  5.5's `addChat` and `addGroup` do. The store errors are logged with
+  5.5's log text too, including `removeGroup`'s own. 5.5's Chat Preferences control that
   clears the chat (`ChatPrefsFragment.clearChatHistory`) isn't in
   macTAK yet.
 - Quitting while a server's TLS handshake is still in flight no longer
