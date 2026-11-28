@@ -78,13 +78,6 @@ public final class Routes: ObservableObject {
         take(event, isItem: isItem, received: true)
     }
 
-    /// `receive` for the event's XML.
-    @discardableResult
-    public func receive(_ xml: String, isItem: (String) -> Bool) -> Bool {
-        guard let event = try? CotEvent.parse(xml) else { return false }
-        return receive(event, isItem: isItem)
-    }
-
     /// Takes back a route kept across launches. It is this client's own
     /// (not shown as received) when its creator is `selfUID`.
     public func restore(_ event: CotEvent, isItem: (String) -> Bool, selfUID: String) -> ImportResult {

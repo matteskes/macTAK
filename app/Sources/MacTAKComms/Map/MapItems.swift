@@ -97,9 +97,10 @@ public final class MapItems {
     }
 
     /// 5.5's CotDeleteImporter: a force delete removes the item the task
-    /// names, whatever kind it is; otherwise, or when no item has its uid,
-    /// a marker or contact it names goes stale now (staleRemoteDisconnects,
-    /// on by default).
+    /// names, whatever kind it is; otherwise a marker or contact it names
+    /// goes stale now (staleRemoteDisconnects, on by default). 5.5 also
+    /// takes the stale step after a force delete that finds no item; here
+    /// that step then finds nothing either.
     ///
     /// Not as 5.5: there is no findAssocShape step, which swaps a shape's
     /// part (a shape's centre marker, an R&B end marker) for the shape, as
@@ -108,9 +109,8 @@ public final class MapItems {
     /// one of these).
     func importDelete(_ task: CotDelete, at now: Date) {
         if task.force, remove(task.uid) { return }
-        if !markers.forceStale(task.uid, at: now) {
-            contacts.forceStale(task.uid, at: now)
-        }
+        // A uid is a marker's or a contact's, never both.
+        _ = markers.forceStale(task.uid, at: now) || contacts.forceStale(task.uid, at: now)
     }
 
     /// Removes the item `uid` of any kind; returns whether one was here.

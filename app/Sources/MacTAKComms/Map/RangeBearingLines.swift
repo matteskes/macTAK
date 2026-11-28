@@ -167,13 +167,6 @@ public final class RangeBearingLines: ObservableObject {
         return take(r, isMarker: isMarker, received: true)
     }
 
-    /// `receive` for the event's XML.
-    @discardableResult
-    public func receive(_ xml: String, isMarker: (String) -> Bool) -> Bool {
-        guard let event = try? CotEvent.parse(xml) else { return false }
-        return receive(event, isMarker: isMarker)
-    }
-
     /// Takes back a line kept across launches. It is this client's own
     /// (not shown as received) when its creator is `selfUID`; deferred
     /// while a marker it names isn't here yet.

@@ -76,7 +76,12 @@ public final class PointDropper: ObservableObject {
         let uid = newID()
         let event = PlacedPoint.event(uid: uid, kind: kind, callsign: callsign(for: kind, at: now), at: place,
                                       author: author(now), now: now)
-        guard markers.receive(event.xml(), at: now) else { return nil }
+        // Read back from its XML, as a peer hears it: CoT times keep
+        // milliseconds only.
+        let xml = event.xml()
+        guard let heard = try? CotEvent.parse(xml, now: now), markers.receive(heard, xml: xml, at: now) else {
+            return nil
+        }
         placedHere.append(uid)
         return markers[uid]
     }

@@ -99,8 +99,10 @@ public final class CotMarkerStore: ObservableObject {
 
     public subscript(uid: String) -> CotMarker? { byUID[uid] }
 
-    /// Takes in a CoT event commo received, `heard` read from `xml`;
-    /// anything but a marker is ignored. Returns whether the markers changed.
+    /// Takes in a CoT event commo received; anything but a marker is
+    /// ignored. `xml` must be the text `heard` was parsed from: an archived
+    /// marker keeps that text as it came, so nothing checks the two agree.
+    /// Returns whether the markers changed.
     @discardableResult
     public func receive(_ heard: CotEvent, xml: String, at now: Date = Date()) -> Bool {
         guard heard.uid != selfUID, heard.type.hasPrefix("a-") || Self.isSpotMap(heard.type) else { return false }
@@ -115,13 +117,6 @@ public final class CotMarkerStore: ObservableObject {
         byUID[event.uid] = Self.marker(event, archivedEvent: archivedEvent, lastHeard: now, staleAt: staleAt)
         publish()
         return true
-    }
-
-    /// `receive` for the event's XML.
-    @discardableResult
-    public func receive(_ xml: String, at now: Date = Date()) -> Bool {
-        guard let heard = try? CotEvent.parse(xml, now: now) else { return false }
-        return receive(heard, xml: xml, at: now)
     }
 
     /// A delete task without <__forcedelete> (CotDeleteImporter's forceStale):

@@ -96,13 +96,6 @@ public final class ContactStore: ObservableObject {
         return true
     }
 
-    /// `receive` for the event's XML.
-    @discardableResult
-    public func receive(_ xml: String, via path: Contact.Path, at now: Date = Date()) -> Bool {
-        guard let event = try? CotEvent.parse(xml, now: now) else { return false }
-        return receive(event, via: path, at: now)
-    }
-
     /// A delete task without <__forcedelete> (CotDeleteImporter's
     /// forceStale, which 5.5 sets on any marker, a contact's included): the
     /// contact `uid` is stale now and is removed on the stale clock, unless
