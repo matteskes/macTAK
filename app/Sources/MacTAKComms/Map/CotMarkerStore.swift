@@ -18,9 +18,9 @@
 //   - stale 1.5 × (stale − start) after it arrived (autoStaleDuration)
 //   - removed 5 minutes after it went stale (expireStaleItemsTime, with
 //     expireEverything on, 5.5's default).
-// A delete task (t-x-d-d, CotDeleteImporter) for a marker removes it at once
-// with <__forcedelete>, and otherwise makes it stale now
-// (staleRemoteDisconnects, on by default).
+// A delete task (t-x-d-d) reaches a marker through MapItems.importDelete:
+// with <__forcedelete> it is removed, otherwise `forceStale` makes it
+// stale now.
 //
 // A marker that came with <archive/> (ArchiveDetailHandler) is kept across
 // launches (G3.9a, the MapItemArchive) and, as 5.5 sets no
@@ -29,7 +29,8 @@
 // leaves it alone (the refresher skips a marker with no autoStaleDuration
 // before it reads forceStale). Once archived it stays so, as the meta
 // value stays when an update leaves the detail out. A Spot Map point is one
-// of 5.5's special types too: never stale, archived or not.
+// of 5.5's special types too: never stale, archived or not, and a plain
+// delete task leaves it alone the same way.
 //
 // Edits made here (G3.9c: the inspector, a move, a delete) change the
 // marker's last event, which the marker is read from again; it keeps when
@@ -74,15 +75,17 @@ public struct CotMarker: Sendable, Equatable, Identifiable {
     public var type: String { traits.type }
 
     public func isStale(at now: Date) -> Bool { now >= staleAt }
+
+    /// Whether it goes stale by time: 5.5 sets no autoStaleDuration on an
+    /// archived marker or a special type (Spot Map), and its refresher
+    /// then skips the marker altogether.
+    public var autoStales: Bool { staleAt != .distantFuture }
 }
 
 @MainActor
 public final class CotMarkerStore: ObservableObject {
     /// By uid.
     @Published public private(set) var markers: [CotMarker] = []
-
-    /// 5.5's delete task type (CotDeleteEventMarshal).
-    public static let deleteType = "t-x-d-d"
 
     private let selfUID: String
     private let isContact: (String) -> Bool
@@ -96,15 +99,13 @@ public final class CotMarkerStore: ObservableObject {
 
     public subscript(uid: String) -> CotMarker? { byUID[uid] }
 
-    /// Takes in a CoT event commo received; anything but a marker or a delete
-    /// task for one is ignored. Returns whether the markers changed.
+    /// Takes in a CoT event commo received; anything but a marker is
+    /// ignored. `xml` must be the text `heard` was parsed from: an archived
+    /// marker keeps that text as it came, so nothing checks the two agree.
+    /// Returns whether the markers changed.
     @discardableResult
-    public func receive(_ xml: String, at now: Date = Date()) -> Bool {
-        guard let heard = try? CotEvent.parse(xml, now: now), heard.uid != selfUID else { return false }
-        if heard.type == Self.deleteType {
-            return delete(heard, at: now)
-        }
-        guard heard.type.hasPrefix("a-") || Self.isSpotMap(heard.type) else { return false }
+    public func receive(_ heard: CotEvent, xml: String, at now: Date = Date()) -> Bool {
+        guard heard.uid != selfUID, heard.type.hasPrefix("a-") || Self.isSpotMap(heard.type) else { return false }
         if ContactStore.isContactSA(heard) || isContact(heard.uid) {
             return remove(heard.uid)
         }
@@ -114,6 +115,20 @@ public final class CotMarkerStore: ObservableObject {
         let staleAt = archivedEvent != nil || Self.isSpotMap(event.type) ? .distantFuture
             : now.addingTimeInterval(max(0, event.stale.timeIntervalSince(event.start) * 1.5))
         byUID[event.uid] = Self.marker(event, archivedEvent: archivedEvent, lastHeard: now, staleAt: staleAt)
+        publish()
+        return true
+    }
+
+    /// A delete task without <__forcedelete> (CotDeleteImporter's forceStale):
+    /// the marker `uid` is stale now and is removed on the stale clock,
+    /// unless it doesn't go stale by time or already is. Returns whether it
+    /// changed.
+    @discardableResult
+    public func forceStale(_ uid: String, at now: Date) -> Bool {
+        guard var marker = byUID[uid], marker.autoStales, !marker.isStale(at: now) else { return false }
+        marker.staleAt = now
+        marker.removeAt = now.addingTimeInterval(ContactStore.removeAfterStale)
+        byUID[uid] = marker
         publish()
         return true
     }
@@ -161,22 +176,6 @@ public final class CotMarkerStore: ObservableObject {
     @discardableResult
     private func remove(_ uid: String) -> Bool {
         guard byUID.removeValue(forKey: uid) != nil else { return false }
-        publish()
-        return true
-    }
-
-    /// CotDeleteImporter: <link uid relation type> names the item.
-    private func delete(_ event: CotEvent, at now: Date) -> Bool {
-        guard let link = event.detail("link"), let uid = link["uid"], !uid.isEmpty,
-              link["relation"]?.isEmpty == false, link["type"]?.isEmpty == false,
-              var marker = byUID[uid] else { return false }
-        if event.detail("__forcedelete") != nil {
-            return remove(uid)
-        }
-        guard !marker.archived, !marker.isStale(at: now) else { return false }
-        marker.staleAt = now
-        marker.removeAt = now.addingTimeInterval(ContactStore.removeAfterStale)
-        byUID[uid] = marker
         publish()
         return true
     }
