@@ -10,6 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The team default and the chat's repeats, named once (G3 clean-code
+  audit, item d). The default team, `"Cyan"`, was typed in three places;
+  it is now `GroupDetail.defaultTeam`, named after 5.5's `locationTeam`
+  preference default. In `ChatService`, the delivered and read receipts
+  are sent by one `sendReceipt`, and the three "everyone but me" filters
+  are one `others`. The chat's thirteen store calls that dropped their
+  errors (`try?`) now log them as 5.5's `ChatDatabase` does.
 - The map's items in one place, `MapItems` (G3 clean-code re-audit,
   N1). The contacts, CoT markers, R&B lines, routes, which of them are
   hidden, and `MapLocator` now live in one type in `MacTAKComms`, and
@@ -61,6 +68,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A received chat message that can't be saved now says so in the chat
+  window ("Chat issue - data not saved.", 5.5's own words), instead of
+  vanishing without a trace (item d). 5.5 also suggests clearing the
+  chat under Chat Preferences; macTAK has no such setting yet, so that
+  part is left out.
 - Quitting while a server's TLS handshake is still in flight no longer
   crashes the app (#270). commo's `ContactManager` never unregistered
   from the streaming layer, which could tell it a stream was up after it

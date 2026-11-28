@@ -52,7 +52,7 @@ public final class SelfDetails: ObservableObject {
         self.uid = uid
         func string(_ key: String) -> String? { settings.string(forKey: key).flatMap { $0.isEmpty ? nil : $0 } }
         callsign = string(Key.callsign) ?? string(Key.legacyCallsign) ?? "MACTAK-\(uid.suffix(4).uppercased())"
-        team = GroupDetail.validTeam(string(Key.team) ?? "Cyan")
+        team = GroupDetail.validTeam(string(Key.team) ?? GroupDetail.defaultTeam)
         role = string(Key.role) ?? GroupDetail.defaultRole
         customRole = string(Key.customRole) ?? ""
         customRoleAbbreviation = string(Key.customRoleAbbreviation) ?? ""

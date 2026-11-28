@@ -315,6 +315,17 @@ final class ChatServiceTests: XCTestCase {
         XCTAssertTrue(a.lines(ChatRoom.allChatRooms)[0].outgoing)
     }
 
+    /// Clean-code audit d: a received message the store can't save says so
+    /// with 5.5's toast text (ChatDatabase, chat_text14), not silently.
+    func testAMessageThatCantBeSavedSaysSo() async throws {
+        let (a, b, _) = try three()
+        _ = try SQLiteDatabase(url: b.url, schema: "DROP TABLE Chat;")   // B's store breaks
+        try a.chat.send("x", to: ChatRoom.allChatRooms)
+        await net.settle()
+        XCTAssertEqual(b.chat.lastError, ChatService.notSaved)
+        XCTAssertNil(a.chat.lastError, "the sender's own store is fine")
+    }
+
     func testOldGeoChatIsResolvedByCallsign() throws {
         let (a, b, _) = try three()
         let t = Cot.time(Date())

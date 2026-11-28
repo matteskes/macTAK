@@ -33,7 +33,7 @@ struct MyDetailsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var callsign = ""
-    @State private var team = "Cyan"
+    @State private var team = GroupDetail.defaultTeam
     @State private var role = GroupDetail.defaultRole
     @State private var customRole = ""
     @State private var customRoleAbbreviation = ""

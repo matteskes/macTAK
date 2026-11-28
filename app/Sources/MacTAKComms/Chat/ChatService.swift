@@ -75,7 +75,7 @@ public final class ChatService: ObservableObject {
     }
 
     public func history(_ id: String) -> [ChatLine] {
-        (try? store.history(id)) ?? []
+        stored("read room \(id)") { try store.history(id) } ?? []
     }
 
     /// Rebuilds the rooms from the contacts, the user groups and the history.
@@ -83,8 +83,8 @@ public final class ChatService: ObservableObject {
     /// app calls it again when they change.
     public func refresh() {
         let me = identity()
-        let stored = (try? store.conversations()) ?? []
-        let activity = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let kept = stored("read the conversations") { try store.conversations() } ?? []
+        let activity = Dictionary(kept.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let heard = contacts.contacts
         var rooms: [ChatConversation] = []
 
@@ -102,8 +102,8 @@ public final class ChatService: ObservableObject {
             guard !members.isEmpty || activity[role] != nil else { continue }   // setHideIfEmpty
             add(role, role, .role, members, writable: role == me.role)
         }
-        for group in (try? store.groups()) ?? [] {
-            add(group.uid, group.name, .group, group.members.filter { $0 != me.sender.uid }, writable: true)
+        for group in stored("read the groups", { try store.groups() }) ?? [] {
+            add(group.uid, group.name, .group, others(group.members, me: me), writable: true)
         }
         var direct: [ChatConversation] = []
         let known = Set(rooms.map(\.id))
@@ -114,7 +114,7 @@ public final class ChatService: ObservableObject {
                                            lastMessage: activity[contact.uid]?.last))
         }
         // A peer that has gone keeps its conversation.
-        for past in stored where !known.contains(past.id) && !direct.contains(where: { $0.id == past.id }) {
+        for past in kept where !known.contains(past.id) && !direct.contains(where: { $0.id == past.id }) {
             direct.append(ChatConversation(id: past.id, name: past.name, kind: .direct, members: [past.id],
                                            writable: true, unread: past.unread, lastMessage: past.last))
         }
@@ -150,8 +150,7 @@ public final class ChatService: ObservableObject {
         if room.kind == .allChatRooms {
             dispatch { try await $0.broadcast(xml, via: .any) }
         } else {
-            let to = room.members.filter { $0 != me.sender.uid }
-            if !to.isEmpty { dispatch { try await $0.send(xml, to: to) } }
+            send(xml, toMembers: room.members, me: me)
         }
         return line
     }
@@ -159,18 +158,14 @@ public final class ChatService: ObservableObject {
     /// Marks a room's lines shown, and sends a read receipt for each new one
     /// in a one-to-one with a known contact.
     public func markSeen(_ id: String, at now: Date = Date()) {
-        guard let unseen = try? store.history(id).filter({ !$0.outgoing && !$0.seen }), !unseen.isEmpty else { return }
+        guard let unseen = stored("read room \(id)", { try store.history(id) })?
+            .filter({ !$0.outgoing && !$0.seen }), !unseen.isEmpty else { return }
         let me = identity()
         for var line in unseen {
             line.seen = true
-            try? store.save(line)
+            stored("mark a line seen") { try store.save(line) }
             guard line.senderUid == line.conversationId, contacts[line.senderUid] != nil else { continue }
-            let receipt = ChatReceipt(.read, messageId: line.messageId, conversationId: line.conversationId,
-                                      conversationName: line.conversationName, to: line.senderUid)
-            let to = line.senderUid
-            if let xml = receipt.event(from: me.sender, at: now)?.xml() {
-                dispatch { try await $0.send(xml, to: [to]) }
-            }
+            sendReceipt(.read, for: line, me: me, at: now)
         }
         changed()
     }
@@ -200,9 +195,7 @@ public final class ChatService: ObservableObject {
                                   text: "Deleted group: \(group.name)", destinations: group.members,
                                   parent: ChatRoom.rootGroup)
         notice.deleteChild = uid
-        let xml = notice.event(from: me.sender, at: now).xml()
-        let to = group.members.filter { $0 != me.sender.uid }
-        if !to.isEmpty { dispatch { try await $0.send(xml, to: to) } }
+        send(notice.event(from: me.sender, at: now).xml(), toMembers: group.members, me: me)
     }
 
     // MARK: - receiving
@@ -217,10 +210,11 @@ public final class ChatService: ObservableObject {
     }
 
     private func receipt(_ status: ChatStatus, for messageId: String, at time: Date) {
-        guard var line = try? store.line(messageId), line.status.takes(status) else { return }
+        guard var line = stored("read message \(messageId)", { try store.line(messageId) }) ?? nil,
+              line.status.takes(status) else { return }
         line.status = status
         if status == .delivered { line.receiveTime = time } else if status == .read { line.readTime = time }
-        try? store.save(line)
+        stored("save a receipt") { try store.save(line) }
         changed()
     }
 
@@ -236,7 +230,7 @@ public final class ChatService: ObservableObject {
         guard senderUid != me.sender.uid, !senderUid.isEmpty else { return }
 
         if let deleted = chat.deleteChild {
-            try? store.removeGroup(deleted)
+            stored("remove group \(deleted)") { try store.removeGroup(deleted) }
             refresh()
             return
         }
@@ -254,29 +248,32 @@ public final class ChatService: ObservableObject {
 
         updateGroups(chat, conversationId: conversationId, senderUid: senderUid, senderCallsign: senderCallsign)
 
-        guard (try? store.line(chat.messageId)) == nil else { return }   // heard on another path
+        let heardBefore = stored("look up message \(chat.messageId)") { try store.line(chat.messageId) } ?? nil
+        guard heardBefore == nil else { return }   // heard on another path
         var line = ChatLine(messageId: chat.messageId, conversationId: conversationId,
                             conversationName: conversationName, senderUid: senderUid,
                             senderCallsign: senderCallsign, text: chat.text, sentTime: chat.time,
                             receiveTime: now, outgoing: false, seen: false)
         if conversationId == senderUid, contacts[senderUid] != nil {
             line.status = .delivered
-            let receipt = ChatReceipt(.delivered, messageId: line.messageId, conversationId: conversationId,
-                                      conversationName: conversationName, to: senderUid)
-            let to = senderUid
-            if let xml = receipt.event(from: me.sender, at: now)?.xml() {
-                dispatch { try await $0.send(xml, to: [to]) }
-            }
+            sendReceipt(.delivered, for: line, me: me, at: now)
         }
-        try? store.save(line)
+        if stored("save a received message", { try store.save(line) }) == nil {
+            lastError = Self.notSaved
+        }
         changed()
     }
+
+    /// 5.5's toast when a received message isn't saved (chat_text14).
+    /// Not as 5.5: its advice to clear the chat under Chat Preferences
+    /// (clear_db_file) is left out, as macTAK has no such setting yet.
+    static let notSaved = "Chat issue - data not saved."
 
     /// HierarchyParser, for groups one level under Groups, and 5.5's legacy
     /// groups.
     private func updateGroups(_ chat: ReceivedChat, conversationId: String, senderUid: String,
                               senderCallsign: String) {
-        let groups = (try? store.groups()) ?? []
+        let groups = stored("read the groups") { try store.groups() } ?? []
         if let hierarchy = chat.hierarchy {
             let tops = hierarchy.uid == ChatRoom.userGroups ? hierarchy.children : [hierarchy]
             for node in tops where node.kind == .group {
@@ -286,7 +283,8 @@ public final class ChatService: ObservableObject {
                 for uid in node.contactUIDs + (chat.groupOwner ? [senderUid] : []) where !members.contains(uid) {
                     members.append(uid)
                 }
-                try? store.save(ChatGroup(uid: node.uid, name: node.name, members: members, createdLocally: false))
+                let group = ChatGroup(uid: node.uid, name: node.name, members: members, createdLocally: false)
+                stored("save group \(group.uid)") { try store.save(group) }
             }
             refresh()
             return
@@ -297,7 +295,8 @@ public final class ChatService: ObservableObject {
               !groups.contains(where: { $0.uid == conversationId }) else { return }
         var members = chat.destinations
         if !members.contains(senderUid) { members.append(senderUid) }
-        try? store.save(ChatGroup(uid: conversationId, name: chat.chatroom, members: members, createdLocally: false))
+        let group = ChatGroup(uid: conversationId, name: chat.chatroom, members: members, createdLocally: false)
+        stored("save group \(group.uid)") { try store.save(group) }
         refresh()
     }
 
@@ -310,6 +309,38 @@ public final class ChatService: ObservableObject {
     private func changed() {
         revision += 1
         refresh()
+    }
+
+    /// `members` without this client.
+    private func others(_ members: [String], me: ChatIdentity) -> [String] {
+        members.filter { $0 != me.sender.uid }
+    }
+
+    /// Sends to each of `members` but this client, when any are left.
+    private func send(_ xml: String, toMembers members: [String], me: ChatIdentity) {
+        let to = others(members, me: me)
+        if !to.isEmpty { dispatch { try await $0.send(xml, to: to) } }
+    }
+
+    /// Tells the sender of `line` it was delivered or read (5.5's
+    /// sendReadStatus / the delivered receipt).
+    private func sendReceipt(_ status: ChatStatus, for line: ChatLine, me: ChatIdentity, at now: Date) {
+        let receipt = ChatReceipt(status, messageId: line.messageId, conversationId: line.conversationId,
+                                  conversationName: line.conversationName, to: line.senderUid)
+        guard let xml = receipt.event(from: me.sender, at: now)?.xml() else { return }
+        send(xml, toMembers: [line.senderUid], me: me)
+    }
+
+    /// A ChatStore call whose failure the chat goes on without: logged, as
+    /// 5.5's ChatDatabase logs an SQLiteException, and nil.
+    @discardableResult
+    private func stored<T>(_ what: String, _ call: () throws -> T) -> T? {
+        do {
+            return try call()
+        } catch {
+            NSLog("ChatService: couldn't \(what): \(error). Clear your DB file if this continues.")
+            return nil
+        }
     }
 
     private func dispatch(_ body: @escaping @Sendable (ChatTransport) async throws -> Void) {
