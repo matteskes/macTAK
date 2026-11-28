@@ -186,7 +186,7 @@ final class ChatServiceTests: XCTestCase {
         b.chat.markSeen(a.uid)
         await net.settle()
         XCTAssertEqual(net.sentTypes(from: b.uid), ["b-t-f-d", "b-t-f-r"])
-        XCTAssertEqual(try a.chat.store.line(sent.messageId)?.status, .read)
+        XCTAssertEqual(a.chat.store.line(sent.messageId)?.status, .read)
         XCTAssertNotNil(a.lines(b.uid).first?.readTime)
         XCTAssertEqual(b.chat.conversation(a.uid)?.unread, 0)
 
@@ -223,7 +223,7 @@ final class ChatServiceTests: XCTestCase {
         let (a, b, c) = try three()
         let d = try peer("delta")
         a.hears(d); d.hears(a)
-        let group = try a.chat.createGroup(name: "Recon", members: [b.uid, c.uid])
+        let group = a.chat.createGroup(name: "Recon", members: [b.uid, c.uid])
         XCTAssertEqual(group.members, [b.uid, c.uid, a.uid])
         try a.chat.send("recon group up", to: group.uid)
         await net.settle()
@@ -245,19 +245,19 @@ final class ChatServiceTests: XCTestCase {
         try b.chat.send("copy", to: group.uid)
         await net.settle()
         XCTAssertEqual(a.lines(group.uid).map(\.text), ["recon group up", "copy"])
-        XCTAssertEqual(try a.chat.store.groups().first, group)
+        XCTAssertEqual(a.chat.store.groups().first, group)
     }
 
     func testDeletingAGroupTellsItsMembers() async throws {
         let (a, b, _) = try three()
-        let group = try a.chat.createGroup(name: "Recon", members: [b.uid])
+        let group = a.chat.createGroup(name: "Recon", members: [b.uid])
         try a.chat.send("x", to: group.uid)
         await net.settle()
-        XCTAssertEqual(try b.chat.store.groups().count, 1)
-        try a.chat.deleteGroup(group.uid)
+        XCTAssertEqual(b.chat.store.groups().count, 1)
+        a.chat.deleteGroup(group.uid)
         await net.settle()
-        XCTAssertEqual(try a.chat.store.groups().count, 0)
-        XCTAssertEqual(try b.chat.store.groups().count, 0)
+        XCTAssertEqual(a.chat.store.groups().count, 0)
+        XCTAssertEqual(b.chat.store.groups().count, 0)
         XCTAssertNil(b.chat.conversation(group.uid))
     }
 
@@ -272,11 +272,11 @@ final class ChatServiceTests: XCTestCase {
                         to: a.uid).event(from: ChatSender(uid: b.uid, callsign: "BRAVO", address: "10.0.0.2"))!.xml()
         }
         a.chat.receive(receipt(.read))
-        XCTAssertEqual(try a.chat.store.line(sent.messageId)?.status, .read)
+        XCTAssertEqual(a.chat.store.line(sent.messageId)?.status, .read)
         a.chat.receive(receipt(.delivered))
-        XCTAssertEqual(try a.chat.store.line(sent.messageId)?.status, .read, "a lower status is ignored")
+        XCTAssertEqual(a.chat.store.line(sent.messageId)?.status, .read, "a lower status is ignored")
         a.chat.receive(receipt(.pending))
-        XCTAssertEqual(try a.chat.store.line(sent.messageId)?.status, .pending, "5.5's order: pending after read")
+        XCTAssertEqual(a.chat.store.line(sent.messageId)?.status, .pending, "5.5's order: pending after read")
     }
 
     func testAReceiptForAnUnknownMessageIsIgnored() throws {
@@ -313,6 +313,42 @@ final class ChatServiceTests: XCTestCase {
         a.chat.receive(net.sent[0].xml)
         XCTAssertEqual(a.lines(ChatRoom.allChatRooms).count, 1)
         XCTAssertTrue(a.lines(ChatRoom.allChatRooms)[0].outgoing)
+    }
+
+    /// Clean-code audit d: a received message the store can't save says so
+    /// with 5.5's toast text (ChatDatabase, chat_text14), not silently.
+    func testAMessageThatCantBeSavedSaysSo() async throws {
+        let (a, b, _) = try three()
+        _ = try SQLiteDatabase(url: b.url, schema: "DROP TABLE Chat;")   // B's store breaks
+        try a.chat.send("x", to: ChatRoom.allChatRooms)
+        await net.settle()
+        XCTAssertEqual(b.chat.lastError, ChatStore.notSaved)
+        XCTAssertNil(a.chat.lastError, "the sender's own store is fine")
+    }
+
+    /// 5.5 saves a receipt's status through addChat, so its failure gets the
+    /// same toast.
+    func testAReceiptThatCantBeSavedSaysSo() async throws {
+        let (a, b, _) = try three()
+        try a.chat.send("x", to: b.uid)
+        _ = try SQLiteDatabase(url: a.url, schema: """
+            CREATE TRIGGER broken BEFORE INSERT ON Chat BEGIN SELECT RAISE(ABORT, 'broken'); END;
+            """)   // A's store breaks after its own line is kept
+        await net.settle()
+        XCTAssertEqual(a.chat.lastError, ChatStore.notSaved)
+        XCTAssertNil(b.chat.lastError)
+    }
+
+    /// 5.5's HierarchyParser saves a received group through addGroup, which
+    /// toasts on failure.
+    func testAGroupThatCantBeSavedSaysSo() async throws {
+        let (a, b, c) = try three()
+        let group = a.chat.createGroup(name: "Recon", members: [b.uid, c.uid])
+        _ = try SQLiteDatabase(url: b.url, schema: "DROP TABLE Groups;")   // B's groups break
+        try a.chat.send("recon group up", to: group.uid)
+        await net.settle()
+        XCTAssertEqual(b.chat.lastError, ChatStore.notSaved)
+        XCTAssertNil(c.chat.lastError)
     }
 
     func testOldGeoChatIsResolvedByCallsign() throws {

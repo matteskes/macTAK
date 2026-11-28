@@ -10,6 +10,9 @@
 public struct GroupDetail: Sendable, Equatable {
     public static let elementName = "__group"
     public static let defaultRole = "Team Member"
+    /// The `locationTeam` preference's default, as 5.5 reads it
+    /// (LocationMapComponent, ChatManagerMapComponent).
+    public static let defaultTeam = "Cyan"
     /// The teams ATAK knows (GroupDetailHandler.ensureValidGroup).
     public static let teams = ["White", "Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple",
                                "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown"]

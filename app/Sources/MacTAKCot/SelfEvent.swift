@@ -43,7 +43,7 @@ public struct SelfEvent: Sendable, Equatable {
     public var battery = 100
     public var takv = TakVersion(device: "Mac", platform: "macTAK", os: "macOS", version: Cot.clientVersion)
 
-    public init(uid: String, callsign: String, group: GroupDetail = GroupDetail(team: "Cyan")) {
+    public init(uid: String, callsign: String, group: GroupDetail = GroupDetail(team: GroupDetail.defaultTeam)) {
         self.uid = uid; self.callsign = callsign; self.group = group
     }
 

@@ -140,7 +140,7 @@ final class ChatCommsTests: XCTestCase {
         try await c.waitFor("C gets the Medic message") { c.chat.history("Medic").count == 1 }
 
         // a user group of A and C
-        let group = try a.chat.createGroup(name: "Recon", members: [c.uid])
+        let group = a.chat.createGroup(name: "Recon", members: [c.uid])
         try a.chat.send("recon group up", to: group.uid)
         try await c.waitFor("C gets the group and its message") {
             c.chat.conversation(group.uid)?.kind == .group && c.chat.history(group.uid).count == 1
@@ -162,9 +162,9 @@ final class ChatCommsTests: XCTestCase {
         try await b.waitFor("B gets A's message, filed under A") {
             b.chat.history(a.uid).map(\.text) == ["at the RV in 5"]
         }
-        try await a.waitFor("A's message is delivered") { (try? a.chat.store.line(sent.messageId))??.status == .delivered }
+        try await a.waitFor("A's message is delivered") { a.chat.store.line(sent.messageId)?.status == .delivered }
         b.chat.markSeen(a.uid)
-        try await a.waitFor("A's message is read") { (try? a.chat.store.line(sent.messageId))??.status == .read }
+        try await a.waitFor("A's message is read") { a.chat.store.line(sent.messageId)?.status == .read }
     }
 
     func testChatOnTheMesh() async throws {
